@@ -1,0 +1,662 @@
+diff --git i/README.md w/README.md
+index c8a8647..f9c5991 100644
+--- i/README.md
++++ w/README.md
+@@ -36,7 +36,7 @@ The app talks to [OpenRouter](https://openrouter.ai) directly. You bring your ow
+ Every feature of the Electron build works here; [docs/PARITY.md](docs/PARITY.md) lists them one by one, with each place the native build behaves differently. The main differences come from GPUI:
+ 
+ - In the editor, headings are bold but keep the body text size, and code uses the body font. The Reading view shows both as they should be.
+-- Menus, the bubble, Cards, toasts and the Library fade and slide in, and the AI caret breathes, as in Electron (without its slight scale and blur). Beyond Electron, the Library and Preferences also slide out to their own sides, the bubble fades out and its Quick action rows enter one after another, the Quick actions list in Preferences glides on reorder and shrinks a deleted row, and the AI spend charts grow in. Scrollbars always show in the editor (or the text map in its place), the Reading view and the scrolling pages and panels (not yet in the Evals run dialog). Still missing: the caret glide, the shimmer, the word-by-word reveal, the rise of the Review toolbar and Refine row, hover transitions, the unfold of descriptions and lists, the exit motion of menus, Cards and toasts, and the theme crossfade. With reduced motion on in the desktop (the XDG portal setting GNOME and KDE back), surfaces appear at rest and the AI caret's dots hold still.
++- Menus, the bubble, Cards, toasts and the Library fade and slide in, and the AI caret breathes and glides from place to place, as in Electron (without its slight scale and blur). Beyond Electron, the Library and Preferences also slide out to their own sides, the bubble fades out and its Quick action rows enter one after another, the Quick actions list in Preferences glides on reorder and shrinks a deleted row, and the AI spend charts grow in. Scrollbars always show in the editor (or the text map in its place), the Reading view and the scrolling pages and panels (not yet in the Evals run dialog). Still missing: the shimmer, the word-by-word reveal, the rise of the Review toolbar and Refine row, hover transitions, the unfold of descriptions and lists, the exit motion of menus, Cards and toasts, and the theme crossfade. With reduced motion on in the desktop (the XDG portal setting GNOME and KDE back), surfaces appear at rest and the AI caret's dots hold still.
+ 
+ Linux only. There is no distribution package yet: you build and install it from this repository. The decision to build on GPUI is recorded in [ADR 0001](docs/adr/0001-native-app-on-rust-and-gpui.md).
+ 
+diff --git i/crates/ai/Cargo.toml w/crates/ai/Cargo.toml
+index 8a7f132..e9dfd6c 100644
+--- i/crates/ai/Cargo.toml
++++ w/crates/ai/Cargo.toml
+@@ -11,6 +11,8 @@ serde_json.workspace = true
+ regex = "1"
+ thiserror.workspace = true
+ desafinado-core = { path = "../core" }
++# The motion library under development next to this repository.
++ginga = { path = "../../../ginga/crates/ginga" }
+ pulldown-cmark.workspace = true
+ 
+ [lints]
+diff --git i/crates/ai/src/editor/mod.rs w/crates/ai/src/editor/mod.rs
+index cbbcf5c..490eb4e 100644
+--- i/crates/ai/src/editor/mod.rs
++++ w/crates/ai/src/editor/mod.rs
+@@ -2,6 +2,7 @@ pub mod ai_caret;
+ pub mod ask_bubble;
+ pub mod ask_menu;
+ pub mod card_placement;
++pub mod caret_travel;
+ pub mod focus_cycle;
+ pub mod geometry;
+ pub mod inline_diff;
+diff --git i/crates/app/Cargo.toml w/crates/app/Cargo.toml
+index 3f75665..0661890 100644
+--- i/crates/app/Cargo.toml
++++ w/crates/app/Cargo.toml
+@@ -11,6 +11,8 @@ serde_json.workspace = true
+ log.workspace = true
+ desafinado-core = { path = "../core" }
+ desafinado-ai = { path = "../ai" }
++# The motion library under development next to this repository.
++ginga-gpui = { path = "../../../ginga/crates/ginga-gpui" }
+ futures = "0.3"
+ desafinado-platform = { path = "../platform" }
+ desafinado-runtime = { path = "../runtime" }
+diff --git i/crates/app/src/editor_pane.rs w/crates/app/src/editor_pane.rs
+index 8442839..8fe57a9 100644
+--- i/crates/app/src/editor_pane.rs
++++ w/crates/app/src/editor_pane.rs
+@@ -19,6 +19,7 @@ use desafinado_ai::{
+         },
+         ask_menu::{self, AskMenu, AskRow},
+         card_placement::{CardPlacement, MARGIN_CARD_WIDTH, margin_card_left, placement_for},
++        caret_travel::Spot,
+         focus_cycle::cycle_index,
+         geometry::{Rect, Viewport},
+         inline_diff::{block_replacement, inline_inserts, rows_before, zone_rows},
+@@ -2660,45 +2661,35 @@ impl EditorPane {
+         }
+     }
+ 
+-    fn render_caret(&self, roles: Roles, cx: &App) -> Option<AnyElement> {
+-        let caret = ai_caret_of(&self.suggestions, self.busy().is_some())?;
++    /// Where the AI caret belongs this frame, for the view that draws it.
++    pub(crate) fn ai_caret_place(&self, cx: &App) -> AiCaretPlace {
++        let Some(caret) = ai_caret_of(&self.suggestions, self.busy().is_some()) else {
++            return AiCaretPlace::Gone;
++        };
+         if self.above_view(caret.pos, cx) {
+-            return None;
++            return AiCaretPlace::Hidden;
+         }
+-        let bounds = self
+-            .editor
+-            .read(cx)
+-            .range_to_bounds(&(caret.pos..caret.pos))?;
+-        let origin = self.origin();
++        let editor = self.editor.read(cx);
++        let Some(bounds) = editor.range_to_bounds(&(caret.pos..caret.pos)) else {
++            return AiCaretPlace::Hidden;
++        };
+         let pane = self.bounds.get();
++        let spot = |bounds: Bounds<Pixels>| {
++            let place = bounds.origin - pane.origin;
++            (f32::from(place.x), f32::from(place.y))
++        };
++        let head = editor.cursor();
+         let flag_width =
+             px(40. + 7. * caret.label.chars().count() as f32).min(ui::AI_CARET_FLAG_MAX_WIDTH);
+-        let flipped = bounds.left() + flag_width > pane.origin.x + pane.size.width;
+-        let flag = ui::ai_caret_flag(caret.label.clone(), roles, cx.reduce_motion())
+-            .absolute()
+-            .top(px(-16.))
+-            .when(flipped, |this| this.right(px(0.)))
+-            .when(!flipped, |this| this.left(px(0.)));
+-        let bar = ui::breathe(
+-            "ai-caret-bar",
+-            div().absolute().top_0().left_0().size_full().bg(roles.ai),
+-        );
+-        Some(
+-            div()
+-                .absolute()
+-                .left(bounds.left() - origin.x)
+-                .top(bounds.top() - origin.y)
+-                .w(px(2.))
+-                .h(bounds.size.height)
+-                .child(bar)
+-                .child(ui::enter(
+-                    "ai-flag",
+-                    flag,
+-                    ui::Enter::Rise(3.),
+-                    ui::MOTION_ENTER,
+-                ))
+-                .into_any_element(),
+-        )
++        AiCaretPlace::At(AiCaretAt {
++            pos: caret.pos,
++            spot: spot(bounds),
++            takeoff: editor.range_to_bounds(&(head..head)).map(spot),
++            height: bounds.size.height,
++            flipped: bounds.left() + flag_width > pane.origin.x + pane.size.width,
++            label: caret.label,
++            area: pane.size,
++        })
+     }
+ 
+     fn bubble_view(&self, window: &Window, cx: &App) -> Option<BubbleAnchor> {
+@@ -3043,7 +3034,6 @@ impl Render for EditorPane {
+         let bubble = self.settle_bubble(window, cx);
+         let zones = self.render_zones(roles, cx);
+         let cards = self.render_cards(window, roles, cx);
+-        let caret = self.render_caret(roles, cx);
+         let bubble = bubble
+             .and_then(|anchor| self.render_bubble(anchor, roles, cx))
+             .or_else(|| {
+@@ -3116,7 +3106,6 @@ impl Render for EditorPane {
+                 ),
+                 roles,
+             ))
+-            .children(caret)
+             .children(map)
+             .children(marks)
+             .children(note_card)
+@@ -3133,6 +3122,28 @@ impl Render for EditorPane {
+     }
+ }
+ 
++/// Where the AI caret belongs in the pane this frame.
++pub(crate) enum AiCaretPlace {
++    /// There is no AI caret.
++    Gone,
++    /// There is one, out of view.
++    Hidden,
++    At(AiCaretAt),
++}
++
++pub(crate) struct AiCaretAt {
++    pub pos: usize,
++    pub spot: Spot,
++    /// The writer's caret, where a new AI caret takes off from.
++    pub takeoff: Option<Spot>,
++    pub height: Pixels,
++    pub label: String,
++    /// The flag opens to the left, at the pane's right edge.
++    pub flipped: bool,
++    /// The pane's size: the caret is clipped to it.
++    pub area: Size<Pixels>,
++}
++
+ pub(crate) fn to_f64(value: Pixels) -> f64 {
+     f64::from(f32::from(value))
+ }
+diff --git i/crates/app/src/main.rs w/crates/app/src/main.rs
+index 264da3f..1cd0bbc 100644
+--- i/crates/app/src/main.rs
++++ w/crates/app/src/main.rs
+@@ -9,6 +9,7 @@ macro_rules! perf_span {
+ macro_rules! perf_span {
+     ($name:expr) => {};
+ }
++mod ai_caret_view;
+ mod caret;
+ mod comment_review;
+ mod crash_log;
+diff --git i/crates/app/src/ui.rs w/crates/app/src/ui.rs
+index d4e0b3e..26ad9a9 100644
+--- i/crates/app/src/ui.rs
++++ w/crates/app/src/ui.rs
+@@ -1112,6 +1112,7 @@ pub const MOTION_TOAST: std::time::Duration = std::time::Duration::from_millis(3
+ pub const MOTION_HOVER_DELAY: std::time::Duration = std::time::Duration::from_millis(160);
+ pub const MOTION_LEAVE: std::time::Duration = std::time::Duration::from_millis(180);
+ pub const MOTION_GROW: std::time::Duration = std::time::Duration::from_millis(420);
++pub const MOTION_TRAVEL: std::time::Duration = std::time::Duration::from_millis(560);
+ const CASCADE_STEP_MS: u64 = 30;
+ const CASCADE_MAX_STEPS: usize = 8;
+ const GROW_STEP_MS: u64 = 24;
+@@ -1255,6 +1256,16 @@ pub fn glide<E: Styled + IntoElement + 'static>(
+     )
+ }
+ 
++/// The clock a view keeps for motion that lives in the plain crates.
++pub type MotionClock = ginga_gpui::Clock;
++
++/// A trip between two places in the text, and the time of this frame on
++/// `clock`. The trip is no motion at all when the desktop asks for less of it.
++pub fn travel(clock: &mut MotionClock, cx: &App) -> (ginga_gpui::Transition, std::time::Duration) {
++    let trip = ginga_gpui::Tween::new(MOTION_TRAVEL, ginga_gpui::Easing::OutExpo);
++    (ginga_gpui::unless_reduced(trip, cx), clock.now(cx))
++}
++
+ pub fn collapse(id: impl Into<ElementId>, row: Div, full: Pixels) -> AnimationElement<Div> {
+     row.with_animation(
+         id,
+diff --git i/crates/app/src/workspace.rs w/crates/app/src/workspace.rs
+index e4b3efa..83b79a3 100644
+--- i/crates/app/src/workspace.rs
++++ w/crates/app/src/workspace.rs
+@@ -58,6 +58,7 @@ use gpui_kit::{component::TitleBar, prelude::FluentBuilder as _, *};
+ 
+ use crate::spelling::{NextIssue, PreviousIssue};
+ use crate::{
++    ai_caret_view::AiCaretView,
+     caret,
+     document::{
+         Conflict, DiskReads, DiskState, ExternalFacts, ExternalVerdict, FileSession, ReadVerdict,
+@@ -428,6 +429,7 @@ enum Watching {
+ 
+ pub struct Workspace {
+     pane: Entity<EditorPane>,
++    ai_caret: Entity<AiCaretView>,
+     services: Arc<Services>,
+     db: Option<Arc<HistoryDb>>,
+     session: Option<FileSession>,
+@@ -522,6 +524,7 @@ impl Workspace {
+         let subscriptions = Self::subscribe(&pane, &library, &frontmatter, &evals, window, cx);
+         let (session, conflict) = session_of(start.as_ref(), &initial);
+         let mut workspace = Self {
++            ai_caret: crate::ai_caret_view::new(&pane, cx),
+             pane,
+             services,
+             db,
+@@ -1983,7 +1986,10 @@ impl Workspace {
+                 folder_name: folder_name.as_deref(),
+             },
+         );
+-        self.pane.update(cx, |pane, _| pane.is_skill = is_skill);
++        self.pane.update(cx, |pane, cx| {
++            pane.is_skill = is_skill;
++            cx.notify();
++        });
+         self.frontmatter
+             .update(cx, |view, cx| view.refresh(text, report, window, cx));
+     }
+@@ -3521,7 +3527,18 @@ impl Workspace {
+                         ),
+                 )
+             })
+-            .child(div().flex_1().min_h_0().child(self.pane.clone()))
++            .child(
++                div()
++                    .flex_1()
++                    .min_h_0()
++                    .relative()
++                    .child(
++                        self.pane
++                            .clone()
++                            .cached(StyleRefinement::default().size_full()),
++                    )
++                    .child(self.ai_caret.clone()),
++            )
+             .child(
+                 canvas(
+                     |_, _, _| {},
+diff --git i/docs/PARITY.md w/docs/PARITY.md
+index 53b1384..637a449 100644
+--- i/docs/PARITY.md
++++ w/docs/PARITY.md
+@@ -21,7 +21,7 @@ Every feature of `desafinado`'s Electron build (as of `b269c9c`, 2026-11-14) and
+ - [x] Native only: a text map right of the text, in place of the editor's scrollbar when the window has room for it (the Document in miniature, Suggestion rows in the AI color, the rows on screen on the fill; a click on a Suggestion goes there, a click elsewhere, a drag or the wheel scrolls) and a chip at the top and the foot of the text counting the Suggestions past that edge (`Alt+↑` / `Alt+↓` go to them); accepting or rejecting moves the caret on to the next Suggestion
+ - [x] Accept is an undoable edit; Discard when the writer edits inside a Suggestion or a newer one overlaps (Accept leaves the cursor at the end of the Replacement)
+ - [x] Beyond Electron: the editor stays free while the AI works. Each request runs on its own, and the requests tray in the editor's bottom right lists them with what was asked, where (Whole text, Selection, Paragraph, Refining) and the time so far, with Cancel (Stop for a Review); an answered request stays there for 8 seconds with Show, unless its Card is already open. The writer can type inside a running request's text: when the answer comes, the model's changes on lines the writer did not touch are kept and the rest left out, with the notice "Some changes left out: you edited those lines meanwhile" (only deleting all of the request's text drops it). A request whose range overlaps a newer one is still replaced by it
+-- [x] AI caret with flag and Instruction while a Refine or a Review pass runs ("Reviewing" during a Review pass; an Ask request shows in the requests tray instead, with no fill over its text; the flag flips left at the right edge; the bar breathes and the three dots pulse as in Electron, 4 px apart instead of 2 to stay on the 4 px grid; no caret glide)
++- [x] AI caret with flag and Instruction while a Refine or a Review pass runs ("Reviewing" during a Review pass; an Ask request shows in the requests tray instead, with no fill over its text; the flag flips left at the right edge; the bar breathes and the three dots pulse as in Electron, 4 px apart instead of 2 to stay on the 4 px grid; the caret takes off from the writer's caret and glides to each new place in 560 ms as in Electron, its height changes at once, and it leaves without the fade; while the view scrolls or the lines reflow it stays on the text instead of gliding after it)
+ - [x] Review pass with Focus (Edit → Review…), streamed one Suggestion at a time, Stop (Edit menu or the requests tray, which replaces the header's Reviewing chip); Accept all / Reject all (at most 6 Suggestions, one retry when the first answer is invalid and nothing validated yet; Accept all and Reject all act on review Suggestions only, and Accept all is one undoable edit; the first Suggestion is revealed when the pass ends if the editor is not focused)
+ - [x] Beyond Electron: Comment review. Edit → Review… without a Focus, or with a Focus that asks for an opinion, leaves Notes instead of Suggestions: General notes in a panel beside the text and numbered marks in the margin (at most 24 Notes, 15 shown before "Show more"); a Note opens on its mark with Suggest rewrite and Dismiss, and a Note whose text changed turns grey. Jev (`typesafe/jev-1.14`, OpenRouter Decisions API) reads a Focus and picks Comment or Revise; the header chip shows the choice and runs the Review again in the other mode. Notes are kept with the file's place (see Document and files), not in the file itself
+ - [x] Beyond Electron: spell checker ([ADR 0004](adr/0004-spell-checking-with-harper-and-spellbook.md)). English spelling and grammar (Harper) and Portuguese spelling (Spellbook with the LibreOffice pt-BR dictionary), per Block, 400 ms after typing stops, off the UI thread. Quiet dotted marks that take the danger (spelling) or accent (grammar) color under the pointer; click, `Ctrl+.` or F8 / Shift+F8 (Edit menu) opens a menu under the word with the replacements, Add to dictionary (`dictionary.txt` in the settings folder) and Ignore. Text under a Suggestion is not marked
+diff --git 1/crates/ai/src/editor/caret_travel.rs 2/crates/ai/src/editor/caret_travel.rs
+new file mode 100644
+index 0000000..11a57c1
+--- /dev/null
++++ 2/crates/ai/src/editor/caret_travel.rs
+@@ -0,0 +1,268 @@
++//! How the AI caret travels. It takes off from the writer's caret when it
++//! first shows, glides when it moves to another place in the text, and stays
++//! on the text while the view scrolls or the lines reflow.
++//!
++//! The glide never animates the caret's position. It animates how much of the
++//! caret's total travel has been covered, and the caret is drawn that far
++//! short of where its place in the text is this frame.
++
++use std::time::Duration;
++
++use ginga::{Motion, Transition};
++
++/// A point in the pane, in pixels.
++pub type Spot = (f32, f32);
++
++#[derive(Debug, Clone, Copy, PartialEq)]
++enum Seen {
++    /// No AI caret: the next one takes off from the writer's caret.
++    Never,
++    /// There is an AI caret, but the last frame could not draw it.
++    Hidden,
++    /// The last frame had the caret at this place in the text.
++    At { pos: usize, spot: Spot },
++}
++
++#[derive(Debug, Clone, Copy)]
++pub struct CaretTravel {
++    seen: Seen,
++    /// The sum of every move since the caret showed: what the glide heads for.
++    travelled: Spot,
++    /// How much of that travel the glide has covered.
++    covered: Motion<Spot>,
++}
++
++impl Default for CaretTravel {
++    fn default() -> Self {
++        Self {
++            seen: Seen::Never,
++            travelled: (0., 0.),
++            covered: Motion::at((0., 0.)),
++        }
++    }
++}
++
++/// One frame of the AI caret.
++#[derive(Debug, Clone, Copy, PartialEq)]
++pub struct CaretFrame {
++    /// Where to draw the caret.
++    pub spot: Spot,
++    /// The caret is still on its way: draw another frame.
++    pub moving: bool,
++}
++
++impl CaretTravel {
++    /// There is no AI caret any more.
++    pub fn land(&mut self) {
++        self.seen = Seen::Never;
++    }
++
++    /// The AI caret is out of view this frame.
++    pub fn hide(&mut self) {
++        if self.seen != Seen::Never {
++            self.seen = Seen::Hidden;
++        }
++    }
++
++    /// The caret is at `pos`, whose place in the pane is `at`, at the time
++    /// `now`. A caret that first shows starts from `takeoff`, the writer's
++    /// caret, when there is one to start from. A move takes `transition`.
++    pub fn step(
++        &mut self,
++        pos: usize,
++        at: Spot,
++        takeoff: Option<Spot>,
++        transition: Transition,
++        now: Duration,
++    ) -> CaretFrame {
++        let from = match self.seen {
++            Seen::At { pos: last, spot } => (last != pos).then_some(spot),
++            Seen::Never => {
++                self.start_over();
++                takeoff
++            }
++            Seen::Hidden => {
++                self.start_over();
++                None
++            }
++        };
++        if let Some(from) = from {
++            self.travelled.0 += at.0 - from.0;
++            self.travelled.1 += at.1 - from.1;
++        }
++        self.seen = Seen::At { pos, spot: at };
++        let covered = self.covered.toward(self.travelled, transition, now);
++        CaretFrame {
++            spot: (
++                at.0 - (self.travelled.0 - covered.value.0),
++                at.1 - (self.travelled.1 - covered.value.1),
++            ),
++            moving: !covered.settled,
++        }
++    }
++
++    fn start_over(&mut self) {
++        self.travelled = (0., 0.);
++        self.covered.jump_to((0., 0.));
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use ginga::{Easing, Tween};
++
++    const WRITER: Spot = (40., 100.);
++    const FIRST: Spot = (200., 300.);
++    const SECOND: Spot = (80., 500.);
++
++    fn ms(millis: u64) -> Duration {
++        Duration::from_millis(millis)
++    }
++
++    fn linear() -> Transition {
++        Tween::new(ms(100), Easing::Linear).into()
++    }
++
++    fn at_rest(spot: Spot) -> CaretFrame {
++        CaretFrame {
++            spot,
++            moving: false,
++        }
++    }
++
++    fn on_its_way(spot: Spot) -> CaretFrame {
++        CaretFrame { spot, moving: true }
++    }
++
++    #[test]
++    fn a_new_caret_takes_off_from_the_writers_caret_and_glides_to_its_place() {
++        let mut travel = CaretTravel::default();
++        let step =
++            |travel: &mut CaretTravel, now| travel.step(10, FIRST, Some(WRITER), linear(), ms(now));
++        assert_eq!(step(&mut travel, 0), on_its_way(WRITER));
++        assert_eq!(step(&mut travel, 50), on_its_way((120., 200.)));
++        assert_eq!(step(&mut travel, 100), at_rest(FIRST));
++    }
++
++    #[test]
++    fn a_move_to_another_place_starts_where_the_caret_was_drawn() {
++        let mut travel = CaretTravel::default();
++        assert_eq!(
++            travel.step(10, FIRST, None, linear(), ms(0)),
++            at_rest(FIRST)
++        );
++        assert_eq!(
++            travel.step(90, SECOND, None, linear(), ms(1_000)),
++            on_its_way(FIRST)
++        );
++        assert_eq!(
++            travel.step(90, SECOND, None, linear(), ms(1_050)),
++            on_its_way((140., 400.))
++        );
++        assert_eq!(
++            travel.step(90, SECOND, None, linear(), ms(1_100)),
++            at_rest(SECOND)
++        );
++    }
++
++    #[test]
++    fn a_move_in_the_middle_of_a_glide_does_not_jump() {
++        let mut travel = CaretTravel::default();
++        travel.step(10, FIRST, Some(WRITER), linear(), ms(0));
++        let flying = travel.step(10, FIRST, None, linear(), ms(50));
++        let turned = travel.step(90, SECOND, None, linear(), ms(50));
++        assert_eq!(turned, flying);
++        assert_eq!(
++            travel.step(90, SECOND, None, linear(), ms(150)),
++            at_rest(SECOND)
++        );
++    }
++
++    #[test]
++    fn scrolling_carries_the_caret_with_the_text_and_adds_no_travel() {
++        let mut travel = CaretTravel::default();
++        travel.step(10, FIRST, None, linear(), ms(0));
++        assert_eq!(
++            travel.step(10, (200., 120.), None, linear(), ms(16)),
++            at_rest((200., 120.))
++        );
++    }
++
++    #[test]
++    fn scrolling_in_the_middle_of_a_glide_keeps_the_distance_left() {
++        let mut travel = CaretTravel::default();
++        travel.step(10, FIRST, Some(WRITER), linear(), ms(0));
++        let scrolled = (FIRST.0, FIRST.1 - 180.);
++        assert_eq!(
++            travel.step(10, scrolled, None, linear(), ms(50)),
++            on_its_way((120., 20.))
++        );
++    }
++
++    #[test]
++    fn with_nowhere_to_take_off_from_the_caret_shows_in_place() {
++        let mut travel = CaretTravel::default();
++        assert_eq!(
++            travel.step(10, FIRST, None, linear(), ms(0)),
++            at_rest(FIRST)
++        );
++    }
++
++    #[test]
++    fn with_reduced_motion_the_caret_shows_in_place() {
++        let mut travel = CaretTravel::default();
++        let frame = travel.step(10, FIRST, Some(WRITER), Transition::Instant, ms(0));
++        assert_eq!(frame, at_rest(FIRST));
++    }
++
++    #[test]
++    fn a_caret_back_in_view_shows_in_place() {
++        let mut travel = CaretTravel::default();
++        travel.step(10, FIRST, None, linear(), ms(0));
++        travel.hide();
++        assert_eq!(
++            travel.step(90, SECOND, Some(WRITER), linear(), ms(500)),
++            at_rest(SECOND)
++        );
++    }
++
++    #[test]
++    fn the_next_caret_after_one_is_gone_takes_off_again() {
++        let mut travel = CaretTravel::default();
++        travel.step(10, FIRST, None, linear(), ms(0));
++        travel.land();
++        travel.hide();
++        assert_eq!(
++            travel.step(90, SECOND, Some(WRITER), linear(), ms(500)),
++            on_its_way(WRITER)
++        );
++    }
++
++    #[test]
++    fn the_real_trip_covers_most_of_the_way_at_once_and_lands_in_560_ms() {
++        let trip: Transition = Tween::new(ms(560), Easing::OutExpo).into();
++        let mut travel = CaretTravel::default();
++        let rows: Vec<String> = [0, 140, 280, 420, 560]
++            .into_iter()
++            .map(|now| {
++                let frame = travel.step(10, FIRST, Some(WRITER), trip, ms(now));
++                let state = if frame.moving { "moving" } else { "at rest" };
++                format!(
++                    "{now:>3} ms  {:>5.1} {:>5.1}  {state}",
++                    frame.spot.0, frame.spot.1
++                )
++            })
++            .collect();
++        assert_eq!(
++            rows,
++            [
++                "  0 ms   40.0 100.0  moving",
++                "140 ms  171.7 264.6  moving",
++                "280 ms  195.0 293.8  moving",
++                "420 ms  199.1 298.9  moving",
++                "560 ms  200.0 300.0  at rest",
++            ]
++        );
++    }
++}
+diff --git 1/crates/app/src/ai_caret_view.rs 2/crates/app/src/ai_caret_view.rs
+new file mode 100644
+index 0000000..863ef9d
+--- /dev/null
++++ 2/crates/app/src/ai_caret_view.rs
+@@ -0,0 +1,90 @@
++//! The AI caret, drawn by a view of its own beside the editor pane. Its
++//! breathing and its trips ask for frames of this view alone, so the pane,
++//! which the workspace caches, is not rendered again for them.
++
++use desafinado_ai::editor::caret_travel::{CaretTravel, Spot};
++use ginga_gpui::Island;
++use gpui_kit::{prelude::FluentBuilder as _, *};
++
++use crate::{
++    editor_pane::{AiCaretAt, AiCaretPlace, EditorPane},
++    theme, ui,
++};
++
++pub struct AiCaret {
++    pane: WeakEntity<EditorPane>,
++    travel: CaretTravel,
++    clock: ui::MotionClock,
++}
++
++pub type AiCaretView = Island<AiCaret>;
++
++pub fn new(pane: &Entity<EditorPane>, cx: &mut App) -> Entity<AiCaretView> {
++    let caret = AiCaret {
++        pane: pane.downgrade(),
++        travel: CaretTravel::default(),
++        clock: ui::MotionClock::default(),
++    };
++    cx.new(|_| Island::new(caret, draw))
++}
++
++fn draw(caret: &mut AiCaret, window: &mut Window, cx: &mut Context<AiCaretView>) -> AnyElement {
++    let place = caret
++        .pane
++        .upgrade()
++        .map_or(AiCaretPlace::Gone, |pane| pane.read(cx).ai_caret_place(cx));
++    let at = match place {
++        AiCaretPlace::Gone => {
++            caret.travel.land();
++            return Empty.into_any_element();
++        }
++        AiCaretPlace::Hidden => {
++            caret.travel.hide();
++            return Empty.into_any_element();
++        }
++        AiCaretPlace::At(at) => at,
++    };
++    let (trip, now) = ui::travel(&mut caret.clock, cx);
++    let frame = caret.travel.step(at.pos, at.spot, at.takeoff, trip, now);
++    if frame.moving {
++        window.request_animation_frame();
++    }
++    caret_over_pane(&at, frame.spot, cx)
++}
++
++/// The caret at `spot`, on a layer the size of the pane that clips it.
++fn caret_over_pane(at: &AiCaretAt, spot: Spot, cx: &App) -> AnyElement {
++    let roles = theme::roles(cx);
++    let flag = ui::ai_caret_flag(at.label.clone(), roles, cx.reduce_motion())
++        .absolute()
++        .top(px(-16.))
++        .when(at.flipped, |this| this.right(px(0.)))
++        .when(!at.flipped, |this| this.left(px(0.)));
++    let bar = ui::breathe(
++        "ai-caret-bar",
++        div().absolute().top_0().left_0().size_full().bg(roles.ai),
++    );
++    div()
++        .absolute()
++        .top_0()
++        .left_0()
++        .w(at.area.width)
++        .h(at.area.height)
++        .overflow_hidden()
++        .child(
++            div()
++                .absolute()
++                .left(px(spot.0))
++                .top(px(spot.1))
++                .w(px(2.))
++                .h(at.height)
++                .child(bar)
++                .child(ui::enter(
++                    "ai-flag",
++                    flag,
++                    ui::Enter::Rise(3.),
++                    ui::MOTION_ENTER,
++                )),
++        )
++        .into_any_element()
++}

@@ -1,0 +1,12 @@
+focus
+move 800 420
+sleep 300
+click 800 420
+sleep 700
+key alt+e
+sleep 700
+key enter
+sleep 700
+type 40 fix the spelling fake:slow
+key enter
+sleep 5000

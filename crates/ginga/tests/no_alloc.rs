@@ -1,0 +1,66 @@
+//! Running a motion never touches the heap: not when it is read, and not when
+//! it changes course.
+
+use std::{
+    alloc::{GlobalAlloc, Layout, System},
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
+
+use ginga::{Easing, Motion, Spring, Transition, Tween};
+
+struct Counting;
+
+static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+
+#[expect(
+    unsafe_code,
+    reason = "a counting global allocator can only be written with unsafe"
+)]
+// SAFETY: every call is forwarded unchanged to the system allocator.
+unsafe impl GlobalAlloc for Counting {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        // SAFETY: the caller upholds `GlobalAlloc::alloc`'s contract.
+        unsafe { System.alloc(layout) }
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // SAFETY: the caller upholds `GlobalAlloc::dealloc`'s contract.
+        unsafe { System.dealloc(pointer, layout) }
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: Counting = Counting;
+
+#[test]
+fn reading_and_retargeting_a_motion_allocates_nothing() {
+    let transitions: [Transition; 4] = [
+        Spring::SNAPPY.into(),
+        Spring::BOUNCY.into(),
+        Tween::new(Duration::from_millis(300), Easing::OutExpo).into(),
+        Tween::new(
+            Duration::from_millis(300),
+            Easing::Bezier(0.16, 1.0, 0.3, 1.0),
+        )
+        .into(),
+    ];
+    let mut motion = Motion::at((0.0, 0.0, 0.0, 1.0));
+    let mut checksum = 0.0;
+    let before = ALLOCATIONS.load(Ordering::Relaxed);
+    for frame in 0..10_000u64 {
+        let now = Duration::from_micros(frame * 8_333);
+        let side = if (frame / 37).is_multiple_of(2) {
+            0.0
+        } else {
+            400.0
+        };
+        let transition = transitions[(frame / 500) as usize % transitions.len()];
+        let sample = motion.toward((side, 120.0, side / 2.0, 1.0), transition, now);
+        checksum += sample.value.0;
+    }
+    let after = ALLOCATIONS.load(Ordering::Relaxed);
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}

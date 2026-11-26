@@ -1,0 +1,14 @@
+[package]
+name = "ginga-gpui"
+description = "ginga motion for GPUI views: the frame's clock, frame requests and reduced motion."
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+ginga = { path = "../ginga" }
+# The GPUI snapshot that gpui-kit 0.9.1 builds on. An app must use the same one.
+gpui = { package = "gpui-pre", version = "=0.3.12", default-features = false }
+
+[lints]
+workspace = true

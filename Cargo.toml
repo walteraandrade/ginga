@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/ginga", "crates/ginga-gpui"]
+# The GPUI adapter takes minutes to build; plain `cargo test` covers the core only.
+default-members = ["crates/ginga"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.lints.rust]
+# The library forbids unsafe in its own source; one test needs it to count allocations.
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Time, pixels and progress convert between f32 and f64 on purpose; the values are far from any type's limits.
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+# Tests assert exact values of closed-form motion on purpose.
+float_cmp = "allow"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"

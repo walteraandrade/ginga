@@ -124,12 +124,18 @@ impl<T: Animatable> Motion<T> {
             state.velocity = T::Channels::default();
         }
         let start = now + delay;
+        // Three ways to say "jump": no motion, a zero-length tween, a spring
+        // with no response. Without a delay a jump rests on the target at once;
+        // with one, it is a zero-length tween at the end of the delay.
+        let jumps = match transition {
+            Transition::Instant => true,
+            Transition::Spring(spring) => spring.is_instant(),
+            Transition::Tween(tween) => tween.duration.is_zero(),
+        };
         self.drive = match transition {
-            Transition::Spring(spring) if spring.is_instant() => {
-                self.tween(Tween::new(Duration::ZERO, Easing::Linear), &state, start)
-            }
+            _ if jumps && delay.is_zero() => Drive::Rest,
+            _ if jumps => self.tween(Tween::new(Duration::ZERO, Easing::Linear), &state, start),
             Transition::Spring(spring) => self.spring(spring, &state, start),
-            Transition::Tween(tween) if tween.duration.is_zero() && delay.is_zero() => Drive::Rest,
             Transition::Tween(tween) => self.tween(tween, &state, start),
             Transition::Instant => Drive::Rest,
         };
@@ -459,6 +465,7 @@ mod tests {
                 },
                 "{transition:?}"
             );
+            assert_eq!(motion.settles_at(), None, "{transition:?} rests at once");
         }
     }
 

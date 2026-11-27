@@ -2,6 +2,8 @@
 
 ginga: motion for Rust UIs, as a pure function of time. The README says what it is and shows the whole API. These are the rules that keep it that way.
 
+Words mean what [GLOSSARY.md](GLOSSARY.md) says; use them in issues, pull requests, docs and names.
+
 ## Before you finish
 
 ```sh

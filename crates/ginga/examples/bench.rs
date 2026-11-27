@@ -9,6 +9,9 @@
 //! target, and on frames after it settled. A mix of the two would hide a cost
 //! behind the share of frames spent at rest.
 //!
+//! Every number includes the timing loop's own cost, which the first row
+//! shows on its own.
+//!
 //! The rounds of all the cases are interleaved and each keeps its best: the
 //! machine's other work only ever adds time, and a slow spell of the machine
 //! then falls on every case alike.
@@ -103,6 +106,19 @@ fn retargeted<T: Animatable + 'static>(
     }
 }
 
+/// A frame that does nothing: what the timing loop itself costs, in every
+/// other case's numbers too.
+fn harness() -> Case {
+    Case {
+        name: "harness alone (an empty frame)",
+        frames: None,
+        moving: Some(round((0..60).map(|n| FRAME * n).collect(), |now| {
+            black_box(now);
+        })),
+        settled: None,
+    }
+}
+
 fn main() {
     let tween = Tween::new(Duration::from_millis(560), Easing::OutExpo);
     let bezier = Tween::new(
@@ -111,6 +127,7 @@ fn main() {
     );
     let four = ((0.0, 0.0, 0.0, 1.0), (300.0, 80.0, 12.0, 0.0));
     let mut cases = [
+        harness(),
         motion("at rest, 1 channel", 0.0, 0.0, Spring::SNAPPY),
         motion("spring, 1 channel", 0.0, 300.0, Spring::SNAPPY),
         motion("spring, 4 channels", four.0, four.1, Spring::SNAPPY),

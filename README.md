@@ -160,14 +160,19 @@ In the one app measured so far, a frame that skipped the heavy view cost about 4
 
 ## What it costs
 
-`cargo run --release --example bench`, best of nine rounds on the machine this was written on (2026-11-26):
+`cargo run --release --example bench`, best of 31 interleaved rounds, on a shared cloud Xeon at 2.1 GHz (2026-11-27). A frame costs one thing while the value moves and another once it is settled, so the two are timed apart:
 
-| One frame of | Time |
-| --- | --- |
-| a value at rest | 7 ns |
-| a spring, 1 to 4 channels | 12 to 25 ns |
-| a spring with 4 channels and a new target every frame | 165 ns |
-| a tween, 2 channels | 11 to 15 ns |
+| One frame of | Moving | Settled |
+| --- | --- | --- |
+| a value at rest | | 4 ns |
+| a spring, 1 channel | 11 ns | 4 ns |
+| a spring, 4 channels | 13 ns | 6 ns |
+| a bouncy spring, 1 channel | 32 ns | 4 ns |
+| a bouncy spring, 4 channels | 22 ns | 6 ns |
+| a tween, 2 channels | 14 to 39 ns | 5 ns |
+| a spring with 4 channels and a new target every frame | 279 ns | |
+
+Each number includes about 1 ns that the timing loop costs on its own; the bench prints it as its first row. The bouncy spring with one channel reports slower than with four although it runs fewer instructions (valgrind): which case gets the slow code layout changes with unrelated edits, see [the note](brain/codebase/bouncy-spring-bench-and-code-layout.md).
 
 Reading and retargeting a motion never allocates; [`tests/no_alloc.rs`](crates/ginga/tests/no_alloc.rs) fails if it does.
 

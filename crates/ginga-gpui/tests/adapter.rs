@@ -382,3 +382,19 @@ fn stand_ins_keep_each_axis_and_stop_a_tenth_of_a_pixel_away() {
     assert!(in_pixels < as_number, "{in_pixels:?} against {as_number:?}");
     assert_eq!(Pixels::from_repr(pixels.sample(in_pixels).value), px(100.));
 }
+
+#[test]
+fn a_gpui_color_moves_through_the_colors_between() {
+    use gpui::{Hsla, Rgba, rgb};
+    let red: Rgba = rgb(0x00ff_0000);
+    let blue: Hsla = rgb(0x0000_00ff).into();
+    let mut motion = ginga::Motion::at(Animate::to_repr(red));
+    motion.set_target(blue.to_repr(), glide(), ms(0));
+    let middle = Rgba::from_repr(motion.sample(ms(100)).value);
+    assert_eq!(middle.g, 0.0, "red to blue never turns green");
+    assert!((middle.r - 0.735).abs() < 1e-3 && (middle.b - 0.735).abs() < 1e-3);
+    assert_eq!(
+        Hsla::from_repr(motion.sample(ms(200)).value),
+        Hsla::from_repr(blue.to_repr())
+    );
+}

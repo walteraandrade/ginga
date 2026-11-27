@@ -27,16 +27,17 @@ use std::time::{Duration, Instant};
 
 use ginga::Animatable;
 pub use ginga::{
-    Easing, InOut, KeyframesError, Look, LookMotion, Phase, PresenceList, Sample, Shown, ShownItem,
-    Spring, SpringError, Stop, Trace, Transition, Tween,
+    Color, Easing, InOut, KeyframesError, Look, LookMotion, Phase, PresenceList, Sample, Shown,
+    ShownItem, Spring, SpringError, Stop, Trace, Transition, Tween,
 };
 pub use keyframes::Keyframes;
-pub use look::{LookExt, LookState, Looked};
+pub use look::{LookExt, LookState, Looked, color};
 
 mod keyframes;
 mod look;
 use gpui::{
-    AnyElement, App, Context, IntoElement, Pixels, Point, Render, Size, Window, point, px, size,
+    AnyElement, App, Context, Hsla, IntoElement, Pixels, Point, Render, Rgba, Size, Window, point,
+    px, size,
 };
 
 /// A GPUI value that ginga can move.
@@ -96,6 +97,41 @@ impl Animate for Pixels {
 
     fn from_repr(InPixels([value]): InPixels<1>) -> Self {
         px(value)
+    }
+}
+
+/// A color moves as the engine's [`Color`]: in linear light, its alpha
+/// premultiplied, so between two colors there are only colors between them.
+impl Animate for Rgba {
+    type Repr = Color;
+
+    fn to_repr(self) -> Color {
+        Color::new(self.r, self.g, self.b, self.a)
+    }
+
+    /// Each value held to `0.0..=1.0`: `Color`'s fields are public, so one
+    /// can be written past its range without `Color::new`.
+    fn from_repr(color: Color) -> Self {
+        Rgba {
+            r: color.red.clamp(0.0, 1.0),
+            g: color.green.clamp(0.0, 1.0),
+            b: color.blue.clamp(0.0, 1.0),
+            a: color.alpha.clamp(0.0, 1.0),
+        }
+    }
+}
+
+/// As [`Rgba`]: the hue is not a channel, so red on its way to blue passes
+/// through purple, not green.
+impl Animate for Hsla {
+    type Repr = Color;
+
+    fn to_repr(self) -> Color {
+        Rgba::from(self).to_repr()
+    }
+
+    fn from_repr(color: Color) -> Self {
+        Rgba::from_repr(color).into()
     }
 }
 

@@ -46,6 +46,7 @@
 
 mod animatable;
 mod coast;
+mod color;
 mod easing;
 mod keyframes;
 mod look;
@@ -58,6 +59,7 @@ mod transition;
 
 pub use animatable::Animatable;
 pub use coast::{Coast, CoastError};
+pub use color::Color;
 pub use easing::Easing;
 pub use keyframes::{Keyframes, KeyframesError, Stop};
 pub use look::{Look, LookMotion};

@@ -32,6 +32,9 @@ use crate::{Animatable, Coast, Easing, Spring, Transition, Tween};
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Motion<T: Animatable> {
+    /// The target as it was given, handed back once settled: a value rebuilt
+    /// from its channels can be off in the last bit, as a color is.
+    goal: T,
     target: T::Channels,
     drive: Drive<T::Channels>,
 }
@@ -94,6 +97,7 @@ impl<T: Animatable> Motion<T> {
     #[must_use]
     pub fn at(value: T) -> Self {
         Self {
+            goal: value,
             target: value.to_channels(),
             drive: Drive::Rest,
         }
@@ -133,6 +137,7 @@ impl<T: Animatable> Motion<T> {
             _ => Read::Value,
         };
         let state = self.state(now, read);
+        self.goal = target;
         self.target = target.to_channels();
         let start = now.saturating_add(delay);
         // Three ways to say "jump": no motion, a zero-length tween, a spring
@@ -173,9 +178,8 @@ impl<T: Animatable> Motion<T> {
         for speed in velocity.as_ref() {
             seconds = seconds.max(coast.settle_secs(*speed, T::PRECISION));
         }
-        self.target = coast
-            .rest(T::from_channels(from), T::from_channels(velocity))
-            .to_channels();
+        self.goal = coast.rest(T::from_channels(from), T::from_channels(velocity));
+        self.target = self.goal.to_channels();
         self.drive = if seconds > 0.0 {
             Drive::Coast {
                 coast,
@@ -207,6 +211,7 @@ impl<T: Animatable> Motion<T> {
             *place = inside;
         }
         if past {
+            let rest = T::from_channels(rest);
             self.fling(rest, coast.spring, velocity.to_channels(), now);
         } else {
             self.coast(velocity, coast, now);
@@ -232,25 +237,21 @@ impl<T: Animatable> Motion<T> {
             .iter()
             .min_by(|a, b| distance(a).total_cmp(&distance(b)));
         match nearest {
-            Some(point) => self.fling(
-                point.to_channels(),
-                coast.spring,
-                velocity.to_channels(),
-                now,
-            ),
+            Some(&point) => self.fling(point, coast.spring, velocity.to_channels(), now),
             None => self.coast(velocity, coast, now),
         }
     }
 
     /// Heads for `target` with `spring`, from where the value is at `now` and
     /// with `velocity` instead of the speed it had.
-    fn fling(&mut self, target: T::Channels, spring: Spring, velocity: T::Channels, now: Duration) {
+    fn fling(&mut self, target: T, spring: Spring, velocity: T::Channels, now: Duration) {
         let state = State {
             value: self.state(now, Read::Value).value,
             velocity,
             settled: false,
         };
-        self.target = target;
+        self.goal = target;
+        self.target = target.to_channels();
         self.drive = self.spring(spring, &state, now);
     }
 
@@ -265,7 +266,11 @@ impl<T: Animatable> Motion<T> {
     pub fn sample(&self, now: Duration) -> Sample<T> {
         let state = self.state(now, Read::Value);
         Sample {
-            value: T::from_channels(state.value),
+            value: if state.settled {
+                self.goal
+            } else {
+                T::from_channels(state.value)
+            },
             settled: state.settled,
         }
     }
@@ -279,7 +284,7 @@ impl<T: Animatable> Motion<T> {
     /// Where the motion is heading.
     #[must_use]
     pub fn target(&self) -> T {
-        T::from_channels(self.target)
+        self.goal
     }
 
     /// When the value reaches its target, or `None` when it is at rest. For a
@@ -288,9 +293,8 @@ impl<T: Animatable> Motion<T> {
     pub fn settles_at(&self) -> Option<Duration> {
         match self.drive {
             Drive::Rest => None,
-            Drive::Spring { settle, .. } => Some(settle),
+            Drive::Spring { settle, .. } | Drive::Coast { settle, .. } => Some(settle),
             Drive::Tween { tween, start, .. } => Some(start.saturating_add(tween.duration)),
-            Drive::Coast { settle, .. } => Some(settle),
         }
     }
 
@@ -331,6 +335,62 @@ impl<T: Animatable> Motion<T> {
             tween,
             start: now,
             from: state.value,
+        }
+    }
+
+    /// Where a tween from `from` is `elapsed` after it starts, and how fast it
+    /// goes there when `read` asks for the speed.
+    fn tweening(
+        &self,
+        tween: Tween,
+        elapsed: Duration,
+        from: T::Channels,
+        read: Read,
+    ) -> State<T::Channels> {
+        let length = tween.duration.as_secs_f32();
+        let progress = elapsed.as_secs_f32() / length;
+        let eased = tween.easing.at(progress);
+        let slope = match read {
+            Read::Value => 0.0,
+            Read::ValueAndSpeed => tween.easing.slope(progress) / length,
+        };
+        let (mut value, mut velocity) = (from, from);
+        for ((place, speed), target) in value
+            .as_mut()
+            .iter_mut()
+            .zip(velocity.as_mut())
+            .zip(self.target.as_ref())
+        {
+            let span = target - *place;
+            *speed = span * slope;
+            *place += span * eased;
+        }
+        State {
+            value,
+            velocity,
+            settled: false,
+        }
+    }
+
+    /// Where a coast is `elapsed` after its release at `velocity`: short of
+    /// its rest by what it has yet to travel, and as fast as it still goes.
+    fn coasting(
+        &self,
+        coast: Coast,
+        elapsed: Duration,
+        velocity: T::Channels,
+    ) -> State<T::Channels> {
+        let seconds = elapsed.as_secs_f32();
+        let (mut value, mut speeds) = (self.target, velocity);
+        for (place, speed) in value.as_mut().iter_mut().zip(speeds.as_mut()) {
+            let (left, moving) = coast.left(*speed, seconds);
+            *place -= left;
+            *speed = moving;
+        }
+        State {
+            value,
+            velocity: speeds,
+            settled: false,
         }
     }
 
@@ -414,44 +474,9 @@ impl<T: Animatable> Motion<T> {
                 start,
                 velocity,
                 ..
-            } => {
-                let seconds = now.saturating_sub(start).as_secs_f32();
-                let (mut value, mut speeds) = (self.target, velocity);
-                for (place, speed) in value.as_mut().iter_mut().zip(speeds.as_mut()) {
-                    let (left, moving) = coast.left(*speed, seconds);
-                    *place -= left;
-                    *speed = moving;
-                }
-                State {
-                    value,
-                    velocity: speeds,
-                    settled: false,
-                }
-            }
+            } => self.coasting(coast, now.saturating_sub(start), velocity),
             Drive::Tween { tween, start, from } => {
-                let length = tween.duration.as_secs_f32();
-                let progress = now.saturating_sub(start).as_secs_f32() / length;
-                let eased = tween.easing.at(progress);
-                let slope = match read {
-                    Read::Value => 0.0,
-                    Read::ValueAndSpeed => tween.easing.slope(progress) / length,
-                };
-                let (mut value, mut velocity) = (from, from);
-                for ((place, speed), target) in value
-                    .as_mut()
-                    .iter_mut()
-                    .zip(velocity.as_mut())
-                    .zip(self.target.as_ref())
-                {
-                    let span = target - *place;
-                    *speed = span * slope;
-                    *place += span * eased;
-                }
-                State {
-                    value,
-                    velocity,
-                    settled: false,
-                }
+                self.tweening(tween, now.saturating_sub(start), from, read)
             }
         }
     }

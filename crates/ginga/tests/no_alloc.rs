@@ -8,8 +8,8 @@ use std::{
 };
 
 use ginga::{
-    Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop, Transition,
-    Tween,
+    Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop,
+    Transition, Tween,
 };
 
 struct Counting;
@@ -145,6 +145,34 @@ fn running_a_look_allocates_nothing() {
 }
 
 #[test]
+fn running_a_look_with_colors_allocates_nothing() {
+    let rest = Look::new()
+        .background(Color::hex(0x1e_2126))
+        .text_color(Color::TRANSPARENT)
+        .border_color(Color::hex(0x30_3540));
+    let hover = Look::new()
+        .background(Color::hex(0x3b_6ef5))
+        .text_color(Color::hex(0xe8_eaed))
+        .border_color(Color::hex(0x3b_6ef5).with_alpha(0.5));
+    let mut button = LookMotion::at(rest);
+    let mut checksum = 0.0;
+    let before = allocations();
+    for frame in 0..10_000u64 {
+        let now = Duration::from_micros(frame * 8_333);
+        let look = if (frame / 37).is_multiple_of(2) {
+            rest
+        } else {
+            hover
+        };
+        let sample = button.toward(look, Spring::SNAPPY, now);
+        checksum += sample.value.background.map_or(0.0, |color| color.blue);
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
 fn building_and_reading_keyframes_allocates_nothing() {
     let ms = Duration::from_millis;
     let mut checksum = 0.0;
@@ -179,5 +207,34 @@ fn building_and_reading_keyframes_allocates_nothing() {
     }
     let after = allocations();
     assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn letting_go_and_coasting_allocates_nothing() {
+    let ms = Duration::from_millis;
+    let snaps = [(0.0, 0.0), (240.0, 0.0), (480.0, 0.0)];
+    let mut checksum = 0.0;
+    let before = allocations();
+    // A card dragged, thrown, caught again and thrown at a snap point; a knob
+    // thrown past its end.
+    let mut card = Motion::at((0.0, 0.0));
+    let mut knob = Motion::at(0.0);
+    for throw in 0..200u64 {
+        let now = ms(throw * 300);
+        let speed = (throw % 7) as f32 * 400.0 - 1_200.0;
+        card.jump_to(card.sample(now).value);
+        card.coast((speed, -speed / 2.0), Coast::QUICK, now);
+        checksum += card.sample(now + ms(16)).value.0;
+        card.coast_to_nearest((speed, 0.0), Coast::SLOW, &snaps, now + ms(32));
+        knob.coast_within(speed, Coast::QUICK, 0.0, 200.0, now);
+        for frame in 0..18 {
+            let at = now + ms(frame * 16);
+            checksum += card.sample(at).value.1 + knob.sample(at).value;
+            checksum += card.velocity(at)[0];
+        }
+    }
+    let after = allocations();
+    assert!(checksum.is_finite());
     assert_eq!(after - before, 0);
 }

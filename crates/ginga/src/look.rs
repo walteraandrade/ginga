@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use crate::{Motion, Sample, Transition, trace::Row};
+use crate::{Color, Motion, Sample, Transition, trace::Row};
 
 /// How a thing should look: a set of visual values, each one optional.
 ///
@@ -27,6 +27,12 @@ pub struct Look {
     pub height: Option<f32>,
     /// The radius of its corners.
     pub radius: Option<f32>,
+    /// The color it is filled with.
+    pub background: Option<Color>,
+    /// The color of its text.
+    pub text_color: Option<Color>,
+    /// The color of its border.
+    pub border_color: Option<Color>,
 }
 
 impl Look {
@@ -39,6 +45,9 @@ impl Look {
             width: None,
             height: None,
             radius: None,
+            background: None,
+            text_color: None,
+            border_color: None,
         }
     }
 
@@ -86,6 +95,27 @@ impl Look {
         self.radius = Some(radius);
         self
     }
+
+    /// Names the color it is filled with.
+    #[must_use]
+    pub const fn background(mut self, color: Color) -> Self {
+        self.background = Some(color);
+        self
+    }
+
+    /// Names the color of its text.
+    #[must_use]
+    pub const fn text_color(mut self, color: Color) -> Self {
+        self.text_color = Some(color);
+        self
+    }
+
+    /// Names the color of its border.
+    #[must_use]
+    pub const fn border_color(mut self, color: Color) -> Self {
+        self.border_color = Some(color);
+        self
+    }
 }
 
 /// A [`Look`] on its way to another: one [`Motion`] for each value it names.
@@ -120,6 +150,9 @@ pub struct LookMotion {
     width: Motion<Pixels<1>>,
     height: Motion<Pixels<1>>,
     radius: Motion<Pixels<1>>,
+    background: Motion<Color>,
+    text_color: Motion<Color>,
+    border_color: Motion<Color>,
 }
 
 /// Pixels, or any unit where a tenth is too small to see: an offset, a size
@@ -165,6 +198,9 @@ impl LookMotion {
             width: Motion::at(one(look.width).unwrap_or(Pixels([0.0]))),
             height: Motion::at(one(look.height).unwrap_or(Pixels([0.0]))),
             radius: Motion::at(one(look.radius).unwrap_or(Pixels([0.0]))),
+            background: Motion::at(look.background.unwrap_or(Color::TRANSPARENT)),
+            text_color: Motion::at(look.text_color.unwrap_or(Color::TRANSPARENT)),
+            border_color: Motion::at(look.border_color.unwrap_or(Color::TRANSPARENT)),
         }
     }
 
@@ -232,6 +268,27 @@ impl LookMotion {
             transition,
             now,
         );
+        retarget(
+            &mut self.background,
+            was.background,
+            look.background,
+            transition,
+            now,
+        );
+        retarget(
+            &mut self.text_color,
+            was.text_color,
+            look.text_color,
+            transition,
+            now,
+        );
+        retarget(
+            &mut self.border_color,
+            was.border_color,
+            look.border_color,
+            transition,
+            now,
+        );
         self.target = look;
     }
 
@@ -247,14 +304,18 @@ impl LookMotion {
         let mut settled = true;
         let target = self.target;
         let look = Look {
-            offset: read(target.offset, &self.offset, now, &mut settled)
+            offset: read(two(target.offset), &self.offset, now, &mut settled)
                 .map(|Pixels([x, y])| (x, y)),
             opacity: read(target.opacity, &self.opacity, now, &mut settled),
-            width: read(target.width, &self.width, now, &mut settled).map(|Pixels([value])| value),
-            height: read(target.height, &self.height, now, &mut settled)
+            width: read(one(target.width), &self.width, now, &mut settled)
                 .map(|Pixels([value])| value),
-            radius: read(target.radius, &self.radius, now, &mut settled)
+            height: read(one(target.height), &self.height, now, &mut settled)
                 .map(|Pixels([value])| value),
+            radius: read(one(target.radius), &self.radius, now, &mut settled)
+                .map(|Pixels([value])| value),
+            background: read(target.background, &self.background, now, &mut settled),
+            text_color: read(target.text_color, &self.text_color, now, &mut settled),
+            border_color: read(target.border_color, &self.border_color, now, &mut settled),
         };
         Sample {
             value: look,
@@ -270,8 +331,8 @@ impl LookMotion {
 }
 
 /// One value of a look at `now`, when the target names it.
-fn read<T: crate::Animatable, U>(
-    named: Option<U>,
+fn read<T: crate::Animatable>(
+    named: Option<T>,
     motion: &Motion<T>,
     now: Duration,
     settled: &mut bool,
@@ -292,8 +353,8 @@ fn retarget<T: crate::Animatable + PartialEq>(
     now: Duration,
 ) {
     match (was, now_named) {
-        (Some(_), Some(value)) => {
-            if motion.target() != value {
+        (Some(was), Some(value)) => {
+            if was != value {
                 motion.set_target(value, transition, now);
             }
         }
@@ -315,6 +376,9 @@ impl Look {
             width: self.width.filter(|&value| finite(value)),
             height: self.height.filter(|&value| finite(value)),
             radius: self.radius.filter(|&value| finite(value)),
+            background: self.background.filter(|color| color.is_finite()),
+            text_color: self.text_color.filter(|color| color.is_finite()),
+            border_color: self.border_color.filter(|color| color.is_finite()),
         }
     }
 
@@ -333,6 +397,21 @@ impl Look {
         ] {
             if let Some(value) = value {
                 visit(name, value);
+            }
+        }
+        for (names, color) in [
+            (["bg r", "bg g", "bg b", "bg a"], self.background),
+            (["text r", "text g", "text b", "text a"], self.text_color),
+            (
+                ["border r", "border g", "border b", "border a"],
+                self.border_color,
+            ),
+        ] {
+            if let Some(color) = color {
+                let values = [color.red, color.green, color.blue, color.alpha];
+                for (name, value) in names.into_iter().zip(values) {
+                    visit(name, value);
+                }
             }
         }
     }
@@ -453,6 +532,71 @@ ms               x           y     opacity
         );
         assert_eq!(card.sample(ms(50)).value.width, Some(5.0));
         assert_eq!(card.sample(ms(50)).value.opacity, Some(1.0));
+    }
+
+    #[test]
+    fn colors_move_between_two_looks_and_settle_exactly_on_theirs() {
+        let red = Color::hex(0xff_0000);
+        let blue = Color::hex(0x00_00ff);
+        let ink = Color::hex(0x16_181c);
+        let mut button = LookMotion::at(
+            Look::new()
+                .background(red)
+                .text_color(Color::TRANSPARENT)
+                .border_color(red),
+        );
+        let pressed = Look::new()
+            .background(blue)
+            .text_color(ink)
+            .border_color(blue);
+        button.set_target(pressed, glide(), ms(0));
+        let halfway = button.sample(ms(50)).value;
+        let background = halfway.background.unwrap();
+        assert!((background.red - 0.735).abs() < 1e-3);
+        assert_eq!(background.green, 0.0, "red to blue never turns green");
+        let text = halfway.text_color.unwrap();
+        assert!((text.red - ink.red).abs() < 1e-3, "fading in, not darker");
+        assert!((text.alpha - 0.5).abs() < 1e-6);
+
+        let end = button.sample(ms(100));
+        assert!(end.settled);
+        assert_eq!(end.value, pressed, "exactly the colors named");
+    }
+
+    #[test]
+    fn a_color_that_did_not_change_keeps_its_course_when_another_value_does() {
+        // 0x3b6ef5 does not come back from its channels to the last bit; a
+        // value rebuilt from them would look changed and start over.
+        let blue = Color::hex(0x3b_6ef5);
+        let mut card = LookMotion::at(Look::new().background(Color::hex(0xff_0000)).opacity(0.0));
+        card.set_target(Look::new().background(blue).opacity(0.0), glide(), ms(0));
+        card.set_target(Look::new().background(blue).opacity(1.0), glide(), ms(50));
+        let at_end = card.sample(ms(100)).value;
+        assert_eq!(
+            at_end.background,
+            Some(blue),
+            "on time, not started over at 50 ms"
+        );
+    }
+
+    #[test]
+    fn a_trace_names_a_column_for_each_channel_of_a_color() {
+        let mut button = LookMotion::at(Look::new().opacity(0.0).background(Color::TRANSPARENT));
+        button.set_target(
+            Look::new().opacity(1.0).background(Color::hex(0xff_ffff)),
+            glide(),
+            ms(0),
+        );
+        let trace = Trace::of(&button, ms(0), ms(50)).to_string();
+        let lines: Vec<&str> = trace.lines().collect();
+        assert_eq!(
+            lines[0].split_whitespace().collect::<Vec<_>>(),
+            ["ms", "opacity", "bg", "r", "bg", "g", "bg", "b", "bg", "a"]
+        );
+        assert_eq!(
+            lines[2].split_whitespace().collect::<Vec<_>>(),
+            ["50", "0.500", "1.000", "1.000", "1.000", "0.500"]
+        );
     }
 
     #[test]

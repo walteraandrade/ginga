@@ -119,3 +119,168 @@ impl Coast {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Motion, Trace};
+
+    fn ms(millis: u64) -> Duration {
+        Duration::from_millis(millis)
+    }
+
+    fn thrown(velocity: f32) -> Motion<f32> {
+        let mut card = Motion::at(0.0);
+        card.coast(velocity, Coast::QUICK, ms(0));
+        card
+    }
+
+    #[test]
+    fn a_value_let_go_keeps_its_speed_and_slows_by_the_same_share_each_instant() {
+        let card = thrown(1_000.0);
+        assert_eq!(card.sample(ms(0)).value, 0.0);
+        assert!((card.velocity(ms(0))[0] - 1_000.0).abs() < 1e-3);
+        // One time constant on: 1 - 1/e of the way, at 1/e of the speed.
+        let e = core::f32::consts::E;
+        assert!((card.sample(ms(100)).value - 100.0 * (1.0 - 1.0 / e)).abs() < 1e-3);
+        assert!((card.velocity(ms(100))[0] - 1_000.0 / e).abs() < 1e-2);
+        let thrown_back = thrown(-1_000.0);
+        assert!((thrown_back.sample(ms(100)).value + 100.0 * (1.0 - 1.0 / e)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_coast_settles_exactly_where_rest_says_once_within_precision() {
+        let card = thrown(1_000.0);
+        let settle = card.settles_at().unwrap();
+        // ln(100 / 0.001) / 10 s: where what is left falls under a thousandth.
+        assert_eq!(settle.as_millis(), 1_151);
+        let before = card.sample(settle - ms(1));
+        assert!(!before.settled);
+        assert!(100.0 - before.value < 0.001 + 1e-4);
+        let after = card.sample(settle);
+        assert!(after.settled);
+        assert_eq!(after.value, Coast::QUICK.rest(0.0, 1_000.0));
+        assert_eq!(after.value, 100.0);
+        assert_eq!(card.target(), 100.0);
+    }
+
+    #[test]
+    fn a_skipped_frame_changes_nothing() {
+        let card = thrown(1_000.0);
+        let read_every_frame: Vec<f32> = (0..=20).map(|f| card.sample(ms(f * 16)).value).collect();
+        assert_eq!(card.sample(ms(160)).value, read_every_frame[10]);
+    }
+
+    #[test]
+    fn a_coast_shows_in_a_trace() {
+        let trace = Trace::of(&thrown(1_000.0), ms(0), ms(200));
+        // 100 × (1 − e^(−t / 0.1 s)), until less than a thousandth is left.
+        assert_eq!(
+            trace.to_string(),
+            "\
+ms           value
+0            0.000
+200         86.466
+400         98.168
+600         99.752
+800         99.966
+1000        99.995
+1200       100.000  settled
+"
+        );
+    }
+
+    #[test]
+    fn a_slow_speed_rests_at_once() {
+        let mut still = Motion::at(5.0);
+        still.coast(0.005, Coast::QUICK, ms(0));
+        let sample = still.sample(ms(0));
+        assert!(sample.settled);
+        assert_eq!(sample.value, Coast::QUICK.rest(5.0, 0.005));
+        assert_eq!(still.settles_at(), None);
+    }
+
+    #[test]
+    fn a_value_let_go_toward_a_limit_springs_back_to_it_keeping_its_speed() {
+        let mut knob = Motion::at(0.0);
+        knob.coast_within(3_000.0, Coast::QUICK, 0.0, 50.0, ms(0));
+        assert!(
+            (knob.velocity(ms(0))[0] - 3_000.0).abs() < 1e-2,
+            "no jolt at release"
+        );
+        let farthest = (0..1_000)
+            .map(|t| knob.sample(ms(t)).value)
+            .fold(f32::MIN, f32::max);
+        assert!(
+            farthest > 50.0,
+            "thrown hard, it passes the limit: {farthest}"
+        );
+        let end = knob.sample(knob.settles_at().unwrap());
+        assert!(end.settled);
+        assert_eq!(end.value, 50.0);
+        let mut low = Motion::at(10.0);
+        low.coast_within(-1_000.0, Coast::QUICK, 0.0, 50.0, ms(0));
+        assert_eq!(low.sample(low.settles_at().unwrap()).value, 0.0);
+    }
+
+    #[test]
+    fn a_value_let_go_past_a_limit_springs_back_inside() {
+        // Dragged 20 past the end, let go still.
+        let mut knob = Motion::at(70.0);
+        knob.coast_within(0.0, Coast::QUICK, 0.0, 50.0, ms(0));
+        assert_eq!(knob.target(), 50.0);
+        let halfway = knob.sample(ms(100)).value;
+        assert!(halfway > 50.0 && halfway < 70.0, "{halfway}");
+        assert_eq!(knob.sample(knob.settles_at().unwrap()).value, 50.0);
+    }
+
+    #[test]
+    fn a_value_that_rests_inside_its_limits_coasts_as_if_there_were_none() {
+        let mut knob = Motion::at(0.0);
+        knob.coast_within(300.0, Coast::QUICK, 0.0, 50.0, ms(0));
+        let free = thrown(300.0);
+        for t in [0, 50, 100, 300] {
+            assert_eq!(knob.sample(ms(t)), free.sample(ms(t)));
+        }
+        assert_eq!(knob.target(), 30.0);
+    }
+
+    #[test]
+    fn a_value_let_go_comes_to_rest_on_the_nearest_snap_point() {
+        let points = [0.0, 80.0, 200.0];
+        // It would coast to 100: 80 is nearest.
+        let mut card = Motion::at(0.0);
+        card.coast_to_nearest(1_000.0, Coast::QUICK, &points, ms(0));
+        assert!(
+            (card.velocity(ms(0))[0] - 1_000.0).abs() < 1e-3,
+            "no jolt at release"
+        );
+        assert_eq!(card.target(), 80.0);
+        assert_eq!(card.sample(card.settles_at().unwrap()).value, 80.0);
+        // Thrown hard enough, it reaches the next one.
+        card.coast_to_nearest(1_600.0, Coast::QUICK, &points, ms(2_000));
+        assert_eq!(card.target(), 200.0);
+        // With no points it coasts.
+        let mut free = Motion::at(0.0);
+        free.coast_to_nearest(1_000.0, Coast::QUICK, &[], ms(0));
+        assert_eq!(free.target(), 100.0);
+    }
+
+    #[test]
+    fn a_coast_with_no_time_constant_does_not_build() {
+        let error = Coast::new(Duration::ZERO).unwrap_err();
+        assert_eq!(error, CoastError::Zero);
+        assert!(error.to_string().contains("jump_to"));
+        let quarter = Coast::new(ms(250)).unwrap();
+        assert_eq!(quarter.rest(0.0, 100.0), 25.0);
+    }
+
+    #[test]
+    fn two_channels_coast_each_with_its_own_speed() {
+        let mut card = Motion::at((0.0, 0.0));
+        card.coast((1_000.0, -200.0), Coast::QUICK, ms(0));
+        assert_eq!(card.target(), (100.0, -20.0));
+        let end = card.sample(card.settles_at().unwrap());
+        assert_eq!(end.value, (100.0, -20.0));
+    }
+}

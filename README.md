@@ -244,7 +244,7 @@ When the logic of a motion lives in a crate that knows nothing about GPUI, that 
 
 ## A look on an element
 
-Or declare on the element how it should look, and it gets there by itself. A `Look` names any of an offset from the element's own place, an opacity, a width and height and a corner radius; a value it does not name stays the element's own style.
+Or declare on the element how it should look, and it gets there by itself. A `Look` names any of an offset from the element's own place, an opacity, a width and height, a corner radius and colors; a value it does not name stays the element's own style.
 
 ```rust,ignore
 let look = if self.open {
@@ -253,6 +253,28 @@ let look = if self.open {
     Look::new().size(160., 100.).opacity(0.6)
 };
 div().bg(rgb(0x2a2f3a)).look("card", look, Spring::SNAPPY)
+```
+
+A look can name colors too: `.background(..)`, `.text_color(..)` and `.border_color(..)` take a `Color`: `Color::hex(0x3b6ef5)`, `Color::new(r, g, b, alpha)`, `Color::TRANSPARENT`, any of them `.with_alpha(a)`, or one taken from GPUI with `ginga_gpui::color(rgb(0x3b6ef5))`. Each value is held to `0.0..=1.0`. GPUI's `Rgba` and `Hsla` can also move in a `ginga_gpui::Motion`. Colors mix in linear light with the alpha premultiplied: red on its way to blue passes through purple, never green, and a color fading in from transparent never darkens.
+
+```rust
+use std::time::Duration;
+use ginga::{Color, Easing, Look, LookMotion, Tween};
+
+let ms = Duration::from_millis;
+let mut button = LookMotion::at(Look::new().background(Color::hex(0xff0000)));
+button.set_target(Look::new().background(Color::hex(0x0000ff)), Tween::new(ms(100), Easing::Linear), ms(0));
+
+let middle = button.sample(ms(50)).value.background.unwrap();
+assert_eq!(middle.green, 0.0);       // never green
+assert!(middle.red > 0.7);           // a bright purple, as light mixes
+
+// A fill that fades in from nothing keeps its own color, only less opaque.
+let red = Color::hex(0xe5484d);
+let mut fill = LookMotion::at(Look::new().background(Color::TRANSPARENT));
+fill.set_target(Look::new().background(red), Tween::new(ms(100), Easing::Linear), ms(0));
+let half = fill.sample(ms(50)).value.background.unwrap();
+assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);
 ```
 
 When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transition)`. Like `toward`, it asks for frames only while it moves and moves at once under reduced motion.
@@ -303,7 +325,7 @@ Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops
 
 ## Watch it move
 
-The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list presence, a look, keyframes and an island. Each page is driven by a few lines that can be copied.
+The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list presence, a look, colors, keyframes and an island. Each page is driven by a few lines that can be copied.
 
 ```sh
 cargo run -p ginga-gpui --example gallery                  # open it

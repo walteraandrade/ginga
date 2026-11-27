@@ -24,6 +24,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[decisions/2026-11-27-minimum-rust-versions]]: 1.87 for the engine, 1.95 for the adapter (#3).
 - [[decisions/2026-11-27-stagger-is-a-delay-on-the-transition]]: stagger is a delay on the transition (#8).
 - [[decisions/2026-11-27-a-brain-folder-for-memory]]: this folder, and why not a memory server (#36).
+- [[decisions/2026-11-27-colors-mix-in-linear-light-premultiplied]]: how two colors are mixed (#26).
 - [[decisions/2026-11-27-keyframes-are-an-array-of-stops]]: keyframes keep their stops in an array (#30).
 
 ## Codebase

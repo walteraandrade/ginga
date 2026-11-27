@@ -12,41 +12,20 @@ ginga has two goals, in this order.
 
 **1. Performance.** Motion is drawn every frame, so a frame of it must cost next to nothing, and nothing at all once it is over.
 
-- A value at a time is computed in closed form from where the motion started, never stepped from the last frame: a skipped or late frame changes nothing, and reading a motion is a few nanoseconds ([What it costs](#what-it-costs)).
+- A value at a time is computed in closed form from where the motion started, never stepped from the last frame: a skipped or late frame changes nothing. A frame of a moving motion costs tens of nanoseconds, and a few once it is settled ([What it costs](#what-it-costs)).
 - Running a motion never allocates; a test fails if it does.
 - A motion says when it is settled, and a settled motion is exactly on its target, so whoever draws stops asking for frames.
-- In GPUI, what a frame costs is what GPUI renders for it. An `Island` keeps a motion in a small view of its own, so the heavy views beside it are not rendered again ([Motion that redraws little](#motion-that-redraws-little)).
+- In GPUI, what a frame costs is what GPUI renders for it. An `Island` keeps a motion in a small view of its own, so the heavy views beside it, when they are cached, are not rendered again ([Motion that redraws little](#motion-that-redraws-little)).
 
 **2. Easy to use for AI agents.** A coding agent cannot watch an animation. ginga is built so that it does not have to.
 
 - Time is an argument, and the engine never reads a clock: an agent can ask for the value at any time and get the same answer every run.
 - `Trace` writes a motion down as a table of times and values, in a stable format: a test asserts on it, and a change in motion shows up as a diff ([Motion as text](#motion-as-text)).
-- The API is small and named in plain words (`toward`, `jump_to`, `settled`), and this README shows all of it, with examples that run as tests.
+- The API is small and named in plain words (`toward`, `jump_to`, `settled`). This README shows it, and its engine examples run as tests; the GPUI ones are sketches, checked by the adapter's own tests.
 - An invalid value does not build, and the error says what to use instead.
 - The rules for a change are in [AGENTS.md](AGENTS.md), and the reasons and decisions behind them in [`brain/`](brain/index.md), so an agent that starts cold knows what was already decided.
 
 When the two pull apart, performance wins.
-
-## Inspirations
-
-ginga takes ideas that work elsewhere and fits them to these two goals. Most of them are code already:
-
-| Inspiration | The idea taken | Where it is in ginga |
-| --- | --- | --- |
-| [Motion](https://motion.dev) (formerly Framer Motion) | You say the target and the library takes care of the way there. The value and its speed live outside the drawing (`MotionValue`). What leaves stays on screen until its way out is over (`AnimatePresence`). | `Motion::toward`, `Presence`, `PresenceList` |
-| Motion's `animate`, `whileHover`, `layoutId` and drag | A look declared on the element; a look for a moment; one thing in two places; a drag that is thrown and springs back. | `.look(..)`, `.hover(..)`, `.pressed(..)`, `.focused(..)`, `.shared(..)`, `.draggable(..)` |
-| [lilt](https://github.com/ejjonny/lilt), for iced | Time is an argument. There is no tick. | `toward(target, transition, now)`, `sample(now)` |
-| SwiftUI | A spring described by its duration and its bounce, not by mass and stiffness. A spring that is interrupted keeps its speed. | `Spring::new(response)`, `.bounce(..)` |
-| SwiftUI and Jetpack Compose | A type moves if it can become a row of numbers and come back. Each number has its own speed. | `Animatable`, `to_channels`, `from_channels` |
-| Neovide and gpui-motion | A spring in closed form: the value comes straight from the formula, never by stepping frame to frame. | `crates/ginga/src/spring.rs` |
-| `gpui-base::motion` | At rest costs nothing. An invalid value stops at the constructor. The library gives a phase and a progress; the app decides what they look like. | `Sample::settled`, `SpringError`, `Phase::{Entering, Present, Exiting}` |
-| gpui-ce-motion | The state has an owner in plain sight: it lives in your view. Its `Target`, a closed list of properties, is the model for a look. | a `Motion` is a field of yours, and nothing is global; `Look` |
-| [react-spring](https://www.react-spring.dev) and Svelte | A rule for rest (a precision) to stop asking for frames. | `Animatable::PRECISION` |
-| [GSAP](https://gsap.com) | Time as an object: the timeline. | `Sequence` |
-| [FLIP](https://aerotwist.com/blog/flip-your-animations/), by Paul Lewis | Measure before, measure after, and animate the difference. | `PresenceList::place_all`, `.shared(..)` |
-| Flutter's `Hero` and Compose's `SharedTransitionLayout` | An element flies between two places. | `.shared(..)` |
-
-Still to come: Motion's variants, a parent's look that its children follow ([#31](https://github.com/walteraandrade/ginga/issues/31)).
 
 ## Status
 
@@ -54,7 +33,7 @@ Early work, and not on crates.io yet. Two crates:
 
 | Crate | What it is | Depends on |
 | --- | --- | --- |
-| [`ginga`](crates/ginga) | The engine: springs, tweens, keyframes, coasting, colors, looks, presences, sequences and the trace. | nothing |
+| [`ginga`](crates/ginga) | The engine: springs, tweens, keyframes, coasting, colors, looks, presences and slots, derived values, sequences, trails and the trace. | nothing |
 | [`ginga-gpui`](crates/ginga-gpui) | GPUI views: the frame's clock and frame requests, reduced motion, a look declared on an element, ways in and out, shared elements, dragging, loops and islands. | `gpui-pre =0.3.12`, the GPUI that `gpui-kit` 0.9.1 builds on |
 
 Until they are published, depend on them from GitHub:
@@ -374,7 +353,7 @@ impl Render for Panel {
 }
 ```
 
-`toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once when the desktop asks for reduced motion.
+`toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once when the desktop asks for reduced motion. A `ginga_gpui::Motion` moves `f32` and GPUI's `Pixels`, `Point<Pixels>`, `Size<Pixels>`, `Bounds<Pixels>`, `Rgba` and `Hsla`; another GPUI type gets an `Animate` impl. `motion.inspect(cx)` hands back the engine's motion and this frame's time, to write it down with `Trace::of`. `ginga_gpui::Presence` is a `Presence` read on the frame's clock: `show(content, enter, cx)`, `hide(exit, cx)` and `frame(window, cx)`.
 
 When the logic of a motion lives in a crate that knows nothing about GPUI, that crate keeps a `ginga::Motion` and takes the time as an argument; the view supplies it with `ginga_gpui::Clock`.
 
@@ -553,7 +532,7 @@ Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops
 
 ## Watch it move
 
-The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list whose items come, go and travel, a look, colors, a transition for each value, keyframes, derived values and sequences, a look while hovered, pressed or focused, ways in and out, a shared element, a drag, and an island. Each page is driven by a few lines that can be copied. It runs on Linux.
+The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list whose items come and go, a look, colors, a transition for each value, keyframes, derived values and sequences, a look while hovered, pressed or focused, ways in and out, a shared element, a drag, and an island. Each page is driven by a few lines that can be copied. It runs on Linux.
 
 ```sh
 cargo run -p ginga-gpui --example gallery                  # open it
@@ -576,7 +555,9 @@ Recording runs the page in a virtual display and leaves its frames and a contact
 | a tween, 2 channels | 14 to 39 ns | 5 ns |
 | a spring with 4 channels and a new target every frame | 279 ns | |
 
-Each number includes about 1 ns that the timing loop costs on its own; the bench prints it as its first row.\n\nThe bouncy spring with one channel reports slower than with four although it runs fewer instructions: valgrind counts 237 per frame for one channel and 261 for four. It is an effect of code layout, not of the work, and which case gets the slow layout changes with unrelated edits. [Issue #6](https://github.com/walteraandrade/ginga/issues/6) is closed on that explanation, and its measure is now instructions per frame: a few nanoseconds between bench cases are not evidence by themselves. See [the note](brain/codebase/bouncy-spring-bench-and-code-layout.md).
+Each number includes about 1 ns that the timing loop costs on its own; the bench prints it as its first row.
+
+The bouncy spring with one channel reports slower than with four although it runs fewer instructions: valgrind counts 237 per frame for one channel and 261 for four. It is an effect of code layout, not of the work, and which case gets the slow layout changes with unrelated edits. [Issue #6](https://github.com/walteraandrade/ginga/issues/6) is closed on that explanation, and its measure is now instructions per frame: a few nanoseconds between bench cases are not evidence by themselves. See [the note](brain/codebase/bouncy-spring-bench-and-code-layout.md).
 
 Reading and retargeting a motion never allocates; [`tests/no_alloc.rs`](crates/ginga/tests/no_alloc.rs) fails if it does.
 
@@ -589,6 +570,25 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 - Variants: a parent's look that its children follow, each with its own ([#31](https://github.com/walteraandrade/ginga/issues/31)).
 
 Limits that come from GPUI and not from this library: a `div` has no transform, so moving a box means changing its position or size and laying out again; and there is no way to redraw one element without rendering its view.
+
+## Inspirations
+
+ginga takes ideas that work elsewhere and fits them to its two goals ([What it is for](#what-it-is-for)):
+
+| Inspiration | The idea taken | Where it is in ginga |
+| --- | --- | --- |
+| [Motion](https://motion.dev) (formerly Framer Motion) | You say the target and the library takes care of the way there. The value and its speed live outside the drawing (`MotionValue`). What leaves stays on screen until its way out is over (`AnimatePresence`). | `Motion::toward`, `Presence`, `PresenceList` |
+| Motion's `animate`, `whileHover`, `layoutId` and drag | A look declared on the element; a look for a moment; one thing in two places; a drag that is thrown and springs back. | `.look(..)`, `.hover(..)`, `.pressed(..)`, `.focused(..)`, `.shared(..)`, `.draggable(..)` |
+| [lilt](https://github.com/ejjonny/lilt), for iced | Time is an argument. There is no tick. | `toward(target, transition, now)`, `sample(now)` |
+| [SwiftUI](https://developer.apple.com/xcode/swiftui/) | A spring described by its duration and its bounce, not by mass and stiffness. A spring that is interrupted keeps its speed. | `Spring::new(response)`, `.bounce(..)` |
+| SwiftUI and [Jetpack Compose](https://developer.android.com/compose) | A type moves if it can become a row of numbers and come back. Each number has its own speed. | `Animatable`, `to_channels`, `from_channels` |
+| [Neovide](https://neovide.dev) and gpui-motion | A spring in closed form: the value comes straight from the formula, never by stepping frame to frame. | `crates/ginga/src/spring.rs` |
+| `gpui-base::motion` | At rest costs nothing. An invalid value stops at the constructor. The library gives a phase and a progress; the app decides what they look like. | `Sample::settled`, `SpringError`, `Phase::{Entering, Present, Exiting}` |
+| gpui-ce-motion | The state has an owner in plain sight: it lives in your view. Its `Target`, a closed list of properties, is the model for a look. | a `Motion` is a field of your view, and the engine keeps no state of its own; `Look` |
+| [react-spring](https://www.react-spring.dev) and [Svelte](https://svelte.dev) | A rule for rest (a precision) to stop asking for frames. | `Animatable::PRECISION` |
+| [GSAP](https://gsap.com) | Time as an object: the timeline. | `Sequence` |
+| [FLIP](https://aerotwist.com/blog/flip-your-animations/), by Paul Lewis | Measure before, measure after, and animate the difference. | `PresenceList::place_all`, `.shared(..)` |
+| Flutter's `Hero` and Compose's `SharedTransitionLayout` | An element flies between two places. | `.shared(..)` |
 
 ## Contributing
 

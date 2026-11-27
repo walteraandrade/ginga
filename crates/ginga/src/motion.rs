@@ -529,11 +529,34 @@ mod tests {
         motion.set_target(-50.0, Spring::SMOOTH.delay(ms(100)), ms(80));
         for millis in [80, 120, 179] {
             assert_eq!(motion.sample(ms(millis)).value, caught, "at {millis} ms");
+            assert!(!motion.sample(ms(millis)).settled, "waiting is not settled");
             assert_eq!(motion.velocity(ms(millis)), [0.0]);
         }
         assert!(motion.sample(ms(200)).value < caught);
         let settle = motion.settles_at().unwrap();
+        assert!(settle > ms(180), "settles at {settle:?}, after the delay");
         assert_eq!(motion.sample(settle).value, -50.0);
+    }
+
+    #[test]
+    fn a_delayed_motion_reads_the_same_in_any_order() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, linear(100).delay(ms(50)), ms(1_000));
+        let times = [1_100, 1_049, 1_075, 1_020, 1_100, 1_049];
+        let values: Vec<_> = times.iter().map(|&t| motion.sample(ms(t)).value).collect();
+        assert_eq!(values, [50.0, 0.0, 25.0, 0.0, 50.0, 0.0]);
+    }
+
+    #[test]
+    fn a_new_course_during_a_delay_starts_from_the_held_value() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, linear(100), ms(0));
+        motion.set_target(-100.0, linear(100).delay(ms(100)), ms(50));
+        // Halfway through the wait, a new target with no delay.
+        motion.set_target(150.0, linear(100), ms(100));
+        assert_eq!(motion.sample(ms(100)).value, 50.0);
+        assert_eq!(motion.sample(ms(150)).value, 100.0);
+        assert_eq!(motion.sample(ms(200)).value, 150.0);
     }
 
     #[test]

@@ -411,3 +411,39 @@ fn an_absolute_element_moves_from_its_parents_corner_and_only_its_view_is_drawn(
         "the cached view beside it is not drawn again"
     );
 }
+
+/// A card placed by its own style, at 100, 40, that starts 20 px right of it.
+struct OwnPlace {
+    card: DragState,
+}
+
+impl Render for OwnPlace {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().relative().size_full().child(
+            div()
+                .absolute()
+                .left(px(100.))
+                .top(px(40.))
+                .size(px(20.))
+                .draggable(&self.card, Drag::new()),
+        )
+    }
+}
+
+#[gpui::test]
+fn the_offset_adds_to_an_elements_own_place(cx: &mut TestAppContext) {
+    let card = DragState::at(at(20., 0.));
+    let (_, cx) = cx.add_window_view({
+        let card = card.clone();
+        move |_, _| OwnPlace { card }
+    });
+    cx.run_until_parked();
+    press(cx, at(25., 45.));
+    assert!(
+        !card.is_held(),
+        "not at its parent's corner plus the offset"
+    );
+    release(cx, at(25., 45.));
+    press(cx, at(125., 45.));
+    assert!(card.is_held(), "taken at its own place plus the offset");
+}

@@ -1,6 +1,6 @@
 # A look on an element
 
-`LookExt::look` wraps any `Styled` element in `Looked<E>`, the way GPUI's own `with_animation` does: in `request_layout` it reads its motion, styles the inner element with this frame's look, turns it into an `AnyElement` and lays that out. Prepaint and paint only hand on.
+`LookExt::look` wraps any `Styled` element in `Looked<E>`, the way GPUI's own `with_animation` does: in `request_layout` it reads its motion, styles the inner element with this frame's look, turns it into an `AnyElement` and lays that out. Prepaint moves it by the offset; paint only hands on.
 
 ## Where the motion lives
 
@@ -11,7 +11,7 @@ A `Looked` with a `LookState` reports no id, so it adds no level to the element'
 
 ## How each value is applied
 
-- Offset: `left` and `top`, after `relative()` unless the element is `absolute`. An absolute element keeps its position, and the offset replaces its own `left` and `top`, so it should give its place as the offset.
+- Offset: painted, not laid out (#61). `prepaint` runs the element inside `window.with_element_offset`, so GPUI adds it to every bound laid out below, the children's and their hitboxes included; the element's own hitbox (for hover and press) is inserted at `bounds + offset`. Its own `left`, `top` and `absolute` place stay its own. Before #61 the offset was written into `left` and `top`, which replaced an absolute element's place and lagged a card behind any move of the text it sits on. A non-finite offset paints nowhere else (`offset_of`). `present` and the drag move the same way: `present` wraps each content in `PaintedAt`, and `Dragged` keeps the frame's offset from layout to prepaint.
 - Opacity is clamped to `0..=1`, width, height and radius to `0` and up: a bouncy spring passes its target, and GPUI should not get a negative size.
 - Colors (`bg`, `text_color`, `border_color`) go to GPUI as they are, with no clamp here: `Color::new` holds a color to its range when it is built, and `Color::from_channels` holds each channel there while it moves, dividing by the alpha before clamping it so a spring past full alpha keeps the hue.
 

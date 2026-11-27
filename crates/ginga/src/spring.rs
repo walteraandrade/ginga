@@ -24,6 +24,8 @@ pub struct Spring {
     omega: f32,
     /// The damping ratio: one does not overshoot, less than one does.
     zeta: f32,
+    /// How long after the target is set the spring is released.
+    pub(crate) delay: Duration,
 }
 
 /// Why a [`Spring`] could not be built.
@@ -59,6 +61,7 @@ impl Spring {
         Self {
             omega: TAU / response,
             zeta,
+            delay: Duration::ZERO,
         }
     }
 
@@ -89,6 +92,24 @@ impl Spring {
             1.0 / (1.0 + bounce)
         };
         Ok(Self { zeta, ..self })
+    }
+
+    /// The same spring, released `delay` after the target is set. Until then
+    /// the value holds still where it was, and the spring starts from rest.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Motion, Spring};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let mut motion = Motion::at(0.0);
+    /// motion.set_target(100.0, Spring::SNAPPY.delay(ms(80)), ms(0));
+    /// assert_eq!(motion.sample(ms(79)).value, 0.0);
+    /// assert!(motion.sample(ms(100)).value > 0.0);
+    /// ```
+    #[must_use]
+    pub const fn delay(self, delay: Duration) -> Self {
+        Self { delay, ..self }
     }
 
     pub(crate) fn is_instant(self) -> bool {

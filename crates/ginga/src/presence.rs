@@ -24,7 +24,8 @@ pub struct InOut {
 }
 
 impl InOut {
-    /// Arrives and leaves at once. Use it for reduced motion.
+    /// Arrives and leaves at once, with no delay. For reduced motion that
+    /// keeps each way's delay, use [`Transition::without_motion`] on each.
     pub const INSTANT: Self = Self {
         enter: Transition::Instant,
         exit: Transition::Instant,

@@ -51,6 +51,17 @@ pub struct Covered<E> {
     leaving: bool,
 }
 
+/// The element's own style, so a covered element can still be styled, such
+/// as with [`LookExt::with_look`](crate::LookExt::with_look).
+impl<E: Coverable> Styled for Covered<E> {
+    fn style(&mut self) -> &mut gpui::StyleRefinement {
+        self.element
+            .as_mut()
+            .expect("an element is styled before it is laid out")
+            .style()
+    }
+}
+
 impl<E: Coverable> IntoElement for Covered<E> {
     type Element = Self;
 

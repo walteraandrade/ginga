@@ -9,8 +9,8 @@ use gpui::{
 
 use crate::{
     Clock,
-    look::{PaintedAt, offset_of, painted_at, styled},
-    reduced,
+    look::{LookExt, WithLook},
+    unless_reduced,
 };
 
 /// Draws `content` while it is there, and keeps drawing it on its way out.
@@ -97,19 +97,17 @@ impl<T: PartialEq + 'static> Present<T> {
     }
 
     /// The ways to use this frame: none for a look that is not given, and
-    /// none at all when the desktop asks for reduced motion.
+    /// none with motion when the desktop asks for reduced motion, each after
+    /// its delay.
     fn ways(&self, cx: &App) -> InOut {
-        if reduced(cx) {
-            return InOut::INSTANT;
-        }
         InOut {
             enter: if moves(self.arrive_from) {
-                self.ways.enter
+                unless_reduced(self.ways.enter, cx)
             } else {
                 Transition::Instant
             },
             exit: if moves(self.leave_to) {
-                self.ways.exit
+                unless_reduced(self.ways.exit, cx)
             } else {
                 Transition::Instant
             },
@@ -127,7 +125,7 @@ impl<T: PartialEq + 'static> Present<T> {
         swapped_out: bool,
         came_back: Option<u64>,
         focus: Option<FocusHandle>,
-    ) -> PaintedAt {
+    ) -> WithLook<gpui::Stateful<gpui::Div>> {
         let coming_back = came_back == Some(shown.content.number);
         let look = match shown.phase {
             Phase::Present => Look::new(),
@@ -158,7 +156,7 @@ impl<T: PartialEq + 'static> Present<T> {
         if let Some(focus) = focus {
             drawn = drawn.track_focus(&focus);
         }
-        painted_at(styled(drawn, look), offset_of(look))
+        drawn.with_look(look)
     }
 }
 

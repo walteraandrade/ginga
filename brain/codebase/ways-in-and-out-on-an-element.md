@@ -14,11 +14,14 @@ How `ginga_gpui::present` draws a thing until its way out is over, and the traps
 - The look is `arrive_from.mix(Look::new(), progress)` while entering, and `leave_to.mix(..)` while exiting. Mixed into an empty look, only an offset and an opacity move (to none and to opaque). Other values in an arriving look are left out (see `Look::mix`).
 - What a swap sends away is drawn `absolute` at the top left of a `relative` box, under the arriving one, and takes no room. The look's offset is painted from there (see [[codebase/a-look-on-an-element]]), so it adds to the top left instead of replacing it.
 - While leaving, an `occlude()` div covers the content, so it takes no clicks. The wrapper of each leaving content tracks a focus handle of its own, and while the focus is inside it (`contains_focused`) the window is blurred, deferred out of the draw. It is checked on the rendered frame, so the focus goes one frame after the way out starts, and a Tab into leaving content is undone a frame later. The handle is tracked only while leaving: tracked always, a click on plain content would focus the wrapper.
-- Under reduced motion both ways are `Instant`. Without `arrive_from` the way in is `Instant`, and without `leave_to` the way out is.
+- Under reduced motion both ways have no motion, each after its own delay (`unless_reduced`). Without `arrive_from` the way in is `Instant`, and without `leave_to` the way out is.
 
 ## Swap and Wait
 
 `Swap::Wait` delays the new content's way in by what is left of the ways out (`Presence::gone_at`, from `settles_at`), and `Slot` hides it until then (`waits_until`): an arriving look without an opacity would otherwise show it over the old one. Content shown during the wait takes the waiting one's place, unseen, so nothing leaves twice. Up to two contents leave at once; a fourth swap within one way out lets the oldest go. `Present` sets the swap each frame (`set_swap`), so a change applies to the next swap.
 
+## Cover
+
+`cover` (`Covered`) does the same for what a `Presence` draws, without element state: it makes a focus handle each frame while the content leaves, and checks it in `window.defer`, which runs after `Window::draw` swaps in the frame it just built, so the check reads this frame's focus tree with no frame of lag. It decorates the element instead of wrapping it, so the layout is the same in every phase (a wrapper gave an `absolute` element a cover of zero height).
+
 Related: [[codebase/a-look-on-an-element]], [[glossary]] (slot, swap, mix, arriving look).
-- `cover` (`Covered`) does the same for what a `Presence` draws, without element state: it makes a focus handle each frame while the content leaves, and checks it in `window.defer`, which runs after `Window::draw` swaps in the frame it just built, so the check reads this frame's focus tree with no frame of lag. It decorates the element instead of wrapping it, so the layout is the same in every phase (a wrapper gave an `absolute` element a cover of zero height).

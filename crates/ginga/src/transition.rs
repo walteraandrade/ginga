@@ -89,14 +89,12 @@ impl Transition {
     /// assert_eq!(starts, [true, true, false, false, false]);
     /// ```
     #[must_use]
-    pub fn delay(self, delay: Duration) -> Self {
+    pub const fn delay(self, delay: Duration) -> Self {
         match self {
             Self::Instant if delay.is_zero() => Self::Instant,
-            Self::Instant => Tween::new(Duration::ZERO, Easing::Linear)
-                .delay(delay)
-                .into(),
-            Self::Spring(spring) => spring.delay(delay).into(),
-            Self::Tween(tween) => tween.delay(delay).into(),
+            Self::Instant => Self::Tween(Tween::new(Duration::ZERO, Easing::Linear).delay(delay)),
+            Self::Spring(spring) => Self::Spring(spring.delay(delay)),
+            Self::Tween(tween) => Self::Tween(tween.delay(delay)),
         }
     }
 

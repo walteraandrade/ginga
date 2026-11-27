@@ -3,7 +3,7 @@
 
 use std::{
     alloc::{GlobalAlloc, Layout, System},
-    sync::atomic::{AtomicUsize, Ordering},
+    cell::Cell,
     time::Duration,
 };
 
@@ -11,7 +11,15 @@ use ginga::{Easing, Motion, Spring, Transition, Tween};
 
 struct Counting;
 
-static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    /// Allocations made by this thread. The test harness allocates on its own
+    /// threads while a test runs, and those are not the motion's.
+    static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+}
+
+fn allocations() -> usize {
+    ALLOCATIONS.with(Cell::get)
+}
 
 #[expect(
     unsafe_code,
@@ -20,7 +28,8 @@ static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
 // SAFETY: every call is forwarded unchanged to the system allocator.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        // `try_with`, not `with`: an allocator must never panic.
+        let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
         // SAFETY: the caller upholds `GlobalAlloc::alloc`'s contract.
         unsafe { System.alloc(layout) }
     }
@@ -33,6 +42,16 @@ unsafe impl GlobalAlloc for Counting {
 
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
+
+#[test]
+fn the_counter_sees_this_threads_allocations() {
+    let before = allocations();
+    drop(std::hint::black_box(Box::new(1_u8)));
+    assert!(
+        allocations() > before,
+        "the counter must count this thread's allocations, or the test below checks nothing"
+    );
+}
 
 #[test]
 fn reading_and_retargeting_a_motion_allocates_nothing() {
@@ -48,7 +67,7 @@ fn reading_and_retargeting_a_motion_allocates_nothing() {
     ];
     let mut motion = Motion::at((0.0, 0.0, 0.0, 1.0));
     let mut checksum = 0.0;
-    let before = ALLOCATIONS.load(Ordering::Relaxed);
+    let before = allocations();
     for frame in 0..10_000u64 {
         let now = Duration::from_micros(frame * 8_333);
         let side = if (frame / 37).is_multiple_of(2) {
@@ -60,7 +79,7 @@ fn reading_and_retargeting_a_motion_allocates_nothing() {
         let sample = motion.toward((side, 120.0, side / 2.0, 1.0), transition, now);
         checksum += sample.value.0;
     }
-    let after = ALLOCATIONS.load(Ordering::Relaxed);
+    let after = allocations();
     assert!(checksum > 0.0);
     assert_eq!(after - before, 0);
 }

@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push to a pull request makes its older run pointless; on main every commit gets its result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  versions:
+    name: minimum Rust versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      engine: ${{ steps.read.outputs.engine }}
+      adapter: ${{ steps.read.outputs.adapter }}
+    steps:
+      - uses: actions/checkout@v4
+      # The minimum versions live in the manifests only; each job runs on the one it reads here.
+      - id: read
+        run: |
+          read_version() { sed -n 's/^rust-version = "\(.*\)"$/\1/p' "$1"; }
+          echo "engine=$(read_version Cargo.toml)" >> "$GITHUB_OUTPUT"
+          echo "adapter=$(read_version crates/ginga-gpui/Cargo.toml)" >> "$GITHUB_OUTPUT"
+
+  engine:
+    name: engine (Rust ${{ needs.versions.outputs.engine }})
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ needs.versions.outputs.engine }}
+          components: clippy, rustfmt
+      # No cache: the engine has no dependencies and builds in seconds.
+      - run: cargo fmt -p ginga --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
+  adapter:
+    name: gpui adapter (Rust ${{ needs.versions.outputs.adapter }})
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ needs.versions.outputs.adapter }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: adapter
+          # Pull requests restore main's cache and save none, so they don't push it out.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo fmt -p ginga-gpui --check
+      - run: cargo clippy --locked -p ginga-gpui --all-targets -- -D warnings
+      - run: cargo test --locked -p ginga-gpui

@@ -1,5 +1,7 @@
 # ginga
 
+[![CI](https://github.com/walteraandrade/ginga/actions/workflows/ci.yml/badge.svg)](https://github.com/walteraandrade/ginga/actions/workflows/ci.yml)
+
 Motion for Rust UIs, as a pure function of time.
 
 A `Motion` is a value on its way to a target. You own it, you hand it the time, and it answers with the value at that time. Nothing ticks, nothing allocates while it runs, and the same times always give the same values. That makes motion something a test, a log or a coding agent can read as text, without a screen.
@@ -194,4 +196,10 @@ cargo test                                  # the engine, in seconds
 cargo clippy -p ginga-gpui -- -D warnings   # the GPUI adapter; the first build takes minutes
 ```
 
-Rules for changes are in [AGENTS.md](AGENTS.md). No license has been chosen yet.
+The engine needs Rust 1.87 or newer and the adapter Rust 1.95, the oldest that builds its GPUI. CI checks each on that version, on every pull request.
+
+Rules for changes are in [AGENTS.md](AGENTS.md).
+
+## License
+
+Either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. Unless you say otherwise, a contribution you submit for inclusion, as defined in the Apache-2.0 license, is offered under the same two, with no other terms.

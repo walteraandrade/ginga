@@ -270,7 +270,7 @@ pub fn set_default_look_transitions(transitions: impl Into<Transitions>, cx: &mu
 }
 
 /// `element` with each value that `look` names.
-fn styled<E: Styled>(mut element: E, look: Look) -> E {
+pub(crate) fn styled<E: Styled>(mut element: E, look: Look) -> E {
     if let Some((x, y)) = look.offset {
         if element.style().position != Some(Position::Absolute) {
             element = element.relative();

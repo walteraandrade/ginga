@@ -64,7 +64,7 @@ impl Page {
         use crate::{
             color::Button, compose::Compose, drag::Throw, gestures::Buttons, island::IslandPage,
             list::Rows, look::Card, presence::Toast, pulse::Pulse, toward::Toward,
-            transitions::Arrive,
+            transitions::Arrive, ways::Ways,
         };
         vec![
             Page::new(
@@ -78,6 +78,12 @@ impl Page {
                 "A toast is shown and hidden, and drawn while it leaves.",
                 cx.new(|_| Toast::new()),
                 Toast::play,
+            ),
+            Page::new(
+                "ways",
+                "A toast rises in and fades out; titles swap, crossing or one after the other.",
+                cx.new(|_| Ways::new()),
+                Ways::play,
             ),
             Page::new(
                 "list",

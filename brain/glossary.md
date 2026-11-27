@@ -104,6 +104,12 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Shown** (`Shown`), **shown item** (`ShownItem`). What `frame` hands a view to draw: a reference to the content, its phase and its progress; for a list, its key too.
 
+**Slot** (`Slot`) and **swap** (`Swap`). One place whose content is swapped: what was there leaves and the new content arrives. `Swap::Sync` crosses them; `Swap::Wait` holds the new one back until the old one is gone (a delay on its way in). Content that was leaving and is shown again turns around. *Not a list's sync*: `Swap::Sync` is about timing, `PresenceList::sync` tells a list what it holds.
+
+**Mix** (`Look::mix`). A look part of the way to another: what both name moves in a straight line, an offset and an opacity only one names move from or to no offset and fully opaque. How a way in or out is drawn as a look.
+
+**Arriving look** and **leaving look** (`ginga_gpui::Present::arrive_from`, `leave_to`). The look a thing presented with `present` arrives from and leaves to, mixed into its own by its progress. Without one, that way is instant.
+
 **List presence** (`PresenceList`). A presence for a list with keys. `sync` tells it what the list holds now: a new key arrives, a missing key leaves and keeps its place until it is gone, and a key that comes back turns around.
 
 **Key.** What identifies an item of a list presence across syncs. Keys are unique within a list.
@@ -140,7 +146,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Drag** (`ginga_gpui::Drag`, `.draggable`). The pointer takes an element and it follows exactly, with no spring between them. Let go, it is *thrown*: it keeps the pointer's speed, which a *trail* measures, and coasts. A pointer still for 50 ms before it lets go sets the element down instead. `DragState` holds where the element is; `throw` lets it go without a pointer.
 
-**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), the transitions page with a transition for each value (#27), the compose page with maps and sequences (#34), the gestures page with hover, pressed and focused looks (#29), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), the transitions page with a transition for each value (#27), the compose page with maps and sequences (#34), the gestures page with hover, pressed and focused looks (#29), the ways page with ways in and out (#28), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
 
 ## Looks
 

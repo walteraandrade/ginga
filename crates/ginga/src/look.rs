@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use crate::{Color, Motion, Sample, Transition, trace::Row};
+use crate::{Color, Easing, Motion, Sample, Spring, Transition, Tween, trace::Row};
 
 /// How a thing should look: a set of visual values, each one optional.
 ///
@@ -118,43 +118,6 @@ impl Look {
     }
 }
 
-/// A [`Look`] on its way to another: one [`Motion`] for each value it names.
-///
-/// Hand it the look a thing should have now, each frame, as with a motion. A
-/// value that the last look named moves from where it is, and a spring keeps
-/// its speed. A value the last look did not name has no place to start from,
-/// so it takes the new value at once. A value the new look does not name is
-/// left out of the sample.
-///
-/// ```
-/// use std::time::Duration;
-/// use ginga::{Easing, Look, LookMotion, Tween};
-///
-/// let ms = Duration::from_millis;
-/// let glide = Tween::new(ms(100), Easing::Linear);
-/// let mut card = LookMotion::at(Look::new().width(100.0).opacity(0.0));
-///
-/// card.toward(Look::new().width(200.0).opacity(1.0), glide, ms(0));
-/// let halfway = card.toward(Look::new().width(200.0).opacity(1.0), glide, ms(50));
-/// assert_eq!(halfway.value, Look::new().width(150.0).opacity(0.5));
-/// assert!(!halfway.settled);
-/// ```
-///
-/// A look motion is written down like a motion, with a column for each value
-/// the look names: see [`Trace`](crate::Trace).
-#[derive(Debug, Clone, Copy)]
-pub struct LookMotion {
-    target: Look,
-    offset: Motion<Pixels<2>>,
-    opacity: Motion<f32>,
-    width: Motion<Pixels<1>>,
-    height: Motion<Pixels<1>>,
-    radius: Motion<Pixels<1>>,
-    background: Motion<Color>,
-    text_color: Motion<Color>,
-    border_color: Motion<Color>,
-}
-
 /// Pixels, or any unit where a tenth is too small to see: an offset, a size
 /// and a radius settle a tenth from their target, where an opacity settles a
 /// thousandth from it.
@@ -178,149 +141,268 @@ where
     }
 }
 
-fn one(value: Option<f32>) -> Option<Pixels<1>> {
-    value.map(|value| Pixels([value]))
+/// How long an opacity or a color takes when nothing else is said.
+const FADE: Tween = Tween::new(Duration::from_millis(150), Easing::Out);
+
+/// The values of a look, in one table: each one's name, the motion that
+/// moves it, how it goes to that motion and back, and the transition it has
+/// when nothing else is said. Everything that goes through each value of a
+/// [`LookMotion`] or of a [`Transitions`] is written from this table: the
+/// motion, the transitions, `at`, `set_target` and `sample`. A new value also
+/// needs its field and builder on [`Look`], a line in `Look::finite` and its
+/// trace columns, which are written by hand.
+macro_rules! values {
+    ($($field:ident: $repr:ty = $to:expr, $from:expr, $default:expr, $kind:literal;)*) => {
+        /// A [`Look`] on its way to another: one [`Motion`] for each value it names.
+        ///
+        /// Hand it the look a thing should have now, each frame, as with a
+        /// motion. A value that the last look named moves from where it is,
+        /// and a spring keeps its speed. A value the last look did not name has
+        /// no place to start from, so it takes the new value at once. A value
+        /// the new look does not name is left out of the sample.
+        ///
+        /// Each value moves with its own transition, from [`Transitions`]: a
+        /// single [`Transition`] given for the whole look moves every value.
+        ///
+        /// ```
+        /// use std::time::Duration;
+        /// use ginga::{Easing, Look, LookMotion, Tween};
+        ///
+        /// let ms = Duration::from_millis;
+        /// let glide = Tween::new(ms(100), Easing::Linear);
+        /// let mut card = LookMotion::at(Look::new().width(100.0).opacity(0.0));
+        ///
+        /// card.toward(Look::new().width(200.0).opacity(1.0), glide, ms(0));
+        /// let halfway = card.toward(Look::new().width(200.0).opacity(1.0), glide, ms(50));
+        /// assert_eq!(halfway.value, Look::new().width(150.0).opacity(0.5));
+        /// assert!(!halfway.settled);
+        /// ```
+        ///
+        /// A look motion is written down like a motion, with a column for each
+        /// value the look names: see [`Trace`](crate::Trace).
+        #[derive(Debug, Clone, Copy)]
+        pub struct LookMotion {
+            target: Look,
+            $($field: Motion<$repr>,)*
+        }
+
+        /// A transition for each value of a [`Look`].
+        ///
+        /// A value's own transition wins over the one for the whole look, set
+        /// with [`all`](Self::all), which wins over the defaults under it
+        /// ([`or`](Self::or)), which win over ginga's own: a spring
+        /// ([`Spring::SNAPPY`]) for the offset, the size and the radius, and a
+        /// 150 ms tween ([`Easing::Out`]) for the opacity and the colors.
+        ///
+        /// A single [`Transition`], [`Spring`] or [`Tween`] is the transition
+        /// for the whole look.
+        ///
+        /// ```
+        /// use std::time::Duration;
+        /// use ginga::{Easing, Look, LookMotion, Spring, Transitions, Tween};
+        ///
+        /// let ms = Duration::from_millis;
+        /// let mut card = LookMotion::at(Look::new().offset(0.0, 40.0).opacity(0.0));
+        /// // The card springs to its place and fades in with a linear tween.
+        /// let fade = Tween::new(ms(100), Easing::Linear);
+        /// let shown = Look::new().offset(0.0, 0.0).opacity(1.0);
+        /// card.set_target(shown, Transitions::new().opacity(fade), ms(0));
+        /// assert_eq!(card.sample(ms(50)).value.opacity, Some(0.5));
+        /// assert!(card.sample(ms(100)).value.offset.unwrap().1 > 0.0, "still on its way");
+        /// ```
+        #[derive(Debug, Clone, Copy, Default)]
+        pub struct Transitions {
+            /// The values' own transitions.
+            own: Layer,
+            /// The transition for the whole look.
+            all: Option<Transition>,
+            /// The defaults laid under these with [`or`](Self::or), already
+            /// resolved value by value.
+            under: Layer,
+        }
+
+        /// One transition, or none, for each value.
+        #[derive(Debug, Clone, Copy, Default)]
+        struct Layer {
+            $($field: Option<Transition>,)*
+        }
+
+        impl Layer {
+            const EMPTY: Self = Self { $($field: None,)* };
+        }
+
+        impl Transitions {
+            /// Names no transition: each value moves with the defaults.
+            #[must_use]
+            pub const fn new() -> Self {
+                Self {
+                    own: Layer::EMPTY,
+                    all: None,
+                    under: Layer::EMPTY,
+                }
+            }
+
+            /// The transition for every value this does not give one of its own.
+            #[must_use]
+            pub fn all(mut self, transition: impl Into<Transition>) -> Self {
+                self.all = Some(transition.into());
+                self
+            }
+
+            $(
+                #[doc = concat!("The transition for the ", $kind, ".")]
+                #[must_use]
+                pub fn $field(mut self, transition: impl Into<Transition>) -> Self {
+                    self.own.$field = Some(transition.into());
+                    self
+                }
+            )*
+
+            /// These transitions over `defaults`: for each value, its own
+            /// transition here, then the one for the whole look here, then
+            /// what `defaults` gives it. Keep a set of defaults once and give
+            /// each look only what differs. The order holds whatever order the
+            /// calls come in: an [`all`](Self::all) after `or` still wins over
+            /// the defaults.
+            ///
+            /// ```
+            /// use std::time::Duration;
+            /// use ginga::{Look, LookMotion, Spring, Transition, Transitions};
+            ///
+            /// let ms = Duration::from_millis;
+            /// let app = Transitions::new().all(Spring::BOUNCY);
+            /// let this_card = Transitions::new().opacity(Transition::Instant);
+            ///
+            /// let mut card = LookMotion::at(Look::new().width(0.0).opacity(0.0));
+            /// card.set_target(Look::new().width(100.0).opacity(1.0), this_card.or(app), ms(0));
+            /// let now = card.sample(ms(0)).value;
+            /// assert_eq!(now.opacity, Some(1.0)); // its own: at once
+            /// assert_eq!(now.width, Some(0.0)); // the app's: a spring, on its way
+            /// ```
+            #[must_use]
+            pub fn or(self, defaults: Transitions) -> Self {
+                Self {
+                    under: Layer {
+                        $($field: self.under.$field.or(defaults.named(|layer| layer.$field)),)*
+                    },
+                    ..self
+                }
+            }
+
+            /// The transition this names for one value, layer by layer: its
+            /// own, the whole look's, then the defaults under it. The one place
+            /// that says the order.
+            fn named(&self, value: impl Fn(&Layer) -> Option<Transition>) -> Option<Transition> {
+                value(&self.own).or(self.all).or(value(&self.under))
+            }
+        }
+
+        impl LookMotion {
+            /// A look at rest.
+            #[must_use]
+            pub fn at(look: Look) -> Self {
+                use crate::Animatable;
+                let look = look.finite();
+                Self {
+                    target: look,
+                    $($field: Motion::at(
+                        look.$field
+                            .map($to)
+                            .unwrap_or_else(|| <$repr>::from_channels(Default::default())),
+                    ),)*
+                }
+            }
+
+            /// Changes course at `now`: each value the last look named moves
+            /// from where it is then, with its transition from `transitions`,
+            /// and each value it did not name takes its new value at once.
+            ///
+            /// A value whose target is the same as before keeps its course,
+            /// whatever its transition is: a look changes as a whole, and the
+            /// values it does not change are left alone. To put every value on
+            /// its target at once, use [`jump_to`](Self::jump_to).
+            pub fn set_target(&mut self, look: Look, transitions: impl Into<Transitions>, now: Duration) {
+                let look = look.finite();
+                let transitions = transitions.into();
+                let was = self.target;
+                $(retarget(
+                    &mut self.$field,
+                    was.$field.map($to),
+                    look.$field.map($to),
+                    transitions.named(|layer| layer.$field).unwrap_or($default),
+                    now,
+                );)*
+                self.target = look;
+            }
+
+            /// The look at `now`, with the values the target names. It never
+            /// changes the motion.
+            #[must_use]
+            pub fn sample(&self, now: Duration) -> Sample<Look> {
+                let mut settled = true;
+                let target = self.target;
+                let look = Look {
+                    $($field: read(target.$field.map($to), &self.$field, now, &mut settled).map($from),)*
+                };
+                Sample {
+                    value: look,
+                    settled,
+                }
+            }
+        }
+    };
 }
 
-fn two(value: Option<(f32, f32)>) -> Option<Pixels<2>> {
-    value.map(|(x, y)| Pixels([x, y]))
+values! {
+    offset: Pixels<2> = |(x, y)| Pixels([x, y]), |Pixels([x, y])| (x, y), Transition::Spring(Spring::SNAPPY), "offset";
+    opacity: f32 = |value| value, |value| value, Transition::Tween(FADE), "opacity";
+    width: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "width";
+    height: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "height";
+    radius: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "radius of the corners";
+    background: Color = |value| value, |value| value, Transition::Tween(FADE), "background color";
+    text_color: Color = |value| value, |value| value, Transition::Tween(FADE), "text color";
+    border_color: Color = |value| value, |value| value, Transition::Tween(FADE), "border color";
+}
+
+impl From<Transition> for Transitions {
+    fn from(transition: Transition) -> Self {
+        Self::new().all(transition)
+    }
+}
+
+impl From<Spring> for Transitions {
+    fn from(spring: Spring) -> Self {
+        Self::new().all(spring)
+    }
+}
+
+impl From<Tween> for Transitions {
+    fn from(tween: Tween) -> Self {
+        Self::new().all(tween)
+    }
 }
 
 impl LookMotion {
-    /// A look at rest.
-    #[must_use]
-    pub fn at(look: Look) -> Self {
-        let look = look.finite();
-        Self {
-            target: look,
-            offset: Motion::at(two(look.offset).unwrap_or(Pixels([0.0; 2]))),
-            opacity: Motion::at(look.opacity.unwrap_or_default()),
-            width: Motion::at(one(look.width).unwrap_or(Pixels([0.0]))),
-            height: Motion::at(one(look.height).unwrap_or(Pixels([0.0]))),
-            radius: Motion::at(one(look.radius).unwrap_or(Pixels([0.0]))),
-            background: Motion::at(look.background.unwrap_or(Color::TRANSPARENT)),
-            text_color: Motion::at(look.text_color.unwrap_or(Color::TRANSPARENT)),
-            border_color: Motion::at(look.border_color.unwrap_or(Color::TRANSPARENT)),
-        }
-    }
-
     /// Heads for `look` and returns the look at `now`.
     ///
     /// Like [`Motion::toward`], it changes course only when `look` differs
-    /// from the last one, and `transition` is used for that change of course.
+    /// from the last one, and `transitions` are used for that change of course.
     pub fn toward(
         &mut self,
         look: Look,
-        transition: impl Into<Transition>,
+        transitions: impl Into<Transitions>,
         now: Duration,
     ) -> Sample<Look> {
         let look = look.finite();
         if look != self.target {
-            self.set_target(look, transition, now);
+            self.set_target(look, transitions, now);
         }
         self.sample(now)
-    }
-
-    /// Changes course at `now`: each value the last look named moves from
-    /// where it is then, and each value it did not name takes its new value at
-    /// once.
-    ///
-    /// A value whose target is the same as before keeps its course, whatever
-    /// `transition` is: a look changes as a whole, and the values it does not
-    /// change are left alone. To put every value on its target at once, use
-    /// [`jump_to`](Self::jump_to).
-    pub fn set_target(&mut self, look: Look, transition: impl Into<Transition>, now: Duration) {
-        let look = look.finite();
-        let transition = transition.into();
-        let was = self.target;
-        retarget(
-            &mut self.offset,
-            two(was.offset),
-            two(look.offset),
-            transition,
-            now,
-        );
-        retarget(
-            &mut self.opacity,
-            was.opacity,
-            look.opacity,
-            transition,
-            now,
-        );
-        retarget(
-            &mut self.width,
-            one(was.width),
-            one(look.width),
-            transition,
-            now,
-        );
-        retarget(
-            &mut self.height,
-            one(was.height),
-            one(look.height),
-            transition,
-            now,
-        );
-        retarget(
-            &mut self.radius,
-            one(was.radius),
-            one(look.radius),
-            transition,
-            now,
-        );
-        retarget(
-            &mut self.background,
-            was.background,
-            look.background,
-            transition,
-            now,
-        );
-        retarget(
-            &mut self.text_color,
-            was.text_color,
-            look.text_color,
-            transition,
-            now,
-        );
-        retarget(
-            &mut self.border_color,
-            was.border_color,
-            look.border_color,
-            transition,
-            now,
-        );
-        self.target = look;
     }
 
     /// Puts the look at `look`, at rest, with no motion.
     pub fn jump_to(&mut self, look: Look) {
         *self = Self::at(look);
-    }
-
-    /// The look at `now`, with the values the target names. It never changes
-    /// the motion.
-    #[must_use]
-    pub fn sample(&self, now: Duration) -> Sample<Look> {
-        let mut settled = true;
-        let target = self.target;
-        let look = Look {
-            offset: read(two(target.offset), &self.offset, now, &mut settled)
-                .map(|Pixels([x, y])| (x, y)),
-            opacity: read(target.opacity, &self.opacity, now, &mut settled),
-            width: read(one(target.width), &self.width, now, &mut settled)
-                .map(|Pixels([value])| value),
-            height: read(one(target.height), &self.height, now, &mut settled)
-                .map(|Pixels([value])| value),
-            radius: read(one(target.radius), &self.radius, now, &mut settled)
-                .map(|Pixels([value])| value),
-            background: read(target.background, &self.background, now, &mut settled),
-            text_color: read(target.text_color, &self.text_color, now, &mut settled),
-            border_color: read(target.border_color, &self.border_color, now, &mut settled),
-        };
-        Sample {
-            value: look,
-            settled,
-        }
     }
 
     /// Where the look is heading.
@@ -686,6 +768,175 @@ ms               x           y     opacity
         card.set_target(Look::new().width(300.0).opacity(1.0), glide(), ms(40));
         assert_eq!(card.sample(ms(40)).value.width, Some(300.0));
         assert_eq!(card.target(), Look::new().width(300.0).opacity(1.0));
+    }
+
+    #[test]
+    fn with_no_transition_sizes_spring_and_opacity_and_colors_fade() {
+        let white = Color::hex(0xff_ffff);
+        let mut card = LookMotion::at(
+            Look::new()
+                .offset(0.0, 0.0)
+                .size(0.0, 0.0)
+                .radius(0.0)
+                .opacity(0.0)
+                .background(Color::TRANSPARENT)
+                .text_color(Color::TRANSPARENT)
+                .border_color(Color::TRANSPARENT),
+        );
+        let shown = Look::new()
+            .offset(100.0, 100.0)
+            .size(100.0, 100.0)
+            .radius(100.0)
+            .opacity(1.0)
+            .background(white)
+            .text_color(white)
+            .border_color(white);
+        card.set_target(shown, Transitions::new(), ms(0));
+        // Each value against a motion of its own with the default it should have.
+        let mut spring = Motion::at(0.0);
+        spring.set_target(100.0, Spring::SNAPPY, ms(0));
+        let mut fade = Motion::at(0.0);
+        fade.set_target(1.0, FADE, ms(0));
+        let mut color = Motion::at(Color::TRANSPARENT);
+        color.set_target(white, FADE, ms(0));
+        for at in [ms(30), ms(60), ms(120)] {
+            let (look, spring, fade, color) = (
+                card.sample(at).value,
+                spring.sample(at).value,
+                fade.sample(at).value,
+                Some(color.sample(at).value),
+            );
+            assert_eq!(look.offset, Some((spring, spring)), "at {at:?}");
+            assert_eq!(
+                (look.width, look.height, look.radius),
+                (Some(spring), Some(spring), Some(spring))
+            );
+            assert_eq!(look.opacity, Some(fade));
+            assert_eq!(
+                (look.background, look.text_color, look.border_color),
+                (color, color, color)
+            );
+        }
+        // The fades are 150 ms tweens: exactly there at 150 ms.
+        let at_150 = card.sample(ms(150));
+        assert_eq!(at_150.value.opacity, Some(1.0));
+        assert_eq!(at_150.value.border_color, Some(white));
+        assert!(!at_150.settled, "the spring is still on its way");
+    }
+
+    #[test]
+    fn an_all_after_or_still_wins_over_the_defaults() {
+        let slow = Tween::new(ms(1_000), Easing::Linear);
+        let fast = Tween::new(ms(100), Easing::Linear);
+        let start = Look::new().width(0.0);
+        let end = Look::new().width(100.0);
+        for transitions in [
+            Transitions::new()
+                .all(fast)
+                .or(Transitions::new().width(slow)),
+            Transitions::new()
+                .or(Transitions::new().width(slow))
+                .all(fast),
+            Transitions::new()
+                .all(slow)
+                .or(Transitions::new())
+                .all(fast),
+        ] {
+            let mut card = LookMotion::at(start);
+            card.set_target(end, transitions, ms(0));
+            assert_eq!(
+                card.sample(ms(50)).value.width,
+                Some(50.0),
+                "{transitions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn three_layers_each_give_the_values_they_name() {
+        let linear = |millis| Tween::new(ms(millis), Easing::Linear);
+        // An element over a view over an app, each naming a value and an all.
+        let element = Transitions::new().width(linear(100));
+        let view = Transitions::new().opacity(linear(200)).radius(linear(400));
+        let app = Transitions::new()
+            .all(linear(1_000))
+            .radius(Transition::Instant);
+        let mut card = LookMotion::at(Look::new().width(0.0).opacity(0.0).radius(0.0).height(0.0));
+        card.set_target(
+            Look::new()
+                .width(100.0)
+                .opacity(1.0)
+                .radius(100.0)
+                .height(100.0),
+            element.or(view).or(app),
+            ms(0),
+        );
+        let now = card.sample(ms(50)).value;
+        assert_eq!(now.width, Some(50.0), "the element's own");
+        assert_eq!(now.opacity, Some(0.25), "the view's");
+        assert_eq!(
+            now.radius,
+            Some(12.5),
+            "the view's, over the app's own for it"
+        );
+        assert_eq!(now.height, Some(5.0), "the app's all");
+    }
+
+    #[test]
+    fn a_values_own_transition_wins_over_the_looks_which_wins_over_the_defaults() {
+        let slow = Tween::new(ms(1_000), Easing::Linear);
+        let fast = Tween::new(ms(100), Easing::Linear);
+        let defaults = Transitions::new().all(slow).radius(Transition::Instant);
+        let start = Look::new().width(0.0).opacity(0.0).radius(0.0).height(0.0);
+        let end = Look::new()
+            .width(100.0)
+            .opacity(1.0)
+            .radius(10.0)
+            .height(100.0);
+
+        // The value's own over the look's.
+        let mut card = LookMotion::at(start);
+        card.set_target(end, Transitions::new().all(fast).opacity(slow), ms(0));
+        let now = card.sample(ms(50)).value;
+        assert_eq!((now.width, now.opacity), (Some(50.0), Some(0.05)));
+
+        // The look's over the defaults', even over a default for one value.
+        let mut card = LookMotion::at(start);
+        card.set_target(end, Transitions::new().all(fast).or(defaults), ms(0));
+        let now = card.sample(ms(50)).value;
+        assert_eq!((now.width, now.radius), (Some(50.0), Some(5.0)));
+
+        // With nothing given here, the defaults, the one for a value first.
+        let mut card = LookMotion::at(start);
+        card.set_target(end, Transitions::new().height(fast).or(defaults), ms(0));
+        let now = card.sample(ms(50)).value;
+        assert_eq!(
+            (now.width, now.radius, now.height),
+            (Some(5.0), Some(10.0), Some(50.0))
+        );
+    }
+
+    #[test]
+    fn two_values_of_one_look_arrive_on_their_own_clocks() {
+        let mut card = LookMotion::at(Look::new().offset(0.0, 40.0).opacity(0.0));
+        card.set_target(
+            Look::new().offset(0.0, 0.0).opacity(1.0),
+            Transitions::new()
+                .offset(Tween::new(ms(200), Easing::Linear))
+                .opacity(Tween::new(ms(100), Easing::Linear)),
+            ms(0),
+        );
+        assert_eq!(
+            Trace::of(&card, ms(0), ms(50)).to_string(),
+            "\
+ms               x           y     opacity
+0            0.000      40.000       0.000
+50           0.000      30.000       0.500
+100          0.000      20.000       1.000
+150          0.000      10.000       1.000
+200          0.000       0.000       1.000  settled
+"
+        );
     }
 
     #[test]

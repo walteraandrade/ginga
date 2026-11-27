@@ -26,6 +26,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[decisions/2026-11-27-a-brain-folder-for-memory]]: this folder, and why not a memory server (#36).
 - [[decisions/2026-11-27-colors-mix-in-linear-light-premultiplied]]: how two colors are mixed (#26).
 - [[decisions/2026-11-27-keyframes-are-an-array-of-stops]]: keyframes keep their stops in an array (#30).
+- [[decisions/2026-11-27-a-transition-for-each-value]]: each value of a look has its own transition, over defaults (#27).
 
 ## Codebase
 

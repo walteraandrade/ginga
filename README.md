@@ -296,9 +296,35 @@ let half = fill.sample(ms(50)).value.background.unwrap();
 assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);
 ```
 
-When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transition)`. Like `toward`, it asks for frames only while it moves and moves at once under reduced motion.
+When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and moves at once under reduced motion.
 
 In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
+
+Each value of a look can move on its own clock. A single `Transition`, `Spring` or `Tween` moves the whole look; a `Transitions` gives values their own, and what it leaves out comes from the defaults under it:
+
+| Value | With nothing given |
+| --- | --- |
+| offset, width, height, radius | `Spring::SNAPPY` |
+| opacity, background, text and border color | a 150 ms tween, `Easing::Out` |
+
+A value's own transition wins over the whole look's (`.all(..)`), which wins over the defaults it is laid over with `.or(defaults)`, which win over the table. The layers hold whatever order the calls come in. A view keeps its defaults in a field or a function and lays each look's over them. An app sets its own once for every declared look with `ginga_gpui::set_default_look_transitions(transitions, cx)`; a `ginga_gpui::Motion` takes the transition it is given and nothing else.
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Look, LookMotion, Spring, Transitions, Tween};
+
+let ms = Duration::from_millis;
+let mut card = LookMotion::at(Look::new().offset(0.0, 120.0).opacity(0.0));
+let shown = Look::new().offset(0.0, 0.0).opacity(1.0);
+// It springs to its place while it fades in a fixed 100 ms.
+let transitions = Transitions::new()
+    .offset(Spring::BOUNCY)
+    .opacity(Tween::new(ms(100), Easing::Linear));
+card.set_target(shown, transitions, ms(0));
+let at_100 = card.sample(ms(100)).value;
+assert_eq!(at_100.opacity, Some(1.0));        // the fade is over
+assert!(at_100.offset.unwrap().1 > 0.0);       // the spring is still on its way
+```
 
 ## An element to drag
 

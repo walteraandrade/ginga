@@ -41,6 +41,8 @@ mod pulse;
 mod tests;
 #[cfg(target_os = "linux")]
 mod toward;
+#[cfg(target_os = "linux")]
+mod transitions;
 
 fn main() {
     #[cfg(target_os = "linux")]

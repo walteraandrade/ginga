@@ -18,6 +18,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Transition** (`Transition`). How a motion gets to its target: a spring, a tween, or `Transition::Instant`.
 
+**Transitions** (`Transitions`). A transition for each value of a look. A value's own wins over the one for the whole look (`all`), which wins over the defaults it is laid over (`or`), which win over ginga's own: a spring for places and sizes, a short tween for opacity and colors.
+
 **Instant** (`Transition::Instant`). No motion: the value is on its target at once. What reduced motion uses.
 
 **Spring** (`Spring`). A transition with no fixed length that keeps the value's speed across a change of course. Built from a response and a bounce. The presets are `Spring::SNAPPY`, `Spring::SMOOTH` and `Spring::BOUNCY`.

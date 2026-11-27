@@ -29,10 +29,10 @@ pub use drag::{Drag, DragExt, DragState, Dragged};
 use ginga::Animatable;
 pub use ginga::{
     Coast, CoastError, Color, Easing, InOut, KeyframesError, Look, LookMotion, Phase, PresenceList,
-    Sample, Shown, ShownItem, Spring, SpringError, Stop, Trace, Transition, Tween,
+    Sample, Shown, ShownItem, Spring, SpringError, Stop, Trace, Transition, Transitions, Tween,
 };
 pub use keyframes::Keyframes;
-pub use look::{LookExt, LookState, Looked, color};
+pub use look::{LookExt, LookState, Looked, color, set_default_look_transitions};
 
 mod drag;
 mod keyframes;
@@ -190,11 +190,17 @@ impl Clock {
 /// The transition to use this frame: `transition`, or none at all when the
 /// desktop asks for reduced motion.
 pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition {
-    if cx.reduce_motion() {
+    if reduced(cx) {
         Transition::Instant
     } else {
         transition.into()
     }
+}
+
+/// The desktop asks for reduced motion: then every motion in the adapter is
+/// at its target at once. The one place that asks.
+fn reduced(cx: &App) -> bool {
+    cx.reduce_motion()
 }
 
 /// A value on its way to a target, owned by a view.

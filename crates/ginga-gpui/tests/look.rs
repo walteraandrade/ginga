@@ -3,7 +3,7 @@
 
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-use ginga_gpui::{Easing, Look, LookExt, LookState, Tween};
+use ginga_gpui::{Easing, Look, LookExt, LookState, Transitions, Tween};
 use gpui::{
     Bounds, Context, IntoElement, ParentElement, Pixels, Render, Styled, TestAppContext, Window,
     WindowHandle, canvas, div, point, px, size,
@@ -28,6 +28,7 @@ struct Cards {
     /// Keep the motion in the view instead of with the card's id.
     owned: Option<LookState>,
     shown: bool,
+    transitions: Transitions,
     drawn: Drawn,
 }
 
@@ -42,8 +43,8 @@ impl Render for Cards {
             .size_full(),
         );
         let card = match &self.owned {
-            Some(state) => card.look_with(state, self.look, glide()),
-            None => card.look("card", self.look, glide()),
+            Some(state) => card.look_with(state, self.look, self.transitions),
+            None => card.look("card", self.look, self.transitions),
         };
         let card = match self.from {
             Some(from) => card.from(from),
@@ -67,6 +68,7 @@ fn open(
             from,
             owned: owned.then(LookState::default),
             shown: true,
+            transitions: glide().into(),
             drawn,
         }
     });
@@ -185,11 +187,44 @@ fn on_first_appearance_it_takes_its_look_unless_it_starts_from_one(cx: &mut Test
 }
 
 #[gpui::test]
+fn the_apps_default_transitions_fill_in_what_the_element_leaves_out(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        ginga_gpui::set_default_look_transitions(Tween::new(ms(100), Easing::Linear), cx);
+    });
+    let (window, drawn) = open(cx, Look::new().size(100., 100.), None, false);
+    change(&window, cx, |cards| {
+        cards.transitions = Transitions::new().height(glide());
+        cards.look = Look::new().size(200., 200.);
+    });
+    after(50, &window, cx);
+    assert_eq!(
+        last(&drawn).size,
+        size(px(150.), px(125.)),
+        "the width on the app's 100 ms, the height on its own 200 ms"
+    );
+}
+
+#[gpui::test]
 fn under_reduced_motion_it_takes_each_look_at_once(cx: &mut TestAppContext) {
     cx.update(|cx| cx.set_reduce_motion(true));
     let (window, drawn) = open(cx, Look::new().width(100.), None, false);
     change(&window, cx, |cards| cards.look = Look::new().width(200.));
     assert_eq!(last(&drawn).size.width, px(200.));
+    assert_eq!(after(16, &window, cx), 0);
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_values_own_transition_moves_at_once_too(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.set_reduce_motion(true);
+        ginga_gpui::set_default_look_transitions(Tween::new(ms(100), Easing::Linear), cx);
+    });
+    let (window, drawn) = open(cx, Look::new().size(100., 100.), None, false);
+    change(&window, cx, |cards| {
+        cards.transitions = Transitions::new().height(glide());
+        cards.look = Look::new().size(200., 200.);
+    });
+    assert_eq!(last(&drawn).size, size(px(200.), px(200.)));
     assert_eq!(after(16, &window, cx), 0);
 }
 

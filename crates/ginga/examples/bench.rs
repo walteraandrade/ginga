@@ -135,12 +135,14 @@ fn main() {
             Spring::SNAPPY,
         ),
     ];
-    let mut best = [[f64::MAX; 2]; 8];
+    // Each case's best time, moving and settled; `None` for what it doesn't time.
+    let mut best = cases.each_ref().map(|_| [None::<f64>; 2]);
     for _ in 0..ROUNDS {
         for (case, best) in cases.iter_mut().zip(&mut best) {
             for (round, best) in [&mut case.moving, &mut case.settled].into_iter().zip(best) {
                 if let Some(round) = round {
-                    *best = best.min(round());
+                    let ns = round();
+                    *best = Some(best.map_or(ns, |old| old.min(ns)));
                 }
             }
         }
@@ -150,13 +152,8 @@ fn main() {
         "ns per frame of", "moving", "settled", "frames"
     );
     for (case, best) in cases.iter().zip(best) {
-        let [moving, settled] = best.map(|ns| {
-            if ns == f64::MAX {
-                "-".to_owned()
-            } else {
-                format!("{ns:.1}")
-            }
-        });
+        let [moving, settled] =
+            best.map(|ns| ns.map_or_else(|| "-".to_owned(), |ns| format!("{ns:.1}")));
         let frames = case
             .frames
             .map_or_else(|| "every".to_owned(), |n| n.to_string());

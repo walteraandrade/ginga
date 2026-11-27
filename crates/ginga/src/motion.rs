@@ -363,6 +363,23 @@ mod tests {
     }
 
     #[test]
+    fn drawing_reads_the_same_values_as_reading_the_speed_too() {
+        let over = Spring::SMOOTH.bounce(-0.5).unwrap();
+        for spring in [Spring::SMOOTH, Spring::BOUNCY, over] {
+            let mut motion = Motion::at((0.0, 10.0, -40.0, 1.0));
+            motion.set_target((300.0, 80.0, 12.0, 0.0), spring, ms(0));
+            // A change of course mid-flight: each channel carries its own speed.
+            motion.set_target((-20.0, 200.0, 12.0, 0.5), spring, ms(90));
+            for millis in (90..1_500).step_by(7) {
+                let now = ms(millis);
+                let drawn = motion.state(now, Read::Value).value;
+                let read = motion.state(now, Read::ValueAndSpeed).value;
+                assert_eq!(drawn, read, "{spring:?} at {millis} ms");
+            }
+        }
+    }
+
+    #[test]
     fn a_spring_picks_up_the_speed_of_the_tween_it_interrupts() {
         let mut motion = Motion::at(0.0);
         motion.set_target(100.0, linear(200), ms(0));

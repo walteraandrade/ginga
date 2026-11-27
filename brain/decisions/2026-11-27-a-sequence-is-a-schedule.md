@@ -13,6 +13,9 @@
 **What follows from it.**
 
 - A step after a spring starts at the spring's `settles_at`, a safe bound: the spring looks arrived a little before the next step starts.
-- A motion given another target in the middle leaves the sequence's times behind; the docs say so.
+- A motion given another target in the middle leaves the sequence's times behind, and the sequence's end does not move; the docs say so and say to start another sequence.
+- Every step is added when the sequence starts. The steps take no `now`: a step added later would set its target back at the start and the motion would jump. Taking `now` in each call was weighed and left out to keep the calls short; a later step belongs to a new sequence. Each motion takes one step, as a second target replaces the first.
+- A step's `starts` is when its motion moves: its place, then its transition's own delay.
+- For `SettledOnce` to hear a target taken at once (reduced motion turns every transition into `Instant`), `Motion::settles_at` gives the time such a target was set, not `None`. `None` is left for a value only placed, with `at` or `jump_to`.
 - A follower needs no type: `toward` on every frame with the leader's value retargets a spring that keeps its speed. A test checks it trails without jumps and settles exactly on the leader's rest.
 - `Map::at` gives the ends back exactly as given: a color rebuilt from its channels would not compare equal.

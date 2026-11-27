@@ -28,9 +28,17 @@ use crate::{Animatable, Motion, Transition};
 /// ```
 ///
 /// A sequence is a schedule: it sets the motions' targets once, when each
-/// step is added, and keeps only the times. A motion that is given another
-/// target before its step ends leaves the sequence's times behind: the
-/// sequence still says it settles when it would have.
+/// step is added, and keeps only the times. So:
+///
+/// - Add every step when the sequence starts, at the time it was started
+///   with. A step added later would set its motion's target back at that
+///   time, and the motion would jump; for steps that come later, start
+///   another sequence then.
+/// - Give each motion one step. A second step on the same motion replaces the
+///   first, as a second target does.
+/// - A motion given another target before its step ends leaves the
+///   sequence's times behind: the sequence still says it settles when it
+///   would have. To wait for the new end, start another sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sequence {
     start: Duration,
@@ -42,7 +50,8 @@ pub struct Sequence {
 /// same clock as the motions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Step {
-    /// When the step's motion starts to move.
+    /// When the step's motion starts to move: its place in the sequence,
+    /// and after that a delay its transition has of its own.
     pub starts: Duration,
     /// When the step's motion is settled on its target. For a spring this is
     /// a safe bound, as [`Motion::settles_at`] says.
@@ -98,7 +107,8 @@ impl Sequence {
 
     /// Adds a step that starts at `starts`: a set time after another step
     /// starts, or before it ends, to overlap. A time before the sequence
-    /// starts counts as its start. A delay on `transition` is added to it.
+    /// starts counts as its start. A delay on `transition` is added to it,
+    /// and the step starts after both.
     pub fn at<T: Animatable>(
         &mut self,
         starts: Duration,
@@ -112,6 +122,9 @@ impl Sequence {
             .saturating_sub(self.start)
             .saturating_add(transition.start_delay());
         motion.set_target(target, transition.delay(delay), self.start);
+        let starts = self.start.saturating_add(delay);
+        // A motion already on its target ended when its target was set,
+        // before its place: then the step ends where it starts.
         let step = Step {
             starts,
             ends: motion.settles_at().unwrap_or(starts).max(starts),
@@ -136,9 +149,15 @@ impl Sequence {
 /// [`Motion::settles_at`] or [`Sequence::settles_at`]. It answers `true`
 /// on the first check at or after that time, and not again for it.
 ///
-/// Interrupted first, by a new target, the end it waited for never comes: it
-/// answers `true` once for the new end instead. A motion put at rest at once,
-/// with no motion, has no end to wait for, and is not reported.
+/// A motion given a new target before its end has a new end: the old one
+/// never comes, and it answers `true` once for the new one instead. A target
+/// taken at once, as under reduced motion, ends when it is set, and is
+/// answered on the next check. A motion only placed, with
+/// [`Motion::jump_to`], has no end and is not reported.
+///
+/// A sequence's end does not move when one of its motions gets a new target:
+/// the sequence is a schedule, and its end is the time it was given. To wait
+/// for a new end, start another sequence.
 ///
 /// ```
 /// use std::time::Duration;
@@ -247,9 +266,10 @@ button  1300 ms to 1400 ms
         assert_eq!(
             second,
             Step {
-                starts: ms(30),
+                starts: ms(50),
                 ends: ms(150)
-            }
+            },
+            "it moves from 50 ms: 30 apart, then its own 20"
         );
         assert_eq!(b.sample(ms(50)).value, 0.0);
         assert_eq!(b.sample(ms(100)).value, 0.5);
@@ -260,13 +280,69 @@ button  1300 ms to 1400 ms
         let mut still = Motion::at(1.0);
         let mut sequence = Sequence::starting_at(ms(0));
         let step = sequence.at(ms(40), &mut still, 1.0, linear(100));
-        assert!(step.ends >= step.starts);
+        assert_eq!(
+            step,
+            Step {
+                starts: ms(40),
+                ends: ms(40)
+            }
+        );
         assert_eq!(
             sequence
                 .at(ms(0), &mut still, 1.0, Transition::Instant)
                 .ends,
             ms(0)
         );
+    }
+
+    #[test]
+    fn a_time_before_the_sequence_starts_counts_as_its_start() {
+        let mut x = Motion::at(0.0);
+        let mut sequence = Sequence::starting_at(ms(1_000));
+        let step = sequence.at(ms(0), &mut x, 1.0, linear(100));
+        assert_eq!(
+            step,
+            Step {
+                starts: ms(1_000),
+                ends: ms(1_100)
+            }
+        );
+        assert_eq!(x.sample(ms(1_050)).value, 0.5);
+    }
+
+    #[test]
+    fn a_second_step_on_one_motion_replaces_the_first() {
+        let mut x = Motion::at(0.0);
+        let mut sequence = Sequence::starting_at(ms(0));
+        sequence.then(&mut x, 1.0, linear(100));
+        sequence.then(&mut x, 0.0, linear(100));
+        assert_eq!(x.target(), 0.0, "as a second target would");
+        assert!(x.sample(ms(150)).settled);
+    }
+
+    #[test]
+    fn a_sequences_end_stays_when_one_of_its_motions_is_given_another_target() {
+        let mut x = Motion::at(0.0);
+        let mut sequence = Sequence::starting_at(ms(0));
+        sequence.then(&mut x, 1.0, linear(100));
+        x.set_target(2.0, linear(500), ms(50));
+        let mut ended = SettledOnce::default();
+        assert!(
+            ended.check(Some(sequence.settles_at()), ms(100)),
+            "the time it was given"
+        );
+        assert!(!x.sample(ms(100)).settled, "though the motion still moves");
+    }
+
+    #[test]
+    fn a_target_taken_at_once_is_reported_once_as_it_is_set() {
+        let mut toast = Motion::at(1.0);
+        let mut gone = SettledOnce::default();
+        toast.set_target(0.0, Transition::Instant, ms(40));
+        assert!(gone.check(toast.settles_at(), ms(40)));
+        assert!(!gone.check(toast.settles_at(), ms(56)));
+        toast.jump_to(1.0);
+        assert!(!gone.check(toast.settles_at(), ms(72)), "placed: no end");
     }
 
     #[test]

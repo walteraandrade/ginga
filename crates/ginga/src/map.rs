@@ -22,9 +22,11 @@ use crate::{Animatable, Motion, Sample, trace::Row};
 /// Each channel is mapped on its own, in a straight line: a color mixes in
 /// linear light, as when it moves.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Map<T> {
+pub struct Map<T: Animatable> {
     from: (f32, f32),
     to: (T, T),
+    /// The ends' channels, worked out once: a color's are not cheap.
+    channels: (T::Channels, T::Channels),
     clamped: bool,
 }
 
@@ -33,7 +35,7 @@ pub struct Map<T> {
 pub enum MapError {
     /// The range mapped from starts and ends at the same number.
     Empty,
-    /// An end of the range mapped from is not a finite number.
+    /// An end of either range is not a finite number.
     NotFinite,
 }
 
@@ -46,7 +48,7 @@ impl fmt::Display for MapError {
             ),
             Self::NotFinite => write!(
                 f,
-                "a map needs finite ends for the range it maps from, such as 0.0 and 1.0"
+                "a map needs finite ends, such as 0.0 and 1.0 mapped onto 40.0 and 240.0"
             ),
         }
     }
@@ -62,9 +64,15 @@ impl<T: Animatable> Map<T> {
     /// # Errors
     ///
     /// [`MapError::Empty`] when `from_start` and `from_end` are the same,
-    /// and [`MapError::NotFinite`] when either is not finite.
+    /// and [`MapError::NotFinite`] when any end of either range, or any
+    /// channel of one, is not finite.
     pub fn new(from_start: f32, from_end: f32, to_start: T, to_end: T) -> Result<Self, MapError> {
         if !from_start.is_finite() || !from_end.is_finite() {
+            return Err(MapError::NotFinite);
+        }
+        let channels = (to_start.to_channels(), to_end.to_channels());
+        let finite = |channels: &T::Channels| channels.as_ref().iter().all(|c| c.is_finite());
+        if !finite(&channels.0) || !finite(&channels.1) {
             return Err(MapError::NotFinite);
         }
         if from_start == from_end {
@@ -73,6 +81,7 @@ impl<T: Animatable> Map<T> {
         Ok(Self {
             from: (from_start, from_end),
             to: (to_start, to_end),
+            channels,
             clamped: false,
         })
     }
@@ -88,23 +97,23 @@ impl<T: Animatable> Map<T> {
         }
     }
 
-    /// The value for `number`. A number that is not finite gives the start.
+    /// The value for `number`. NaN gives the start. An infinite number
+    /// gives the end it passes when the map is clamped, and the start when
+    /// it is not, as there is no value that far.
     #[must_use]
     pub fn at(&self, number: f32) -> T {
         let (start, end) = self.from;
         let mut part = (number - start) / (end - start);
-        if !part.is_finite() {
+        if part.is_nan() {
             part = 0.0;
         }
         if self.clamped {
             part = part.clamp(0.0, 1.0);
+        } else if !part.is_finite() {
+            part = 0.0;
         }
-        let mut channels = self.to.0.to_channels();
-        for (channel, to) in channels
-            .as_mut()
-            .iter_mut()
-            .zip(self.to.1.to_channels().as_ref())
-        {
+        let mut channels = self.channels.0;
+        for (channel, to) in channels.as_mut().iter_mut().zip(self.channels.1.as_ref()) {
             *channel += (to - *channel) * part;
         }
         // The ends come back exactly as they were given.
@@ -137,7 +146,7 @@ impl<T: Animatable> Map<T> {
 /// # Ok::<(), ginga::MapError>(())
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct Mapped<'a, T> {
+pub struct Mapped<'a, T: Animatable> {
     map: &'a Map<T>,
     motion: &'a Motion<f32>,
 }
@@ -230,6 +239,32 @@ ms           value
         let fill = Map::new(0.0, 1.0, Color::TRANSPARENT, blue).unwrap();
         assert_eq!(fill.at(1.0), blue, "not rebuilt from its channels");
         assert_eq!(fill.at(f32::NAN), Color::TRANSPARENT);
+        // The start comes back exactly too, a color that its channels lose.
+        let back = Map::new(0.0, 1.0, blue, Color::TRANSPARENT).unwrap();
+        assert_eq!(back.at(0.0), blue);
+    }
+
+    #[test]
+    fn nan_gives_the_start_and_infinity_the_end_it_passes_when_clamped() {
+        let width = Map::new(0.0, 1.0, 40.0, 240.0).unwrap();
+        assert_eq!(width.at(f32::NAN), 40.0);
+        assert_eq!(
+            width.at(f32::INFINITY),
+            40.0,
+            "unclamped: no value that far"
+        );
+        assert_eq!(width.clamped().at(f32::INFINITY), 240.0);
+        assert_eq!(width.clamped().at(f32::NEG_INFINITY), 40.0);
+        assert_eq!(width.clamped().at(f32::NAN), 40.0);
+    }
+
+    #[test]
+    fn a_range_onto_values_that_are_not_finite_does_not_build() {
+        assert_eq!(Map::new(0.0, 1.0, 0.0, f32::NAN), Err(MapError::NotFinite));
+        assert_eq!(
+            Map::new(0.0, 1.0, f32::INFINITY, 1.0),
+            Err(MapError::NotFinite)
+        );
     }
 
     #[test]
@@ -240,6 +275,7 @@ ms           value
         let mut last = 0.0;
         let mut frame = 0;
         let settled_at = loop {
+            assert!(frame < 200, "the follower never settled");
             let now = ms(frame * 16);
             let lead = leader.sample(now);
             let ahead = lead.value;

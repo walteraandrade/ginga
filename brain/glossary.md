@@ -70,7 +70,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Sequence** (`Sequence`, `Step`). Motions started as one at set times: `then` after the step before, `with` together with it, `at` a given time. It sets each target once with a delay and keeps only the times; a *step* is one motion's start and end.
 
-**Settled once** (`SettledOnce`). Says `true` once, on the first check at or after an end time: for code that runs once when a motion or a sequence settles. A new target before the end moves the end, and the old one is never reported.
+**Settled once** (`SettledOnce`). Says `true` once, on the first check at or after an end time: for code that runs once when a motion or a sequence settles. A new target before a motion's end moves the end, and the old one is never reported; a target taken at once ends when it is set. A sequence's end never moves.
 
 **Snap point.** A value a coast may come to rest on: of the snap points given, the one nearest to where it would rest.
 
@@ -140,7 +140,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Drag** (`ginga_gpui::Drag`, `.draggable`). The pointer takes an element and it follows exactly, with no spring between them. Let go, it is *thrown*: it keeps the pointer's speed, which a *trail* measures, and coasts. A pointer still for 50 ms before it lets go sets the element down instead. `DragState` holds where the element is; `throw` lets it go without a pointer.
 
-**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), the transitions page with a transition for each value (#27), the compose page with maps and sequences (#34), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
 
 ## Looks
 

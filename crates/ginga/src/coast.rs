@@ -207,7 +207,7 @@ ms           value
         let sample = still.sample(ms(0));
         assert!(sample.settled);
         assert_eq!(sample.value, Coast::QUICK.rest(5.0, 0.005));
-        assert_eq!(still.settles_at(), None);
+        assert_eq!(still.settles_at(), Some(ms(0)), "it ended as it was let go");
     }
 
     #[test]

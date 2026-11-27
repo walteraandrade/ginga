@@ -37,6 +37,9 @@ pub struct Motion<T: Animatable> {
     goal: T,
     target: T::Channels,
     drive: Drive<T::Channels>,
+    /// When the last target was set, if the value rested on it at once,
+    /// with no motion: that is when it ended. `None` for a value only placed.
+    rested: Option<Duration>,
 }
 
 /// A [`Motion`] at one instant.
@@ -100,6 +103,7 @@ impl<T: Animatable> Motion<T> {
             goal: value,
             target: value.to_channels(),
             drive: Drive::Rest,
+            rested: None,
         }
     }
 
@@ -155,6 +159,13 @@ impl<T: Animatable> Motion<T> {
             Transition::Tween(tween) => self.tween(tween, &state, start),
             Transition::Instant => Drive::Rest,
         };
+        self.note_rest(now);
+    }
+
+    /// Notes that the value rested on its new target at once, if it did, so
+    /// that [`settles_at`](Self::settles_at) says when that move ended.
+    fn note_rest(&mut self, now: Duration) {
+        self.rested = matches!(self.drive, Drive::Rest).then_some(now);
     }
 
     /// Lets the value go at `now` with `velocity`, in units per second: it
@@ -192,6 +203,7 @@ impl<T: Animatable> Motion<T> {
         } else {
             Drive::Rest
         };
+        self.note_rest(now);
     }
 
     /// As [`coast`](Self::coast), but it comes to rest with every channel
@@ -268,6 +280,7 @@ impl<T: Animatable> Motion<T> {
         } else {
             self.spring(spring, &state, now)
         };
+        self.note_rest(now);
     }
 
     /// Puts the value at `value`, at rest, with no motion.
@@ -302,12 +315,15 @@ impl<T: Animatable> Motion<T> {
         self.goal
     }
 
-    /// When the value reaches its target, or `None` when it is at rest. For a
-    /// spring this is a safe bound: the value may arrive a little earlier.
+    /// When the value reaches its target. For a spring this is a safe bound:
+    /// the value may arrive a little earlier. A target the value took at once,
+    /// with no motion or because it was there already, was reached when it
+    /// was set. `None` for a value only placed, with [`at`](Self::at) or
+    /// [`jump_to`](Self::jump_to).
     #[must_use]
     pub fn settles_at(&self) -> Option<Duration> {
         match self.drive {
-            Drive::Rest => None,
+            Drive::Rest => self.rested,
             Drive::Spring { settle, .. } | Drive::Coast { settle, .. } => Some(settle),
             Drive::Tween { tween, start, .. } => Some(start.saturating_add(tween.duration)),
         }
@@ -651,7 +667,11 @@ mod tests {
                 },
                 "{transition:?}"
             );
-            assert_eq!(motion.settles_at(), None, "{transition:?} rests at once");
+            assert_eq!(
+                motion.settles_at(),
+                Some(ms(10)),
+                "{transition:?} rests at once, and ended when it was set"
+            );
         }
     }
 
@@ -670,7 +690,7 @@ mod tests {
     fn a_move_smaller_than_the_precision_is_not_a_motion() {
         let mut motion = Motion::at(1.0);
         motion.set_target(1.0 + f32::PRECISION / 2.0, Spring::SMOOTH, ms(0));
-        assert_eq!(motion.settles_at(), None);
+        assert_eq!(motion.settles_at(), Some(ms(0)));
         assert!(motion.sample(ms(0)).settled);
     }
 

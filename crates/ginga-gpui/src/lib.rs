@@ -26,6 +26,7 @@
 
 use std::time::{Duration, Instant};
 
+pub use cover::{CoverExt, Coverable, Covered};
 pub use drag::{Drag, DragExt, DragState, Dragged};
 /// The engine itself, for what the adapter does not wrap: a [`ginga::Motion`]
 /// that a [`Sequence`] moves, read with a view's [`Clock`].
@@ -33,18 +34,21 @@ pub use ginga;
 use ginga::Animatable;
 pub use ginga::{
     Coast, CoastError, Color, Easing, InOut, KeyframesError, Look, LookMotion, Map, MapError,
-    Mapped, Order, Phase, PresenceList, Sample, Sequence, SettledOnce, Shown, ShownItem, Slot,
-    Spring, SpringError, Step, Stop, Swap, Trace, Transition, Transitions, Tween,
+    Mapped, Order, Phase, Sample, Sequence, SettledOnce, Shown, ShownItem, Slot, Spring,
+    SpringError, Step, Stop, Swap, Trace, Transition, Transitions, Tween,
 };
 pub use keyframes::Keyframes;
 pub use look::{LookExt, LookState, Looked, WithLook, color, set_default_look_transitions};
+pub use presence_list::PresenceList;
 pub use present::{Present, present};
 pub use shared::{Shared, SharedExt};
 pub use variant::Variant;
 
+mod cover;
 mod drag;
 mod keyframes;
 mod look;
+mod presence_list;
 mod present;
 mod shared;
 mod variant;

@@ -98,6 +98,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Phase** (`Phase`). Where something shown is in its life: `Entering`, `Present` or `Exiting`. Something `Exiting` is still drawn but should no longer take clicks or the focus.
 
+**Cover** (`CoverExt::cover`, `Covered`). What a presence draws, covered while the content leaves: a child over it takes the pointer, and a keyboard focus inside it is taken away. Nothing wraps it, so its layout does not change. `present` covers its leaving content the same way.
+
 **Present.** The phase of something shown and still. *Not settled*: see *settled*.
 
 **Progress.** How much of something shown is here: `0.0` gone, `1.0` fully here. A view draws it as opacity, scale, height or anything else. A bouncy spring passes both ends a little.
@@ -110,7 +112,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Arriving look** and **leaving look** (`ginga_gpui::Present::arrive_from`, `leave_to`). The look a thing presented with `present` arrives from and leaves to, mixed into its own by its progress. Without one, that way is instant.
 
-**List presence** (`PresenceList`). A presence for a list with keys. `sync` tells it what the list holds now: a new key arrives, a missing key leaves and keeps its place until it is gone, and a key that comes back turns around.
+**List presence** (`PresenceList`). A presence for a list with keys. `sync` tells it what the list holds now: a new key arrives, a missing key leaves and keeps its place until it is gone, and a key that comes back turns around. `ginga_gpui::PresenceList` is the same list on a view's clock: it asks for frames and applies reduced motion itself.
 
 **Key.** What identifies an item of a list presence across syncs. Keys are unique within a list.
 
@@ -132,7 +134,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Frame.** One time GPUI draws the window. A view that moves something asks for the next frame while it moves. *Not a sample*: see *sample*.
 
-**Frame request.** Asking GPUI to draw the next frame: `window.request_animation_frame()`. `ginga_gpui::Motion` and `ginga_gpui::Presence` do it while their value moves, and stop when it is settled.
+**Frame request.** Asking GPUI to draw the next frame: `window.request_animation_frame()`. `ginga_gpui::Motion`, `ginga_gpui::Presence` and `ginga_gpui::PresenceList` do it while their value moves, and stop when it is settled.
 
 **Clock** (`ginga_gpui::Clock`). The frame's time as the `Duration` the engine counts in, from the first frame the clock saw. The engine never reads a clock; the adapter reads one and hands the time on.
 

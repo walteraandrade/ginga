@@ -23,3 +23,9 @@ workspace = true
 [dev-dependencies]
 # GPUI's test platform: a clock the test moves and a simulated next frame, no display.
 gpui = { workspace = true, features = ["test-support"] }
+
+# A real window for the island's measurement example: GPUI's platform, on X11.
+# It builds on Linux only, and needs X11, Wayland, fontconfig and freetype's
+# development packages there.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", default-features = false, features = ["x11", "font-kit"] }

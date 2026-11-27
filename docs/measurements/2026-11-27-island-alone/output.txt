@@ -1,0 +1,47 @@
+# Batch 1 (the example before a change to how it parses a run's line; same measurement)
+run  mode     frames    fps heavy renders  ms/frame
+1    inside       72   14.3            72    46.557
+1    island      103   20.5             0    19.787
+2    inside       63   12.6            63    54.081
+2    island      104   20.7             0    22.975
+3    inside       66   13.0            66    50.491
+3    island      103   20.6             0    20.848
+4    inside       60   12.0            60    56.117
+4    island      102   20.3             0    21.723
+5    inside       68   13.4            68    49.847
+5    island      104   20.6             0    20.480
+
+inside  median 50.491 ms/frame, runs from 46.557 to 56.117
+island  median 20.848 ms/frame, runs from 19.787 to 22.975
+
+# Batch 2 (the example before the review: cells with ids, a fixed 1 s warm-up)
+run  mode     frames    fps heavy renders  ms/frame
+1    inside       74   14.8            74    44.391
+1    island      105   20.9             0    19.482
+2    inside       76   15.1            76    42.813
+2    island       94   18.7             0    22.696
+3    inside       70   13.9            70    47.584
+3    island      105   21.0             0    19.048
+4    inside       66   13.1            66    51.249
+4    island      104   20.8             0    18.766
+5    inside       71   14.1            71    48.090
+5    island      105   20.9             0    18.751
+
+inside  median 47.584 ms/frame, runs from 42.813 to 51.249
+island  median 19.048 ms/frame, runs from 18.751 to 22.696
+
+# Batch 3 (the example as committed: tagged result line, first-frame wait, no ids on cells, all-threads column; Rust 1.95)
+run  mode     frames    fps heavy renders  ms/frame all threads
+1    inside       67   13.3            67    49.597      87.435
+1    island      103   20.6             0    21.048      56.995
+2    inside       74   14.6            74    43.077      78.289
+2    island      103   20.5             0    23.706      60.090
+3    inside       67   13.3            67    49.272      85.430
+3    island      103   20.5             0    22.982      61.321
+4    inside       66   13.2            66    50.898      87.208
+4    island      103   20.5             0    22.408      59.171
+5    inside       71   14.1            71    45.858      82.710
+5    island      103   20.5             0    21.949      58.259
+
+inside  median 49.272 ms/frame on the main thread, runs from 43.077 to 50.898; 85.430 ms/frame on all threads
+island  median 22.408 ms/frame on the main thread, runs from 21.048 to 23.706; 59.171 ms/frame on all threads

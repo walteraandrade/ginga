@@ -62,6 +62,8 @@ jobs:
           key: adapter
           # Pull requests restore main's cache and save none, so they don't push it out.
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # GPUI's platform, which the examples open a window with, links against these.
+      - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libfreetype-dev
       - run: cargo fmt -p ginga-gpui --check
       - run: cargo clippy --locked -p ginga-gpui --all-targets -- -D warnings
       - run: cargo test --locked -p ginga-gpui

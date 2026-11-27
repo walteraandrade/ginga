@@ -31,6 +31,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/testing-the-adapter]]: GPUI's test platform: no display, a clock the test moves, exact values.
 - [[codebase/no-alloc-counts-one-thread]]: the allocation test counts the test's own thread only.
 - [[codebase/bouncy-spring-bench-and-code-layout]]: why the bouncy one-channel spring benchmarks slow (#6).
+- [[codebase/what-a-cached-view-saves]]: render, layout and paint, not the scene's trip to the GPU.
 
 ## Measurements
 
@@ -38,6 +39,7 @@ They stay in `docs/measurements/`, with their scripts and patches:
 
 - [The AI caret of Desafinado](../docs/measurements/2026-11-26-ai-caret/README.md): the engine costs nothing next to a frame.
 - [The AI caret in an island](../docs/measurements/2026-11-26-ai-caret-island/README.md): an island keeps the heavy pane from rendering.
+- [The island on its own](../docs/measurements/2026-11-27-island-alone/README.md): a synthetic heavy view, measured in a virtual display: the island more than halves the main thread's frame.
 
 ## How to write here
 

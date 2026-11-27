@@ -44,6 +44,7 @@
 #![forbid(unsafe_code)]
 
 mod animatable;
+mod color;
 mod easing;
 mod look;
 mod motion;
@@ -54,6 +55,7 @@ mod trace;
 mod transition;
 
 pub use animatable::Animatable;
+pub use color::Color;
 pub use easing::Easing;
 pub use look::{Look, LookMotion};
 pub use motion::{Motion, Sample};

@@ -367,7 +367,7 @@ When the logic of a motion lives in a crate that knows nothing about GPUI, that 
 
 ## A look on an element
 
-Or declare on the element how it should look, and it gets there by itself. A `Look` names any of an offset from the element's own place, an opacity, a width and height, a corner radius and colors; a value it does not name stays the element's own style.
+Or declare on the element how it should look, and it gets there by itself. A `Look` names any of an offset from the element's own place, an opacity, a width and height, a corner radius and colors; a value it does not name stays the element's own style. The offset moves only what is painted and where the pointer finds the element: the layout does not see it, so an `absolute` element keeps its own place and slides from there.
 
 ```rust,ignore
 let look = if self.open {
@@ -539,7 +539,7 @@ let stops = (0..5).map(|stop| point(px(93. * stop as f32), px(0.)));
 div().size(px(28.)).draggable(&self.knob, Drag::new().along(Axis::Horizontal).snap_to(stops))
 ```
 
-Like a look, the offset moves the element by `left` and `top` from its place in the layout. With snap points, the limits are left out: put the points inside them. Only the topmost element under the pointer is taken, and a move with the button up lets it go, as when a release was lost outside the window. Under reduced motion a thrown element is at once where it comes to rest.
+Like a look's, the offset moves what is painted and where the pointer finds the element, from wherever it is laid out. With snap points, the limits are left out: put the points inside them. Only the topmost element under the pointer is taken, and a move with the button up lets it go, as when a release was lost outside the window. Under reduced motion a thrown element is at once where it comes to rest.
 
 ## A loop in a view
 

@@ -38,8 +38,21 @@ pub struct Trace {
 }
 
 /// What a [`Trace`] can write down: a [`Motion`] or a
-/// [`LookMotion`](crate::LookMotion).
-pub trait Traceable {
+/// [`LookMotion`](crate::LookMotion). It is sealed: those are the only two.
+///
+/// ```compile_fail
+/// use std::time::Duration;
+/// use ginga::{Row, Traceable};
+///
+/// struct Mine;
+///
+/// impl Traceable for Mine {
+///     fn row(&self, at: Duration) -> Row {
+///         Row { at, values: Vec::new(), settled: true }
+///     }
+/// }
+/// ```
+pub trait Traceable: sealed::Sealed {
     /// The row for the time `at`.
     fn row(&self, at: Duration) -> Row;
 
@@ -49,6 +62,13 @@ pub trait Traceable {
         Vec::new()
     }
 }
+
+pub(crate) mod sealed {
+    /// Keeps [`Traceable`](super::Traceable) to the crate's own types.
+    pub trait Sealed {}
+}
+
+impl<T: Animatable> sealed::Sealed for Motion<T> {}
 
 impl<T: Animatable> Traceable for Motion<T> {
     fn row(&self, at: Duration) -> Row {

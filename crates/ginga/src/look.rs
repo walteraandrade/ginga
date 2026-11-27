@@ -289,6 +289,8 @@ fn retarget<T: crate::Animatable + PartialEq>(
     }
 }
 
+impl crate::trace::sealed::Sealed for LookMotion {}
+
 impl crate::trace::Traceable for LookMotion {
     fn row(&self, at: Duration) -> Row {
         let sample = self.sample(at);

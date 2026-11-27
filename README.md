@@ -184,7 +184,7 @@ ms           value
 
 The format is stable: put it in a test and a change in motion shows up as a diff.
 
-A `LookMotion` (below) is written down the same way, with a column for each value its look names:
+A `LookMotion` (below) is written down the same way, with a column for each value its look names. `Trace::of` takes either: both are `Traceable`, and nothing else is.
 
 ```text
 ms               x           y     opacity

@@ -94,7 +94,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **View.** A GPUI entity that renders. GPUI renders a view again when it asks for a frame or is notified, and every view above it with it.
 
-**Cached view.** A view embedded with `.cached(style)`: GPUI reuses what it drew last time unless it was notified. How a heavy view sits beside a motion without being drawn again.
+**Cached view.** A view embedded with `.cached(style)`: unless it was notified, GPUI does not render, lay out or paint it again, and reuses what it painted last time. Its primitives still go to the GPU in every frame. How a heavy view sits beside a motion without being drawn again; see [[codebase/what-a-cached-view-saves]].
 
 **Island** (`ginga_gpui::Island`). A small view of its own that draws what moves, so that the frames its motion asks for render the island and the views above it, and not the heavy, cached views beside it.
 

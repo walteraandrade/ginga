@@ -1,23 +1,4 @@
-//! What an island saves: the main thread's time per frame of a moving dot,
-//! drawn inside a heavy view or in an island beside it.
-//!
-//! ```sh
-//! xvfb-run -a cargo run --release -p ginga-gpui --example island_cost
-//! ```
-//!
-//! With no argument it runs each mode five times, alternating, each in a
-//! process of its own, and prints a table. With `inside` or `island` it runs
-//! that mode once and prints one line.
-//!
-//! - `inside`: the dot is drawn by the heavy view, so every frame of the dot's
-//!   motion renders the heavy view again.
-//! - `island`: the dot is a [`ginga_gpui::Island`] beside the heavy view, which
-//!   is embedded with `.cached(..)`, so a frame renders the island and the
-//!   small view above it.
-//!
-//! The main thread's time comes from `/proc/thread-self/schedstat`: the CPU
-//! time the thread ran, whatever it did with it (render, layout, paint, and
-//! handing the frame to the GPU driver).
+//! The measurement itself: it reads Linux's `/proc` and opens an X11 window.
 
 use std::{
     cell::Cell,
@@ -29,17 +10,23 @@ use std::{
 
 use ginga_gpui::{Island, Motion, Spring};
 use gpui::{
-    AnyElement, App, AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Render, StyleRefinement, Styled, Window, WindowBounds, WindowOptions,
-    div, point, px, rgb, size,
+    AnyElement, App, AppContext, Bounds, Context, Entity, IntoElement, ParentElement, Pixels,
+    Render, StyleRefinement, Styled, Window, WindowBounds, WindowOptions, div, point, px, rgb,
+    size,
 };
 
-/// How long a run waits before it measures, for the window to settle.
+/// How long a run waits for its first frame.
+const FIRST_FRAME: Duration = Duration::from_secs(30);
+/// How often it looks for that frame.
+const POLL: Duration = Duration::from_millis(10);
+/// How long a run waits after its first frame before it measures.
 const WARM_UP: Duration = Duration::from_secs(1);
 /// How long a run measures.
 const MEASURED: Duration = Duration::from_secs(5);
 /// Runs of each mode.
 const RUNS: usize = 5;
+/// What starts the line that carries a run's result.
+const RESULT: &str = "island_cost result:";
 /// Cells in the heavy view: each is a box with a number in it.
 const CELLS: usize = 2_400;
 
@@ -53,6 +40,18 @@ fn thread_cpu() -> Duration {
         .and_then(|field| field.parse().ok())
         .expect("schedstat starts with the time the thread ran, in nanoseconds");
     Duration::from_nanos(nanos)
+}
+
+/// All the process's threads' CPU time so far: the main thread's, and the
+/// threads of the GPU driver, which in software draws the pixels.
+fn process_cpu() -> Duration {
+    fs::read_dir("/proc/self/task")
+        .expect("this example reads its threads from Linux's /proc")
+        .flatten()
+        .filter_map(|task| fs::read_to_string(task.path().join("schedstat")).ok())
+        .filter_map(|stat| stat.split_whitespace().next()?.parse().ok())
+        .map(Duration::from_nanos)
+        .sum()
 }
 
 /// The dot's state: a place that goes back and forth across the window.
@@ -110,7 +109,6 @@ impl Render for Heavy {
         self.counts.heavy.set(self.counts.heavy.get() + 1);
         let cells = (0..CELLS).map(|n| {
             div()
-                .id(n)
                 .size(px(15.))
                 .bg(rgb(0x0020_2020 + (n as u32 % 7) * 0x0010_1010))
                 .text_size(px(6.))
@@ -152,9 +150,35 @@ impl Render for Root {
     }
 }
 
-/// Runs one mode and prints `frames heavy_renders cpu_ms wall_ms`.
-fn run(island: bool) {
+/// Where the dot is drawn.
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+    /// By the heavy view itself.
+    Inside,
+    /// By an island beside the heavy view, which is cached.
+    Island,
+}
+
+impl Mode {
+    const ALL: [Mode; 2] = [Mode::Inside, Mode::Island];
+
+    /// The mode's name, as the command line takes it.
+    fn name(self) -> &'static str {
+        match self {
+            Mode::Inside => "inside",
+            Mode::Island => "island",
+        }
+    }
+}
+
+/// Runs one mode and prints its [`RESULT`] line:
+/// `frames heavy_renders cpu_ms process_cpu_ms wall_ms`.
+fn run(mode: Mode) {
+    let island = mode == Mode::Island;
     gpui_platform::application().run(move |cx: &mut App| {
+        // A desktop that asks for reduced motion would stop the dot: this
+        // measures motion, so it turns that off for its own process.
+        cx.set_reduce_motion(false);
         let counts = Rc::new(Counts::default());
         let bounds = Bounds::new(point(px(0.), px(0.)), size(px(800.), px(600.)));
         let options = WindowOptions {
@@ -183,17 +207,29 @@ fn run(island: bool) {
         .expect("a window opens; run this under a display, such as xvfb-run");
         let timer = cx.background_executor().clone();
         cx.spawn(async move |cx| {
+            // Measure from the first frame on, not from when the window opened.
+            let mut waited = Duration::ZERO;
+            while counts.dot.get() == 0 || counts.heavy.get() == 0 {
+                assert!(
+                    waited < FIRST_FRAME,
+                    "no frame in {FIRST_FRAME:?}: is a Vulkan driver installed (mesa-vulkan-drivers)?"
+                );
+                timer.timer(POLL).await;
+                waited += POLL;
+            }
             timer.timer(WARM_UP).await;
             let (dot, heavy) = (counts.dot.get(), counts.heavy.get());
-            let (cpu, started) = (thread_cpu(), Instant::now());
+            let (cpu, process, started) = (thread_cpu(), process_cpu(), Instant::now());
             timer.timer(MEASURED).await;
             let cpu = thread_cpu().saturating_sub(cpu);
+            let process = process_cpu().saturating_sub(process);
             let wall = started.elapsed();
             let frames = counts.dot.get() - dot;
             let heavy = counts.heavy.get() - heavy;
             println!(
-                "{frames} {heavy} {:.3} {:.3}",
+                "{RESULT} {frames} {heavy} {:.3} {:.3} {:.3}",
                 cpu.as_secs_f64() * 1e3,
+                process.as_secs_f64() * 1e3,
                 wall.as_secs_f64() * 1e3
             );
             cx.update(|cx| cx.quit());
@@ -207,12 +243,35 @@ struct Run {
     frames: u32,
     heavy: u32,
     cpu_ms: f64,
+    process_ms: f64,
     wall_ms: f64,
 }
 
 impl Run {
+    /// A run's [`RESULT`] line. Anything else, or a count or time that cannot
+    /// be measured from, is `None`.
+    fn parse(line: &str) -> Option<Run> {
+        let mut fields = line.strip_prefix(RESULT)?.split_whitespace();
+        let run = Run {
+            frames: fields.next()?.parse().ok()?,
+            heavy: fields.next()?.parse().ok()?,
+            cpu_ms: fields.next()?.parse().ok()?,
+            process_ms: fields.next()?.parse().ok()?,
+            wall_ms: fields.next()?.parse().ok()?,
+        };
+        let times = [run.cpu_ms, run.process_ms, run.wall_ms];
+        let measurable = run.frames > 0 && times.iter().all(|ms| ms.is_finite() && *ms > 0.0);
+        (fields.next().is_none() && measurable).then_some(run)
+    }
+
+    /// The main thread's time per frame.
     fn per_frame(&self) -> f64 {
         self.cpu_ms / f64::from(self.frames)
+    }
+
+    /// All threads' time per frame.
+    fn process_per_frame(&self) -> f64 {
+        self.process_ms / f64::from(self.frames)
     }
 
     fn fps(&self) -> f64 {
@@ -221,70 +280,84 @@ impl Run {
 }
 
 /// Runs `mode` in a process of its own.
-fn measure(mode: &str) -> Run {
+fn measure(mode: Mode) -> Run {
     let output = Command::new(env::current_exe().expect("the example knows where it is"))
-        .arg(mode)
+        .arg(mode.name())
         .output()
         .expect("the example runs itself");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let line = stdout.lines().last().unwrap_or_default();
-    let fields: Vec<&str> = line.split_whitespace().collect();
-    let parsed = match fields[..] {
-        [frames, heavy, cpu_ms, wall_ms] => (|| {
-            Some(Run {
-                frames: frames.parse().ok()?,
-                heavy: heavy.parse().ok()?,
-                cpu_ms: cpu_ms.parse().ok()?,
-                wall_ms: wall_ms.parse().ok()?,
-            })
-        })(),
-        _ => None,
-    };
-    parsed.unwrap_or_else(|| {
+    let failed = |why: &str| -> ! {
         panic!(
-            "the {mode} run printed no result:\n{stdout}\n{}",
+            "the {} run {why}:\n{stdout}\n{}",
+            mode.name(),
             String::from_utf8_lossy(&output.stderr)
         )
-    })
+    };
+    if !output.status.success() {
+        failed(&format!("failed ({})", output.status));
+    }
+    let run = stdout
+        .lines()
+        .find(|line| line.starts_with(RESULT))
+        .unwrap_or_else(|| failed("printed no result"));
+    let run =
+        Run::parse(run).unwrap_or_else(|| failed("printed a result that cannot be measured from"));
+    assert!(
+        mode != Mode::Island || run.heavy == 0,
+        "the heavy view rendered {} times beside the island: the island no longer saves it",
+        run.heavy
+    );
+    run
 }
 
-fn median(mut values: Vec<f64>) -> f64 {
-    values.sort_by(f64::total_cmp);
-    values[values.len() / 2]
-}
-
-fn main() {
+pub fn main() {
     match env::args().nth(1).as_deref() {
-        Some("inside") => return run(false),
-        Some("island") => return run(true),
-        Some(other) => panic!("unknown mode {other:?}: use inside, island, or nothing for both"),
         None => {}
+        Some(name) => {
+            let mode = Mode::ALL
+                .into_iter()
+                .find(|mode| mode.name() == name)
+                .unwrap_or_else(|| {
+                    panic!("unknown mode {name:?}: use inside, island, or nothing for both")
+                });
+            return run(mode);
+        }
     }
     println!(
-        "{:<4} {:<7} {:>7} {:>6} {:>13} {:>9}",
-        "run", "mode", "frames", "fps", "heavy renders", "ms/frame"
+        "{:<4} {:<7} {:>7} {:>6} {:>13} {:>9} {:>11}",
+        "run", "mode", "frames", "fps", "heavy renders", "ms/frame", "all threads"
     );
-    let mut per_frame = [Vec::new(), Vec::new()];
+    let mut per_frame = Mode::ALL.map(|_| Vec::new());
+    let mut process_per_frame = Mode::ALL.map(|_| Vec::new());
     for run in 1..=RUNS {
-        for (mode, per_frame) in ["inside", "island"].into_iter().zip(&mut per_frame) {
+        for (index, mode) in Mode::ALL.into_iter().enumerate() {
             let result = measure(mode);
             println!(
-                "{run:<4} {mode:<7} {:>7} {:>6.1} {:>13} {:>9.3}",
+                "{run:<4} {:<7} {:>7} {:>6.1} {:>13} {:>9.3} {:>11.3}",
+                mode.name(),
                 result.frames,
                 result.fps(),
                 result.heavy,
-                result.per_frame()
+                result.per_frame(),
+                result.process_per_frame()
             );
-            per_frame.push(result.per_frame());
+            per_frame[index].push(result.per_frame());
+            process_per_frame[index].push(result.process_per_frame());
         }
     }
     println!();
-    for (mode, per_frame) in ["inside", "island"].into_iter().zip(per_frame) {
-        let low = per_frame.iter().copied().fold(f64::MAX, f64::min);
-        let high = per_frame.iter().copied().fold(f64::MIN, f64::max);
+    for ((mode, mut per_frame), mut process) in
+        Mode::ALL.into_iter().zip(per_frame).zip(process_per_frame)
+    {
+        per_frame.sort_by(f64::total_cmp);
+        process.sort_by(f64::total_cmp);
         println!(
-            "{mode:<7} median {:.3} ms/frame, runs from {low:.3} to {high:.3}",
-            median(per_frame)
+            "{:<7} median {:.3} ms/frame on the main thread, runs from {:.3} to {:.3}; {:.3} ms/frame on all threads",
+            mode.name(),
+            per_frame[RUNS / 2],
+            per_frame[0],
+            per_frame[RUNS - 1],
+            process[RUNS / 2]
         );
     }
 }

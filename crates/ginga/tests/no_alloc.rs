@@ -44,6 +44,16 @@ unsafe impl GlobalAlloc for Counting {
 static ALLOCATOR: Counting = Counting;
 
 #[test]
+fn the_counter_sees_this_threads_allocations() {
+    let before = allocations();
+    drop(std::hint::black_box(Box::new(1_u8)));
+    assert!(
+        allocations() > before,
+        "the counter must count this thread's allocations, or the test below checks nothing"
+    );
+}
+
+#[test]
 fn reading_and_retargeting_a_motion_allocates_nothing() {
     let transitions: [Transition; 4] = [
         Spring::SNAPPY.into(),

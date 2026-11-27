@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Records a page of the gallery in a virtual display: its frames and a contact
+# sheet of them, in target/gallery/<page>/ unless a folder is given.
+#
+#   crates/ginga-gpui/examples/gallery/record <page> [folder]
+#
+# Needs xvfb-run, ffmpeg, a Vulkan driver (mesa-vulkan-drivers without a GPU),
+# and ImageMagick for the contact sheet.
+set -eu
+[ $# -ge 1 ] || { echo "usage: $0 <page> [folder]" >&2; exit 2; }
+exec xvfb-run -a -s "-screen 0 960x600x24" \
+    cargo run --release -p ginga-gpui --example gallery -- --record "$@"

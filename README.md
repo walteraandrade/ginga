@@ -156,6 +156,17 @@ div()
 
 Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops, a frame cost the main thread about 19 to 22 ms with the island and 48 to 50 ms without it, and the heavy view did not render again while the dot moved: [the measurement](docs/measurements/2026-11-27-island-alone/README.md) (software rendering, no GPU). In an app it depends on what else asks for frames: in Desafinado a frame that skipped the heavy view cost about 40 % less, but only one frame in four skipped it: [that measurement](docs/measurements/2026-11-26-ai-caret-island/README.md).
 
+## Watch it move
+
+The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list presence and an island. Each page is driven by a few lines that can be copied.
+
+```sh
+cargo run -p ginga-gpui --example gallery                  # open it
+crates/ginga-gpui/examples/gallery/record presence         # record a page
+```
+
+Recording runs the page in a virtual display and leaves its frames and a contact sheet in `target/gallery/<page>/`, so a pull request can show a motion beside its trace. It runs on Linux and needs `xvfb-run`, `ffmpeg`, a Vulkan driver (Mesa's, without a GPU) and ImageMagick.
+
 ## What it costs
 
 `cargo run --release --example bench`, best of nine rounds on the machine this was written on (2026-11-26):

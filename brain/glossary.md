@@ -112,4 +112,4 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Stale pane.** A cached view that shows old state because it changed without being notified. The risk an island brings.
 
-**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. Every feature has a page. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, and a delay (stagger) and a list's travel (`place_all`) have none yet. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].

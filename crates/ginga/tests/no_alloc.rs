@@ -28,7 +28,7 @@ fn allocations() -> usize {
 // SAFETY: every call is forwarded unchanged to the system allocator.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // A thread that is being torn down has no counter left; it is not the test's.
+        // `try_with`, not `with`: an allocator must never panic.
         let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
         // SAFETY: the caller upholds `GlobalAlloc::alloc`'s contract.
         unsafe { System.alloc(layout) }

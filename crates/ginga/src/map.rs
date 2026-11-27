@@ -78,6 +78,9 @@ impl<T: Animatable> Map<T> {
         if from_start == from_end {
             return Err(MapError::Empty);
         }
+        if !(from_end - from_start).is_finite() {
+            return Err(MapError::NotFinite);
+        }
         Ok(Self {
             from: (from_start, from_end),
             to: (to_start, to_end),
@@ -112,16 +115,18 @@ impl<T: Animatable> Map<T> {
         } else if !part.is_finite() {
             part = 0.0;
         }
+        // The ends come back exactly as they were given.
+        if part == 0.0 {
+            return self.to.0;
+        }
+        if part == 1.0 {
+            return self.to.1;
+        }
         let mut channels = self.channels.0;
         for (channel, to) in channels.as_mut().iter_mut().zip(self.channels.1.as_ref()) {
             *channel += (to - *channel) * part;
         }
-        // The ends come back exactly as they were given.
-        match part {
-            0.0 => self.to.0,
-            1.0 => self.to.1,
-            _ => T::from_channels(channels),
-        }
+        T::from_channels(channels)
     }
 
     /// This map read from `motion` at each time: a value derived from a
@@ -256,6 +261,13 @@ ms           value
         assert_eq!(width.clamped().at(f32::INFINITY), 240.0);
         assert_eq!(width.clamped().at(f32::NEG_INFINITY), 40.0);
         assert_eq!(width.clamped().at(f32::NAN), 40.0);
+    }
+
+    #[test]
+    fn a_range_too_wide_for_a_number_does_not_build_and_a_tiny_one_clamps() {
+        assert_eq!(Map::new(-2e38, 2e38, 0.0, 100.0), Err(MapError::NotFinite));
+        let tiny = Map::new(0.0, 1e-30, 0.0, 100.0).unwrap();
+        assert_eq!(tiny.clamped().at(1e10), 100.0, "far past the end: the end");
     }
 
     #[test]

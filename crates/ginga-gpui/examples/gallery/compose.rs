@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use ginga_gpui::{
-    Animate, Clock, Color, Easing, Map, Sequence, SettledOnce, Spring, Tween, unless_reduced,
+    Animate, Clock, Color, Easing, Map, Sequence, SettledOnce, Spring, Tween, ginga, unless_reduced,
 };
 use gpui::{Context, IntoElement, ParentElement, Render, Rgba, Styled, Window, div, px, rgb};
 

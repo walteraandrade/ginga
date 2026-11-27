@@ -95,14 +95,18 @@ impl Sequence {
         self.at(self.last.ends, motion, target, transition)
     }
 
-    /// Adds a step that starts together with the step before it.
+    /// Adds a step that starts together with the step before it. The two are
+    /// one group: a [`then`](Self::then) after them waits for the longer.
     pub fn with<T: Animatable>(
         &mut self,
         motion: &mut Motion<T>,
         target: T,
         transition: impl Into<Transition>,
     ) -> Step {
-        self.at(self.last.starts, motion, target, transition)
+        let before = self.last;
+        let step = self.at(before.starts, motion, target, transition);
+        self.last.ends = step.ends.max(before.ends);
+        step
     }
 
     /// Adds a step that starts at `starts`: a set time after another step
@@ -130,7 +134,9 @@ impl Sequence {
             ends: motion.settles_at().unwrap_or(starts).max(starts),
         };
         self.last = step;
-        self.settles = self.settles.max(step.ends);
+        // A motion already on its target moves nothing at its place: it does
+        // not hold the sequence's end back, as no frame would wait for it.
+        self.settles = self.settles.max(motion.settles_at().unwrap_or(self.start));
         step
     }
 
@@ -154,6 +160,9 @@ impl Sequence {
 /// taken at once, as under reduced motion, ends when it is set, and is
 /// answered on the next check. A motion only placed, with
 /// [`Motion::jump_to`], has no end and is not reported.
+///
+/// Use one for each thing waited for: two ends at the same time are one end
+/// to it, as when a target taken at once starts another at once.
 ///
 /// A sequence's end does not move when one of its motions gets a new target:
 /// the sequence is a schedule, and its end is the time it was given. To wait
@@ -292,6 +301,30 @@ button  1300 ms to 1400 ms
                 .at(ms(0), &mut still, 1.0, Transition::Instant)
                 .ends,
             ms(0)
+        );
+    }
+
+    #[test]
+    fn a_step_after_a_group_waits_for_the_longer_of_the_group() {
+        let (mut slide, mut fade, mut button) = (Motion::at(0.0), Motion::at(0.0), Motion::at(0.0));
+        let mut sequence = Sequence::starting_at(ms(0));
+        let long = sequence.then(&mut slide, 1.0, linear(300));
+        let short = sequence.with(&mut fade, 1.0, linear(100));
+        let after = sequence.then(&mut button, 1.0, linear(100));
+        assert_eq!((long.ends, short.ends), (ms(300), ms(100)));
+        assert_eq!(after.starts, ms(300), "after the slide, not the fade");
+    }
+
+    #[test]
+    fn a_step_with_nowhere_to_go_does_not_hold_the_end_back() {
+        let (mut a, mut still) = (Motion::at(0.0), Motion::at(1.0));
+        let mut sequence = Sequence::starting_at(ms(0));
+        sequence.then(&mut a, 1.0, linear(100));
+        sequence.at(ms(500), &mut still, 1.0, linear(100));
+        assert_eq!(
+            sequence.settles_at(),
+            ms(100),
+            "nothing moves after 100 ms, so no frame would wait for 500"
         );
     }
 

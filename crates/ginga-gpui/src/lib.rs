@@ -26,6 +26,9 @@
 use std::time::{Duration, Instant};
 
 pub use drag::{Drag, DragExt, DragState, Dragged};
+/// The engine itself, for what the adapter does not wrap: a [`ginga::Motion`]
+/// that a [`Sequence`] moves, read with a view's [`Clock`].
+pub use ginga;
 use ginga::Animatable;
 pub use ginga::{
     Coast, CoastError, Color, Easing, InOut, KeyframesError, Look, LookMotion, Map, MapError,

@@ -19,5 +19,5 @@
 **What follows from it.**
 
 - The precision is a ten-thousandth: near black, a thousandth in linear light is several sRGB levels, a visible snap when the motion settles.
-- A settled look returns the colors it was given, not ones rebuilt from channels, since the round trip through `powf` is off in the last bit. `LookMotion` returns the named value once settled, and compares the last named value, not the motion's target, to see what changed.
-- A spring can carry a channel past either end; `from_channels` clamps it.
+- A settled motion returns the color it was given, not one rebuilt from channels, since the round trip through `powf` is off in the last bit for 70 of the 256 sRGB levels: `Motion` keeps the target as given and hands it back once settled and from `target()`. Any `Animatable` whose round trip is not exact gains from it.
+- `Color::new` holds each value to `0.0..=1.0`, so a color at rest is drawn as it is while it moves. A spring can carry a channel past either end; `from_channels` divides by the alpha as it is, then clamps, so the hue holds when the alpha passes 1.

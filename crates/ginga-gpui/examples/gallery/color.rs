@@ -33,7 +33,7 @@ impl Render for Button {
                 .border_color(color(rgb(0x003b_6ef5)))
         } else {
             Look::new()
-                .background(Color::hex(0xe5_484d).with_alpha(0.))
+                .background(Color::TRANSPARENT)
                 .text_color(Color::hex(0xe5_484d))
                 .border_color(Color::hex(0xe5_484d))
         };

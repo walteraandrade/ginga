@@ -317,11 +317,19 @@ mod tests {
         );
         assert_eq!(
             style.text.color,
-            Some(gpui::Hsla::from(rgba(Color::TRANSPARENT)))
+            Some(gpui::Hsla::from(gpui::Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0
+            }))
         );
         assert_eq!(
             style.border_color,
-            Some(gpui::Hsla::from(rgba(blue.with_alpha(0.5))))
+            Some(gpui::Hsla::from(gpui::Rgba {
+                a: 0.5,
+                ..gpui::rgb(0x003b_6ef5)
+            }))
         );
     }
 
@@ -339,6 +347,23 @@ mod tests {
         );
         let faded = styled(div(), Look::new().opacity(-0.2)).style().opacity;
         assert_eq!(faded, Some(0.0));
+        let past = Color {
+            red: 1.5,
+            green: -0.2,
+            blue: 0.5,
+            alpha: 1.5,
+        };
+        let fill = styled(div(), Look::new().background(past))
+            .style()
+            .background
+            .clone();
+        let held = gpui::Rgba {
+            r: 1.0,
+            g: 0.0,
+            b: 0.5,
+            a: 1.0,
+        };
+        assert_eq!(fill, Some(gpui::Fill::from(held)));
     }
 
     #[test]

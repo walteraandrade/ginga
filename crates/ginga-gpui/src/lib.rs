@@ -109,12 +109,14 @@ impl Animate for Rgba {
         Color::new(self.r, self.g, self.b, self.a)
     }
 
+    /// Each value held to `0.0..=1.0`: `Color`'s fields are public, so one
+    /// can be written past its range without `Color::new`.
     fn from_repr(color: Color) -> Self {
         Rgba {
-            r: color.red,
-            g: color.green,
-            b: color.blue,
-            a: color.alpha,
+            r: color.red.clamp(0.0, 1.0),
+            g: color.green.clamp(0.0, 1.0),
+            b: color.blue.clamp(0.0, 1.0),
+            a: color.alpha.clamp(0.0, 1.0),
         }
     }
 }

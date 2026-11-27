@@ -271,7 +271,7 @@ assert!(middle.red > 0.7);           // a bright purple, as light mixes
 
 // A fill that fades in from nothing keeps its own color, only less opaque.
 let red = Color::hex(0xe5484d);
-let mut fill = LookMotion::at(Look::new().background(red.with_alpha(0.0)));
+let mut fill = LookMotion::at(Look::new().background(Color::TRANSPARENT));
 fill.set_target(Look::new().background(red), Tween::new(ms(100), Easing::Linear), ms(0));
 let half = fill.sample(ms(50)).value.background.unwrap();
 assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);

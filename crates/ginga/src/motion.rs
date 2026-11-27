@@ -75,7 +75,10 @@ struct State<C> {
 /// ask for it.
 #[derive(Clone, Copy)]
 enum Read {
+    /// The value alone. The `velocity` of the [`State`] is then zero, not the
+    /// motion's speed: do not read it.
     Value,
+    /// The value and its speed.
     ValueAndSpeed,
 }
 

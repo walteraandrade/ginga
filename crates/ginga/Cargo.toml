@@ -8,6 +8,7 @@ repository.workspace = true
 readme = "README.md"
 categories.workspace = true
 keywords = ["animation", "motion", "spring", "tween", "ui"]
+rust-version.workspace = true
 publish.workspace = true
 
 [lints]

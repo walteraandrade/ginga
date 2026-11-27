@@ -58,6 +58,12 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Precision** (`Animatable::PRECISION`). How close to its target a channel must be for the motion to stop, in the value's own units. `0.001` by default, for values from zero to one; a tenth of a pixel for pixels. A move smaller than the precision is no motion at all.
 
+**Coast** (`Coast`, `Motion::coast`). A value let go with a speed that slows to a stop: its speed falls by the same share every instant, to about a third (1/e) in each *time constant*, and it rests a time constant's worth of its first speed on (`Coast::rest`). `coast_within` rests inside limits and `coast_to_nearest` on a *snap point*; past a limit, or to reach a snap point, the value moves with the coast's spring instead, keeping its speed.
+
+**Time constant.** How quickly a coast slows: `Coast::QUICK` 0.1 s, `Coast::SLOW` 0.5 s. *Not a duration*: a coast, like a spring, settles when what it has left falls under the precision.
+
+**Snap point.** A value a coast may come to rest on: of the snap points given, the one nearest to where it would rest.
+
 **Closed-form.** How the engine computes: the value at a time comes from where the motion started, not from stepping the last frame forward. A skipped frame changes nothing.
 
 ## Motion as text
@@ -122,7 +128,9 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Stale pane.** A cached view that shows old state because it changed without being notified. The risk an island brings.
 
-**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+**Drag** (`ginga_gpui::Drag`, `.draggable`). The pointer takes an element and it follows exactly, with no spring between them. Let go, it is *thrown*: it keeps the pointer's speed, measured over the last 100 ms, and coasts. A pointer still for 50 ms before it lets go sets the element down instead. `DragState` holds where the element is; `throw` lets it go without a pointer.
+
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
 
 ## Looks
 

@@ -36,6 +36,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/what-a-cached-view-saves]]: render, layout and paint, not the scene's trip to the GPU.
 - [[codebase/recording-a-gallery-page]]: how a recording drives the gallery, and why it must never block the main thread.
 - [[codebase/a-look-on-an-element]]: where an element's look motion lives, and how each value is applied.
+- [[codebase/a-drag-on-an-element]]: how a dragged element hears the pointer anywhere in the window, and measures its speed.
 
 ## Measurements
 

@@ -564,6 +564,22 @@ ms               x           y     opacity
     }
 
     #[test]
+    fn a_color_that_did_not_change_keeps_its_course_when_another_value_does() {
+        // 0x3b6ef5 does not come back from its channels to the last bit; a
+        // value rebuilt from them would look changed and start over.
+        let blue = Color::hex(0x3b_6ef5);
+        let mut card = LookMotion::at(Look::new().background(Color::hex(0xff_0000)).opacity(0.0));
+        card.set_target(Look::new().background(blue).opacity(0.0), glide(), ms(0));
+        card.set_target(Look::new().background(blue).opacity(1.0), glide(), ms(50));
+        let at_end = card.sample(ms(100)).value;
+        assert_eq!(
+            at_end.background,
+            Some(blue),
+            "on time, not started over at 50 ms"
+        );
+    }
+
+    #[test]
     fn a_trace_names_a_column_for_each_channel_of_a_color() {
         let mut button = LookMotion::at(Look::new().opacity(0.0).background(Color::TRANSPARENT));
         button.set_target(

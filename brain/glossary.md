@@ -110,7 +110,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Arriving look** and **leaving look** (`ginga_gpui::Present::arrive_from`, `leave_to`). The look a thing presented with `present` arrives from and leaves to, mixed into its own by its progress. Without one, that way is instant.
 
-**List presence** (`PresenceList`). A presence for a list with keys. `sync` tells it what the list holds now: a new key arrives, a missing key leaves and keeps its place until it is gone, and a key that comes back turns around.
+**List presence** (`PresenceList`). A presence for a list with keys. `sync` tells it what the list holds now: a new key arrives, a missing key leaves and keeps its place until it is gone, and a key that comes back turns around. `ginga_gpui::PresenceList` is the same list on a view's clock: it asks for frames and applies reduced motion itself.
 
 **Key.** What identifies an item of a list presence across syncs. Keys are unique within a list.
 

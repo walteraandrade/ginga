@@ -94,7 +94,7 @@ impl Page {
             Page::new(
                 "list",
                 "Rows arrive and leave a list.",
-                cx.new(|_| Rows::new()),
+                cx.new(|cx| Rows::new(cx)),
                 Rows::play,
             ),
             Page::new(

@@ -98,6 +98,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Phase** (`Phase`). Where something shown is in its life: `Entering`, `Present` or `Exiting`. Something `Exiting` is still drawn but should no longer take clicks or the focus.
 
+**Cover** (`CoverExt::cover`, `Covered`). What a presence draws, covered while the content leaves: a child over it takes the pointer, and a keyboard focus inside it is taken away. Nothing wraps it, so its layout does not change. `present` covers its leaving content the same way.
+
 **Present.** The phase of something shown and still. *Not settled*: see *settled*.
 
 **Progress.** How much of something shown is here: `0.0` gone, `1.0` fully here. A view draws it as opacity, scale, height or anything else. A bouncy spring passes both ends a little.
@@ -129,8 +131,6 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 **Test platform.** GPUI with its `test-support` feature: windows with no display, a clock the test moves and frames the test delivers. How the adapter's tests run ([[codebase/testing-the-adapter]]).
 
 **Frame.** One time GPUI draws the window. A view that moves something asks for the next frame while it moves. *Not a sample*: see *sample*.
-
-**Cover** (`CoverExt::cover`, `Covered`). What a presence draws, put in a box that, while the content leaves, lies under a layer that takes the pointer and loses any keyboard focus inside it. `present` covers its leaving content the same way.
 
 **Frame request.** Asking GPUI to draw the next frame: `window.request_animation_frame()`. `ginga_gpui::Motion` and `ginga_gpui::Presence` do it while their value moves, and stop when it is settled.
 

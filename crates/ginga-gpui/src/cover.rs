@@ -9,12 +9,17 @@ use gpui::{
 
 /// Covers what a presence draws while it leaves; see [`CoverExt::cover`].
 pub trait CoverExt {
-    /// `element`, in a box of its own that, while the content leaves, lies
-    /// under a cover that takes the pointer, so the element gets no clicks
-    /// and no focus from one, and whose keyboard focus is taken away when it
-    /// is inside. While the content arrives or rests the element is as it is.
-    /// The box is `relative` and as big as its content: an `absolute`
-    /// element is placed from where the box is laid out.
+    /// `element`, covered while the content leaves: a child over all of it
+    /// takes the pointer, so it gets no clicks and no focus from one, and a
+    /// keyboard focus inside it is taken away. While the content arrives or
+    /// rests the element is as it is. Nothing wraps it, so its layout is the
+    /// same in every phase: an element with no position of its own is made
+    /// `relative` while it leaves, so that the cover lies over it, and an
+    /// `absolute` one keeps its place.
+    ///
+    /// A way out that takes no time, such as an undelayed one under reduced
+    /// motion, is over before a frame draws it leaving, so there is nothing
+    /// to cover: take the focus away where you hide it.
     ///
     /// ```ignore
     /// if let Some(shown) = self.panel.frame(window, cx) {
@@ -22,11 +27,11 @@ pub trait CoverExt {
     ///     page = page.child(shown.cover(panel));
     /// }
     /// ```
-    fn cover<E: IntoElement>(&self, element: E) -> Covered<E>;
+    fn cover<E: Coverable>(&self, element: E) -> Covered<E>;
 }
 
 impl<T> CoverExt for Shown<'_, T> {
-    fn cover<E: IntoElement>(&self, element: E) -> Covered<E> {
+    fn cover<E: Coverable>(&self, element: E) -> Covered<E> {
         Covered {
             element: Some(element),
             leaving: self.phase == Phase::Exiting,
@@ -34,13 +39,19 @@ impl<T> CoverExt for Shown<'_, T> {
     }
 }
 
+/// An element that can be covered: one that takes children, a style and a
+/// focus handle, such as a `div`.
+pub trait Coverable: IntoElement + ParentElement + Styled + InteractiveElement + 'static {}
+
+impl<E: IntoElement + ParentElement + Styled + InteractiveElement + 'static> Coverable for E {}
+
 /// An element covered while it leaves. Made by [`CoverExt::cover`].
 pub struct Covered<E> {
     element: Option<E>,
     leaving: bool,
 }
 
-impl<E: IntoElement + 'static> IntoElement for Covered<E> {
+impl<E: Coverable> IntoElement for Covered<E> {
     type Element = Self;
 
     fn into_element(self) -> Self {
@@ -48,7 +59,7 @@ impl<E: IntoElement + 'static> IntoElement for Covered<E> {
     }
 }
 
-impl<E: IntoElement + 'static> Element for Covered<E> {
+impl<E: Coverable> Element for Covered<E> {
     type RequestLayoutState = AnyElement;
     type PrepaintState = ();
 
@@ -67,23 +78,26 @@ impl<E: IntoElement + 'static> Element for Covered<E> {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, AnyElement) {
-        let element = self.element.take().expect("an element is laid out once");
-        // The box is there in every phase, so the element is laid out the
-        // same way while it leaves.
-        let mut covered = div().relative().child(element);
+        let mut covered = self.element.take().expect("an element is laid out once");
         if self.leaving {
-            // A handle of this frame's, tracked only while leaving: tracked
-            // always, a click on the content would focus the box. Once the
-            // frame is drawn, a focus inside it is taken away.
-            let focus = cx.focus_handle();
-            covered = covered
-                .track_focus(&focus)
-                .child(div().absolute().inset_0().occlude());
-            window.defer(cx, move |window, cx| {
-                if focus.contains_focused(window, cx) {
-                    window.blur(cx);
-                }
-            });
+            if covered.style().position.is_none() {
+                covered = covered.relative();
+            }
+            covered = covered.child(div().absolute().inset_0().occlude());
+            // With nothing focused in the window there is nothing to take.
+            if window.focused(cx).is_some() {
+                // A handle of this frame's, tracked only while leaving:
+                // tracked always, a click on the content would focus it.
+                // The check waits until the frame is drawn, so it reads the
+                // focus tree this frame built.
+                let focus = cx.focus_handle();
+                covered = covered.track_focus(&focus);
+                window.defer(cx, move |window, cx| {
+                    if focus.contains_focused(window, cx) {
+                        window.blur(cx);
+                    }
+                });
+            }
         }
         let mut element = covered.into_any_element();
         (element.request_layout(window, cx), element)

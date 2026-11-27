@@ -18,28 +18,48 @@ fn fade() -> Tween {
     Tween::new(ms(100), Easing::Linear)
 }
 
-/// A 50 px panel at the window's corner, shown through a presence and
-/// covered while it leaves. It counts its clicks, and a button inside it
-/// takes the focus.
+/// How the panel is placed.
+#[derive(Clone, Copy)]
+enum Place {
+    /// 50 px, in the flow at the window's corner.
+    Flow,
+    /// 50 px, `absolute` at (5, 5).
+    Absolute,
+    /// As big as a 50 px box around it, from `size_full`.
+    Full,
+}
+
+/// A panel shown through a presence and covered while it leaves. It counts
+/// its clicks, and a button inside it takes the focus. Beside it, outside,
+/// is another button.
 struct Page {
     panel: Presence<()>,
+    place: Place,
     clicks: Rc<Cell<u32>>,
     button: FocusHandle,
+    outside: FocusHandle,
 }
 
 impl Render for Page {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let clicks = self.clicks.clone();
-        let mut page = div().size_full();
+        let mut page = div().size(px(50.)).flex();
         if let Some(shown) = self.panel.frame(window, cx) {
             let panel = div()
                 .id("panel")
-                .size(px(50.))
                 .on_click(move |_, _, _| clicks.set(clicks.get() + 1))
                 .child(div().id("button").size(px(10.)).track_focus(&self.button));
+            let panel = match self.place {
+                Place::Flow => panel.size(px(50.)),
+                Place::Absolute => panel.absolute().left(px(5.)).top(px(5.)).size(px(50.)),
+                Place::Full => panel.size_full(),
+            };
             page = page.child(shown.cover(panel));
         }
-        page
+        div()
+            .size_full()
+            .child(page)
+            .child(div().id("outside").size(px(10.)).track_focus(&self.outside))
     }
 }
 
@@ -48,17 +68,20 @@ struct Opened<'a> {
     page: Entity<Page>,
     clicks: Rc<Cell<u32>>,
     button: FocusHandle,
+    outside: FocusHandle,
 }
 
-fn open(cx: &mut TestAppContext) -> Opened<'_> {
+fn open(cx: &mut TestAppContext, place: Place) -> Opened<'_> {
     let clicks = Rc::new(Cell::new(0));
-    let button = cx.update(|cx| cx.focus_handle());
+    let (button, outside) = cx.update(|cx| (cx.focus_handle(), cx.focus_handle()));
     let (page, cx) = cx.add_window_view({
-        let (clicks, button) = (clicks.clone(), button.clone());
+        let (clicks, button, outside) = (clicks.clone(), button.clone(), outside.clone());
         move |_, _| Page {
             panel: Presence::present(()),
+            place,
             clicks,
             button,
+            outside,
         }
     });
     cx.run_until_parked();
@@ -67,6 +90,7 @@ fn open(cx: &mut TestAppContext) -> Opened<'_> {
         page,
         clicks,
         button,
+        outside,
     }
 }
 
@@ -90,29 +114,47 @@ impl Opened<'_> {
         self.cx.run_until_parked();
     }
 
-    fn focused(&mut self) -> bool {
-        let button = self.button.clone();
-        self.cx.update(|window, _| button.is_focused(window))
+    fn focus(&mut self, handle: &FocusHandle) {
+        let handle = handle.clone();
+        self.cx.update(|window, cx| handle.focus(window, cx));
+        self.cx.run_until_parked();
+    }
+
+    fn is_focused(&mut self, handle: &FocusHandle) -> bool {
+        let handle = handle.clone();
+        self.cx.update(|window, _| handle.is_focused(window))
     }
 }
 
 #[gpui::test]
 fn a_click_reaches_the_panel_until_its_way_out_starts(cx: &mut TestAppContext) {
-    let mut page = open(cx);
-    assert!(page.clicked(), "at rest, it takes clicks");
-    page.change(|panel, cx| panel.hide(fade(), cx));
-    assert!(!page.clicked(), "leaving, it takes none");
-    page.change(|panel, cx| panel.show((), fade(), cx));
-    assert!(page.clicked(), "arriving again, it takes them");
+    for place in [Place::Flow, Place::Absolute, Place::Full] {
+        let mut page = open(cx, place);
+        assert!(page.clicked(), "at rest, it takes clicks");
+        page.change(|panel, cx| panel.hide(fade(), cx));
+        assert!(!page.clicked(), "leaving, it takes none");
+        page.change(|panel, cx| panel.show((), fade(), cx));
+        assert!(page.clicked(), "arriving again, it takes them");
+    }
 }
 
 #[gpui::test]
 fn the_focus_leaves_the_panel_when_its_way_out_starts(cx: &mut TestAppContext) {
-    let mut page = open(cx);
+    let mut page = open(cx, Place::Flow);
     let button = page.button.clone();
-    page.cx.update(|window, cx| button.focus(window, cx));
-    page.cx.run_until_parked();
-    assert!(page.focused());
+    page.focus(&button);
+    assert!(page.is_focused(&button));
     page.change(|panel, cx| panel.hide(fade(), cx));
-    assert!(!page.focused(), "blurred as it starts to leave");
+    assert!(!page.is_focused(&button), "blurred as it starts to leave");
+}
+
+#[gpui::test]
+fn a_focus_outside_the_panel_stays_while_it_leaves(cx: &mut TestAppContext) {
+    let mut page = open(cx, Place::Flow);
+    let outside = page.outside.clone();
+    page.focus(&outside);
+    page.change(|panel, cx| panel.hide(fade(), cx));
+    page.cx.executor().advance_clock(ms(50));
+    page.cx.run_until_parked();
+    assert!(page.is_focused(&outside));
 }

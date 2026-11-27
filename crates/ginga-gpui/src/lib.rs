@@ -25,7 +25,7 @@
 
 use std::time::{Duration, Instant};
 
-pub use cover::{CoverExt, Covered};
+pub use cover::{CoverExt, Coverable, Covered};
 pub use drag::{Drag, DragExt, DragState, Dragged};
 /// The engine itself, for what the adapter does not wrap: a [`ginga::Motion`]
 /// that a [`Sequence`] moves, read with a view's [`Clock`].

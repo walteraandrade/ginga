@@ -3,11 +3,16 @@
 use std::time::Duration;
 
 use ginga_gpui::{CoverExt, Easing, InOut, Phase, Presence, Tween};
-use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, px, rgb};
+use gpui::{
+    Context, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement,
+    Styled, Window, div, px, rgb,
+};
 
 pub struct Toast {
     toast: Presence<&'static str>,
     saves: u32,
+    /// Clicks on the toast: they count only while it is not leaving.
+    undos: u32,
 }
 
 impl Toast {
@@ -15,6 +20,7 @@ impl Toast {
         Self {
             toast: Presence::absent(),
             saves: 0,
+            undos: 0,
         }
     }
 
@@ -42,12 +48,17 @@ impl Render for Toast {
             let label = if shown.phase == Phase::Exiting {
                 format!("{} (leaving)", shown.content)
             } else {
-                (*shown.content).to_owned()
+                format!("{}, click to undo", shown.content)
             };
             // While it leaves, the toast takes no clicks and loses the focus.
             page = page.child(
                 shown.cover(
                     div()
+                        .id("toast")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.undos += 1;
+                            cx.notify();
+                        }))
                         .absolute()
                         .top(px(40.) + rise)
                         .left(px(40.))
@@ -64,7 +75,10 @@ impl Render for Toast {
             div()
                 .absolute()
                 .bottom(px(0.))
-                .child(format!("Shown {} times", self.saves)),
+                .child(format!(
+                    "Shown {} times, undone {} times",
+                    self.saves, self.undos
+                )),
         )
     }
 }

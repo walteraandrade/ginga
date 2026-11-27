@@ -33,7 +33,32 @@ const MOST_ROWS: usize = 2_000;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Trace {
+    columns: Vec<&'static str>,
     rows: Vec<Row>,
+}
+
+/// What a [`Trace`] can write down: a [`Motion`] or a
+/// [`LookMotion`](crate::LookMotion).
+pub trait Traceable {
+    /// The row for the time `at`.
+    fn row(&self, at: Duration) -> Row;
+
+    /// A name for each column of a row. With none, the trace's header says
+    /// `value` over all of them.
+    fn columns(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+}
+
+impl<T: Animatable> Traceable for Motion<T> {
+    fn row(&self, at: Duration) -> Row {
+        let sample = self.sample(at);
+        Row {
+            at,
+            values: sample.value.to_channels().as_ref().to_vec(),
+            settled: sample.settled,
+        }
+    }
 }
 
 /// One row of a [`Trace`].
@@ -53,19 +78,19 @@ impl Trace {
     /// A `step` shorter than a millisecond counts as a millisecond, and a
     /// trace holds at most 2,000 rows.
     #[must_use]
-    pub fn of<T: Animatable>(motion: &Motion<T>, from: Duration, step: Duration) -> Self {
+    pub fn of(motion: &impl Traceable, from: Duration, step: Duration) -> Self {
         let step = step.max(Duration::from_millis(1));
         let mut rows = Vec::new();
         let mut at = from;
         loop {
-            let sample = motion.sample(at);
-            rows.push(Row {
-                at,
-                values: sample.value.to_channels().as_ref().to_vec(),
-                settled: sample.settled,
-            });
-            if sample.settled || rows.len() == MOST_ROWS {
-                return Self { rows };
+            let row = motion.row(at);
+            let settled = row.settled;
+            rows.push(row);
+            if settled || rows.len() == MOST_ROWS {
+                return Self {
+                    columns: motion.columns(),
+                    rows,
+                };
             }
             at += step;
         }
@@ -86,7 +111,15 @@ impl Trace {
 
 impl fmt::Display for Trace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{:<6}  {:>10}", "ms", "value")?;
+        write!(f, "{:<6}", "ms")?;
+        if self.columns.is_empty() {
+            writeln!(f, "  {:>10}", "value")?;
+        } else {
+            for column in &self.columns {
+                write!(f, "  {column:>10}")?;
+            }
+            writeln!(f)?;
+        }
         for row in &self.rows {
             write!(f, "{:<6}", row.at.as_millis())?;
             for value in &row.values {

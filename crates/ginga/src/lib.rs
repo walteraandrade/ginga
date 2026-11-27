@@ -46,6 +46,7 @@
 mod animatable;
 mod easing;
 mod keyframes;
+mod look;
 mod motion;
 mod presence;
 mod presence_list;
@@ -56,11 +57,12 @@ mod transition;
 pub use animatable::Animatable;
 pub use easing::Easing;
 pub use keyframes::{Keyframes, KeyframesError, Stop};
+pub use look::{Look, LookMotion};
 pub use motion::{Motion, Sample};
 pub use presence::{InOut, Phase, Presence, Shown};
 pub use presence_list::{PresenceList, ShownItem};
 pub use spring::{Spring, SpringError};
-pub use trace::{Row, Trace};
+pub use trace::{Row, Trace, Traceable};
 pub use transition::{Transition, Tween};
 
 /// The README's examples, run as tests.

@@ -27,9 +27,12 @@ use std::time::{Duration, Instant};
 
 use ginga::Animatable;
 pub use ginga::{
-    Easing, InOut, Phase, PresenceList, Sample, Shown, ShownItem, Spring, SpringError, Trace,
-    Transition, Tween,
+    Easing, InOut, Look, LookMotion, Phase, PresenceList, Sample, Shown, ShownItem, Spring,
+    SpringError, Trace, Transition, Tween,
 };
+pub use look::{LookExt, LookState, Looked};
+
+mod look;
 use gpui::{
     AnyElement, App, Context, IntoElement, Pixels, Point, Render, Size, Window, point, px, size,
 };

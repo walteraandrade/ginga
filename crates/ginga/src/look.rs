@@ -291,19 +291,32 @@ fn retarget<T: crate::Animatable + PartialEq>(
 
 impl crate::trace::sealed::Sealed for LookMotion {}
 
+impl Look {
+    /// Each value the look names, with its column's name, in the order a
+    /// trace prints them. The one place that lists them for a trace.
+    fn each_named(&self, mut visit: impl FnMut(&'static str, f32)) {
+        if let Some((x, y)) = self.offset {
+            visit("x", x);
+            visit("y", y);
+        }
+        for (name, value) in [
+            ("opacity", self.opacity),
+            ("width", self.width),
+            ("height", self.height),
+            ("radius", self.radius),
+        ] {
+            if let Some(value) = value {
+                visit(name, value);
+            }
+        }
+    }
+}
+
 impl crate::trace::Traceable for LookMotion {
     fn row(&self, at: Duration) -> Row {
         let sample = self.sample(at);
-        let look = sample.value;
         let mut values = Vec::new();
-        if let Some((x, y)) = look.offset {
-            values.extend([x, y]);
-        }
-        values.extend(
-            [look.opacity, look.width, look.height, look.radius]
-                .into_iter()
-                .flatten(),
-        );
+        sample.value.each_named(|_, value| values.push(value));
         Row {
             at,
             values,
@@ -312,21 +325,8 @@ impl crate::trace::Traceable for LookMotion {
     }
 
     fn columns(&self) -> Vec<&'static str> {
-        let target = self.target;
         let mut columns = Vec::new();
-        if target.offset.is_some() {
-            columns.extend(["x", "y"]);
-        }
-        for (name, named) in [
-            ("opacity", target.opacity.is_some()),
-            ("width", target.width.is_some()),
-            ("height", target.height.is_some()),
-            ("radius", target.radius.is_some()),
-        ] {
-            if named {
-                columns.push(name);
-            }
-        }
+        self.target.each_named(|name, _| columns.push(name));
         columns
     }
 }
@@ -432,5 +432,20 @@ ms               x           y     opacity
         let close = fade.sample(ms(240));
         assert!(close.value.opacity.unwrap() > 0.9);
         assert!(!close.settled, "an opacity still moves a thousandth away");
+    }
+
+    #[test]
+    fn a_trace_of_every_value_has_a_column_over_each_one_in_order() {
+        let every = Look::new()
+            .offset(1.0, 2.0)
+            .opacity(0.5)
+            .size(3.0, 4.0)
+            .radius(5.0);
+        let trace = Trace::of(&LookMotion::at(every), ms(0), ms(16));
+        assert_eq!(
+            trace.to_string(),
+            "ms               x           y     opacity       width      height      radius\n\
+             0            1.000       2.000       0.500       3.000       4.000       5.000  settled\n"
+        );
     }
 }

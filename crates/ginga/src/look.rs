@@ -5,7 +5,8 @@ use crate::{Motion, Sample, Transition, trace::Row};
 /// How a thing should look: a set of visual values, each one optional.
 ///
 /// A value the look does not name is left to whoever draws, who keeps the
-/// value it has without the look. Build a look by naming values one at a time:
+/// value it has without the look. A value that is not finite, such as
+/// `f32::NAN`, counts as not named. Build a look by naming values one at a time:
 ///
 /// ```
 /// use ginga::Look;
@@ -156,6 +157,7 @@ impl LookMotion {
     /// A look at rest.
     #[must_use]
     pub fn at(look: Look) -> Self {
+        let look = look.finite();
         Self {
             target: look,
             offset: Motion::at(two(look.offset).unwrap_or(Pixels([0.0; 2]))),
@@ -176,6 +178,7 @@ impl LookMotion {
         transition: impl Into<Transition>,
         now: Duration,
     ) -> Sample<Look> {
+        let look = look.finite();
         if look != self.target {
             self.set_target(look, transition, now);
         }
@@ -185,7 +188,13 @@ impl LookMotion {
     /// Changes course at `now`: each value the last look named moves from
     /// where it is then, and each value it did not name takes its new value at
     /// once.
+    ///
+    /// A value whose target is the same as before keeps its course, whatever
+    /// `transition` is: a look changes as a whole, and the values it does not
+    /// change are left alone. To put every value on its target at once, use
+    /// [`jump_to`](Self::jump_to).
     pub fn set_target(&mut self, look: Look, transition: impl Into<Transition>, now: Duration) {
+        let look = look.finite();
         let transition = transition.into();
         let was = self.target;
         retarget(
@@ -296,6 +305,19 @@ fn retarget<T: crate::Animatable + PartialEq>(
 impl crate::trace::sealed::Sealed for LookMotion {}
 
 impl Look {
+    /// The look with each value that is not finite left out, so that a NaN
+    /// from the caller's arithmetic cannot keep a motion from settling.
+    fn finite(self) -> Self {
+        let finite = |value: f32| value.is_finite();
+        Self {
+            offset: self.offset.filter(|&(x, y)| finite(x) && finite(y)),
+            opacity: self.opacity.filter(|&value| finite(value)),
+            width: self.width.filter(|&value| finite(value)),
+            height: self.height.filter(|&value| finite(value)),
+            radius: self.radius.filter(|&value| finite(value)),
+        }
+    }
+
     /// Each value the look names, with its column's name, in the order a
     /// trace prints them. The one place that lists them for a trace.
     fn each_named(&self, mut visit: impl FnMut(&'static str, f32)) {
@@ -391,15 +413,46 @@ ms               x           y     opacity
 
     #[test]
     fn a_value_the_look_does_not_name_is_left_out_and_does_not_hold_it_back() {
-        let mut card = LookMotion::at(Look::new().width(0.0).opacity(0.0));
-        card.set_target(Look::new().width(100.0).opacity(1.0), Spring::SMOOTH, ms(0));
-        card.set_target(Look::new().opacity(1.0), glide(), ms(10));
-        let sample = card.sample(ms(2_000));
+        let mut card = LookMotion::at(Look::new().width(0.0).opacity(1.0));
+        let slow = Tween::new(ms(1_000), Easing::Linear);
+        card.set_target(Look::new().width(100.0).opacity(1.0), slow, ms(0));
+        card.set_target(Look::new().opacity(1.0), slow, ms(10));
+        let sample = card.sample(ms(150));
+        assert!(!card.width.sample(ms(150)).settled, "the width still moves");
         assert_eq!(sample.value, Look::new().opacity(1.0));
         assert!(
             sample.settled,
             "the width still moving is not drawn, so it is not waited for"
         );
+    }
+
+    #[test]
+    fn a_value_that_is_not_finite_counts_as_not_named() {
+        let mut card = LookMotion::at(Look::new().width(10.0));
+        let sample = card.toward(Look::new().width(f32::NAN).opacity(0.5), glide(), ms(0));
+        assert_eq!(sample.value, Look::new().opacity(0.5));
+        assert!(sample.settled, "a NaN does not keep the look moving");
+        let again = card.toward(
+            Look::new().width(f32::INFINITY).opacity(0.5),
+            glide(),
+            ms(16),
+        );
+        assert!(again.settled);
+        assert_eq!(card.target(), Look::new().opacity(0.5));
+    }
+
+    #[test]
+    fn a_value_with_the_same_target_keeps_its_course_whatever_the_transition() {
+        let mut card = LookMotion::at(Look::new().width(0.0).opacity(0.0));
+        let slow = Tween::new(ms(1_000), Easing::Linear);
+        card.set_target(Look::new().width(100.0).opacity(0.0), slow, ms(0));
+        card.set_target(
+            Look::new().width(100.0).opacity(1.0),
+            Transition::Instant,
+            ms(50),
+        );
+        assert_eq!(card.sample(ms(50)).value.width, Some(5.0));
+        assert_eq!(card.sample(ms(50)).value.opacity, Some(1.0));
     }
 
     #[test]

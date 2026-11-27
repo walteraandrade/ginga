@@ -1,6 +1,6 @@
 //! The gallery's window and its recording, on Linux.
 
-use std::{env, fs, path::PathBuf, process::Command, time::Duration};
+use std::{env, fs, path::PathBuf, process::Command, rc::Rc, time::Duration};
 
 use gpui::{
     AnyView, App, AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement,
@@ -20,63 +20,63 @@ const AGAIN: Duration = Duration::from_secs(1);
 /// Frames a second in a recording.
 const FPS: u32 = 30;
 
-/// One page of the gallery.
+/// One page of the gallery: a view, and what its Play button does.
 #[derive(Clone)]
-enum Page {
-    Toward(Entity<crate::toward::Toward>),
-    Presence(Entity<crate::presence::Toast>),
-    List(Entity<crate::list::Rows>),
-    Island(Entity<crate::island::IslandPage>),
+struct Page {
+    /// The page's name, as `--record` takes it.
+    name: &'static str,
+    /// What the page shows, in a line.
+    about: &'static str,
+    view: AnyView,
+    /// Starts the page's motion.
+    play: Rc<dyn Fn(&mut App)>,
 }
 
 impl Page {
-    /// Every page, in the order of the list on the left.
+    fn new<V: Render>(
+        name: &'static str,
+        about: &'static str,
+        view: Entity<V>,
+        play: fn(&mut V, &mut Context<V>),
+    ) -> Self {
+        Self {
+            name,
+            about,
+            view: view.clone().into(),
+            play: Rc::new(move |cx| view.update(cx, play)),
+        }
+    }
+
+    /// Every page, in the order of the list on the left. A new page is one
+    /// more line here, and a module in `main.rs`.
     fn all(cx: &mut App) -> Vec<Page> {
+        use crate::{island::IslandPage, list::Rows, presence::Toast, toward::Toward};
         vec![
-            Page::Toward(cx.new(|_| crate::toward::Toward::new())),
-            Page::Presence(cx.new(|_| crate::presence::Toast::new())),
-            Page::List(cx.new(|_| crate::list::Rows::new())),
-            Page::Island(cx.new(crate::island::IslandPage::new)),
+            Page::new(
+                "toward",
+                "A value heads for a target, with a spring and with a tween.",
+                cx.new(|_| Toward::new()),
+                Toward::play,
+            ),
+            Page::new(
+                "presence",
+                "A toast is shown and hidden, and drawn while it leaves.",
+                cx.new(|_| Toast::new()),
+                Toast::play,
+            ),
+            Page::new(
+                "list",
+                "Rows arrive and leave a list.",
+                cx.new(|_| Rows::new()),
+                Rows::play,
+            ),
+            Page::new(
+                "island",
+                "A dot moves in an island; the grid beside it is not drawn again.",
+                cx.new(IslandPage::new),
+                IslandPage::play,
+            ),
         ]
-    }
-
-    /// The page's name, as `--record` takes it.
-    fn name(&self) -> &'static str {
-        match self {
-            Page::Toward(_) => "toward",
-            Page::Presence(_) => "presence",
-            Page::List(_) => "list",
-            Page::Island(_) => "island",
-        }
-    }
-
-    /// What the page shows, in a line.
-    fn about(&self) -> &'static str {
-        match self {
-            Page::Toward(_) => "A value heads for a target, with a spring and with a tween.",
-            Page::Presence(_) => "A toast is shown and hidden, and drawn while it leaves.",
-            Page::List(_) => "Rows arrive and leave a list.",
-            Page::Island(_) => "A dot moves in an island; the grid beside it is not drawn again.",
-        }
-    }
-
-    fn view(&self) -> AnyView {
-        match self {
-            Page::Toward(page) => page.clone().into(),
-            Page::Presence(page) => page.clone().into(),
-            Page::List(page) => page.clone().into(),
-            Page::Island(page) => page.clone().into(),
-        }
-    }
-
-    /// Starts the page's motion.
-    fn play(&self, cx: &mut App) {
-        match self {
-            Page::Toward(page) => page.update(cx, crate::toward::Toward::play),
-            Page::Presence(page) => page.update(cx, crate::presence::Toast::play),
-            Page::List(page) => page.update(cx, crate::list::Rows::play),
-            Page::Island(page) => page.update(cx, crate::island::IslandPage::play),
-        }
     }
 }
 
@@ -99,7 +99,7 @@ impl Render for Gallery {
                 .cursor_pointer()
                 .when(here, |item| item.bg(rgb(0x0030_3540)))
                 .text_color(rgb(if here { 0x00ff_ffff } else { 0x00a0_a8b0 }))
-                .child(page.name())
+                .child(page.name)
                 .on_click(cx.listener(move |gallery, _, _, cx| {
                     gallery.chosen = index;
                     cx.notify();
@@ -145,11 +145,11 @@ impl Render for Gallery {
                                     .bg(rgb(0x003b_6ef5))
                                     .cursor_pointer()
                                     .child("Play")
-                                    .on_click(move |_, _, cx| play.play(cx)),
+                                    .on_click(move |_, _, cx| (play.play)(cx)),
                             )
-                            .child(SharedString::from(chosen.about())),
+                            .child(SharedString::from(chosen.about)),
                     )
-                    .child(div().flex_1().relative().child(chosen.view())),
+                    .child(div().flex_1().relative().child(chosen.view.clone())),
             )
     }
 }
@@ -163,9 +163,9 @@ fn open(cx: &mut App, chosen: Option<&str>) -> Entity<Gallery> {
         None => 0,
         Some(name) => pages
             .iter()
-            .position(|page| page.name() == name)
+            .position(|page| page.name == name)
             .unwrap_or_else(|| {
-                let names: Vec<_> = pages.iter().map(Page::name).collect();
+                let names: Vec<_> = pages.iter().map(|page| page.name).collect();
                 panic!("no page {name:?}: the pages are {}", names.join(", "))
             }),
     };
@@ -213,7 +213,7 @@ fn record(name: String, folder: PathBuf) {
                 timer.timer(pause).await;
                 cx.update(|cx| {
                     let page = gallery.read(cx).pages[gallery.read(cx).chosen].clone();
-                    page.play(cx);
+                    (page.play)(cx);
                 });
             }
             let grabbed = grabbed.await.expect("ffmpeg runs");

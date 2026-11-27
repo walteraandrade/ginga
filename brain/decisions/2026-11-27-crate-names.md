@@ -6,4 +6,10 @@
 
 **Why.** Both names were free on crates.io on 2026-11-27, checked against a crate that exists so that an empty answer meant free. The adapter is named after the engine plus the framework, so another adapter would follow the same pattern.
 
-**When publishing is decided.** The manifests are ready (repository, readme, keywords, a versioned path dependency). Publishing is `publish = true`, then `cargo publish -p ginga`, then `cargo publish -p ginga-gpui`. Write that decision in a new file here.
+**When publishing is decided.** The manifests carry what crates.io needs: repository, readme, keywords, the license texts, and a versioned path dependency. Nothing checks that they stay that way while `publish = false`, so check first, with `publish = true`:
+
+1. `cargo package --workspace --no-verify` packages both crates. It fails if the engine dependency has lost its `version`.
+2. Unpack `target/package/ginga-0.1.0.crate` and run `cargo test --doc` in it: the README's examples are the engine's doc tests.
+3. `cargo package --list -p ginga-gpui` lists `README.md`, `LICENSE-MIT` and `LICENSE-APACHE`.
+
+Then `cargo publish -p ginga`, then `cargo publish -p ginga-gpui`. Write that decision in a new file here.

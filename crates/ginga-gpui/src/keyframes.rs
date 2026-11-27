@@ -100,10 +100,11 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
     /// these keyframes ask for: another motion in the same view, or in a view
     /// below it, that asks for every frame draws the view, and these keyframes
     /// with it, on every frame. Draw a capped loop in a view of its own, such
-    /// as an [`Island`](crate::Island).
+    /// as an [`Island`](crate::Island). A cap of zero is no cap: the loop asks
+    /// for every frame.
     #[must_use]
     pub fn at_most_every(mut self, every: Duration) -> Self {
-        self.every = Some(every);
+        self.every = (!every.is_zero()).then_some(every);
         self
     }
 

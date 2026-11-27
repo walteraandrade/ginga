@@ -196,3 +196,11 @@ fn restart_plays_the_keyframes_again_from_now(cx: &mut TestAppContext) {
     assert_eq!(next_frame(&window, cx), 1);
     assert_eq!(last(&drawn), 100.0);
 }
+
+#[gpui::test]
+fn a_cap_of_zero_is_no_cap(cx: &mut TestAppContext) {
+    let (window, drawn) = open(ramp().forever().at_most_every(Duration::ZERO), cx);
+    assert_eq!(next_frame(&window, cx), 1, "it asks for the next frame");
+    wait(32, cx);
+    assert_eq!(drawn.borrow().len(), 2, "and no timer draws it in between");
+}

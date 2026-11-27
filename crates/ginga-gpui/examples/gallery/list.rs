@@ -2,22 +2,24 @@
 
 use std::time::Duration;
 
-use ginga_gpui::{Clock, Easing, InOut, Phase, PresenceList, Tween};
-use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, px, rgb};
+use ginga_gpui::{Clock, Easing, InOut, Phase, PresenceList, Tween, unless_reduced};
+use gpui::{
+    Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px, rgb,
+};
 
 /// A row's full height.
 const ROW: f32 = 40.;
 
 pub struct Rows {
-    wanted: Vec<(u32, String)>,
+    wanted: Vec<(u32, SharedString)>,
     next: u32,
-    list: PresenceList<u32, String>,
+    list: PresenceList<u32, SharedString>,
     clock: Clock,
 }
 
 impl Rows {
     pub fn new() -> Self {
-        let wanted: Vec<_> = (1..=4).map(|n| (n, format!("Row {n}"))).collect();
+        let wanted: Vec<_> = (1..=4).map(|n| (n, format!("Row {n}").into())).collect();
         let mut rows = PresenceList::new();
         rows.sync(wanted.iter().cloned(), InOut::INSTANT, Duration::ZERO);
         Self {
@@ -33,9 +35,13 @@ impl Rows {
         if self.wanted.len() > 1 {
             self.wanted.remove(1);
         }
-        self.wanted.push((self.next, format!("Row {}", self.next)));
+        self.wanted
+            .push((self.next, format!("Row {}", self.next).into()));
         self.next += 1;
-        let fade = Tween::new(Duration::from_millis(300), Easing::InOut);
+        // A list presence is the engine's own, so it does not know the
+        // desktop's setting: `unless_reduced` makes the fade instant under
+        // reduced motion, as the adapter's `Motion` and `Presence` do.
+        let fade = unless_reduced(Tween::new(Duration::from_millis(300), Easing::InOut), cx);
         let now = self.clock.now(cx);
         self.list
             .sync(self.wanted.iter().cloned(), InOut::new(fade, fade), now);

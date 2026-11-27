@@ -45,6 +45,7 @@
 #![forbid(unsafe_code)]
 
 mod animatable;
+mod color;
 mod easing;
 mod keyframes;
 mod look;
@@ -56,6 +57,7 @@ mod trace;
 mod transition;
 
 pub use animatable::Animatable;
+pub use color::Color;
 pub use easing::Easing;
 pub use keyframes::{Keyframes, KeyframesError, Stop};
 pub use look::{Look, LookMotion};

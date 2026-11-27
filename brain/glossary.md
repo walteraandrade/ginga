@@ -122,11 +122,17 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Stale pane.** A cached view that shows old state because it changed without being notified. The risk an island brings.
 
-**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the pulse page with keyframes (#30), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
 
 ## Looks
 
-**Look** (`Look`). How a thing should look: an offset from its own place, an opacity, a width, a height and a corner radius, each optional. A value a look does not name is left to whoever draws; on an element, it stays the element's own style.
+**Look** (`Look`). How a thing should look: an offset from its own place, an opacity, a width, a height, a corner radius, and a background, text and border color, each optional. A value a look does not name is left to whoever draws; on an element, it stays the element's own style.
+
+**Color** (`Color`). Red, green and blue as sRGB and an alpha, each from `0.0` to `1.0`, written with `Color::hex(0xRRGGBB)` or `ginga_gpui::color(rgb(..))`. It moves in linear light with its alpha premultiplied, so between two colors there are only colors between them ([the decision](decisions/2026-11-27-colors-mix-in-linear-light-premultiplied.md)).
+
+**Linear light.** Color as an amount of light, before the sRGB curve that makes equal steps of a written color look even. Mixing in it gives the brightness two lights would give together; mixing written sRGB values gives a darker middle.
+
+**Premultiplied alpha.** A color kept with each of red, green and blue multiplied by its alpha. Transparent is then all zeros whatever its color, so a fade from it never passes through black.
 
 **Look motion** (`LookMotion`). A look on its way to another, one motion for each value. A value the last look named moves from where it is; a value it did not name has no place to start from and takes its new value at once.
 

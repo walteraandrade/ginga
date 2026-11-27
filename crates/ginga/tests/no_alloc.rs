@@ -8,8 +8,8 @@ use std::{
 };
 
 use ginga::{
-    Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop, Transition,
-    Tween,
+    Color, Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop,
+    Transition, Tween,
 };
 
 struct Counting;
@@ -138,6 +138,34 @@ fn running_a_look_allocates_nothing() {
         };
         let sample = card.toward(look, Spring::BOUNCY, now);
         checksum += sample.value.opacity.unwrap_or_default();
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn running_a_look_with_colors_allocates_nothing() {
+    let rest = Look::new()
+        .background(Color::hex(0x1e_2126))
+        .text_color(Color::TRANSPARENT)
+        .border_color(Color::hex(0x30_3540));
+    let hover = Look::new()
+        .background(Color::hex(0x3b_6ef5))
+        .text_color(Color::hex(0xe8_eaed))
+        .border_color(Color::hex(0x3b_6ef5).with_alpha(0.5));
+    let mut button = LookMotion::at(rest);
+    let mut checksum = 0.0;
+    let before = allocations();
+    for frame in 0..10_000u64 {
+        let now = Duration::from_micros(frame * 8_333);
+        let look = if (frame / 37).is_multiple_of(2) {
+            rest
+        } else {
+            hover
+        };
+        let sample = button.toward(look, Spring::SNAPPY, now);
+        checksum += sample.value.background.map_or(0.0, |color| color.blue);
     }
     let after = allocations();
     assert!(checksum > 0.0);

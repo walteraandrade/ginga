@@ -2,13 +2,13 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use ginga::{Look, LookMotion, Transition};
+use ginga::{Color, Look, LookMotion, Transition};
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, ParentElement, Pixels, Position, Styled, Window, px,
+    LayoutId, ParentElement, Pixels, Position, Rgba, Styled, Window, px,
 };
 
-use crate::{Clock, unless_reduced};
+use crate::{Animate, Clock, unless_reduced};
 
 /// Declares on any styled element how it should look now; see [`Looked`].
 pub trait LookExt: Styled + IntoElement + 'static {
@@ -147,7 +147,26 @@ fn styled<E: Styled>(mut element: E, look: Look) -> E {
     if let Some(radius) = look.radius {
         element = element.rounded(px(radius.max(0.)));
     }
+    if let Some(color) = look.background {
+        element = element.bg(rgba(color));
+    }
+    if let Some(color) = look.text_color {
+        element = element.text_color(rgba(color));
+    }
+    if let Some(color) = look.border_color {
+        element = element.border_color(rgba(color));
+    }
     element
+}
+
+/// A color of the engine as GPUI's.
+fn rgba(color: Color) -> Rgba {
+    Rgba::from_repr(color)
+}
+
+/// A GPUI color as a color a [`Look`] can name: `color(rgb(0x3b6ef5))`.
+pub fn color(gpui_color: impl Into<Rgba>) -> Color {
+    gpui_color.into().to_repr()
 }
 
 impl<E: ParentElement> ParentElement for Looked<E> {
@@ -277,6 +296,44 @@ mod tests {
     }
 
     #[test]
+    fn a_gpui_color_keeps_its_alpha_on_the_way_in_and_out() {
+        let half = color(gpui::rgba(0x3b6e_f580));
+        assert_eq!(half.alpha, 128. / 255.);
+        assert_eq!(rgba(half), gpui::rgba(0x3b6e_f580));
+    }
+
+    #[test]
+    fn each_named_color_reaches_the_style() {
+        let blue = color(gpui::rgb(0x003b_6ef5));
+        let look = Look::new()
+            .background(blue)
+            .text_color(Color::TRANSPARENT)
+            .border_color(blue.with_alpha(0.5));
+        let mut element = styled(div(), look);
+        let style = element.style();
+        assert_eq!(
+            style.background,
+            Some(gpui::Fill::from(gpui::rgb(0x003b_6ef5)))
+        );
+        assert_eq!(
+            style.text.color,
+            Some(gpui::Hsla::from(gpui::Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0
+            }))
+        );
+        assert_eq!(
+            style.border_color,
+            Some(gpui::Hsla::from(gpui::Rgba {
+                a: 0.5,
+                ..gpui::rgb(0x003b_6ef5)
+            }))
+        );
+    }
+
+    #[test]
     fn a_value_past_its_range_is_drawn_at_the_end_of_it() {
         let look = Look::new().opacity(1.4).size(-3., -1.).radius(-2.);
         let mut element = styled(div(), look);
@@ -290,6 +347,23 @@ mod tests {
         );
         let faded = styled(div(), Look::new().opacity(-0.2)).style().opacity;
         assert_eq!(faded, Some(0.0));
+        let past = Color {
+            red: 1.5,
+            green: -0.2,
+            blue: 0.5,
+            alpha: 1.5,
+        };
+        let fill = styled(div(), Look::new().background(past))
+            .style()
+            .background
+            .clone();
+        let held = gpui::Rgba {
+            r: 1.0,
+            g: 0.0,
+            b: 0.5,
+            a: 1.0,
+        };
+        assert_eq!(fill, Some(gpui::Fill::from(held)));
     }
 
     #[test]

@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use ginga::{Easing, InOut, Motion, PresenceList, Spring, Transition, Tween};
+use ginga::{Easing, InOut, Look, LookMotion, Motion, PresenceList, Spring, Transition, Tween};
 
 struct Counting;
 
@@ -111,6 +111,30 @@ fn moving_list_items_to_new_places_allocates_nothing() {
             now,
         );
         checksum += rows.frame(now).map(|row| row.offset.abs()).sum::<f32>();
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn running_a_look_allocates_nothing() {
+    let mut card = LookMotion::at(Look::new().offset(0.0, 0.0).opacity(0.0));
+    let mut checksum = 0.0;
+    let before = allocations();
+    for frame in 0..10_000u64 {
+        let now = Duration::from_micros(frame * 8_333);
+        // Every 37 frames the card changes look, and names a value more or less.
+        let look = if (frame / 37).is_multiple_of(2) {
+            Look::new().offset(0.0, 0.0).opacity(0.0)
+        } else {
+            Look::new()
+                .offset(120.0, 40.0)
+                .opacity(1.0)
+                .size(320.0, 200.0)
+        };
+        let sample = card.toward(look, Spring::BOUNCY, now);
+        checksum += sample.value.opacity.unwrap_or_default();
     }
     let after = allocations();
     assert!(checksum > 0.0);

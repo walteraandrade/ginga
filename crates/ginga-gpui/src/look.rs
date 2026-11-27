@@ -2,10 +2,10 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use ginga::{Look, LookMotion, Transition};
+use ginga::{Color, Look, LookMotion, Transition};
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, ParentElement, Pixels, Position, Styled, Window, px,
+    LayoutId, ParentElement, Pixels, Position, Rgba, Styled, Window, px,
 };
 
 use crate::{Clock, unless_reduced};
@@ -147,7 +147,32 @@ fn styled<E: Styled>(mut element: E, look: Look) -> E {
     if let Some(radius) = look.radius {
         element = element.rounded(px(radius.max(0.)));
     }
+    if let Some(color) = look.background {
+        element = element.bg(rgba(color));
+    }
+    if let Some(color) = look.text_color {
+        element = element.text_color(rgba(color));
+    }
+    if let Some(color) = look.border_color {
+        element = element.border_color(rgba(color));
+    }
     element
+}
+
+/// A color of the engine as GPUI's.
+fn rgba(color: Color) -> Rgba {
+    Rgba {
+        r: color.red,
+        g: color.green,
+        b: color.blue,
+        a: color.alpha,
+    }
+}
+
+/// A GPUI color as a color a [`Look`] can name: `color(rgb(0x3b6ef5))`.
+pub fn color(color: impl Into<Rgba>) -> Color {
+    let Rgba { r, g, b, a } = color.into();
+    Color::new(r, g, b, a)
 }
 
 impl<E: ParentElement> ParentElement for Looked<E> {
@@ -274,6 +299,29 @@ mod tests {
         assert_eq!(style.position, Some(Position::Absolute));
         assert_eq!(pixels(style.inset.left), Some(px(100.)));
         assert_eq!(pixels(style.inset.top), Some(px(50.)));
+    }
+
+    #[test]
+    fn each_named_color_reaches_the_style() {
+        let blue = color(gpui::rgb(0x003b_6ef5));
+        let look = Look::new()
+            .background(blue)
+            .text_color(Color::TRANSPARENT)
+            .border_color(blue.with_alpha(0.5));
+        let mut element = styled(div(), look);
+        let style = element.style();
+        assert_eq!(
+            style.background,
+            Some(gpui::Fill::from(gpui::rgb(0x003b_6ef5)))
+        );
+        assert_eq!(
+            style.text.color,
+            Some(gpui::Hsla::from(rgba(Color::TRANSPARENT)))
+        );
+        assert_eq!(
+            style.border_color,
+            Some(gpui::Hsla::from(rgba(blue.with_alpha(0.5))))
+        );
     }
 
     #[test]

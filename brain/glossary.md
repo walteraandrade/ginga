@@ -130,6 +130,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Frame.** One time GPUI draws the window. A view that moves something asks for the next frame while it moves. *Not a sample*: see *sample*.
 
+**Cover** (`CoverExt::cover`, `Covered`). What a presence draws, put in a box that, while the content leaves, lies under a layer that takes the pointer and loses any keyboard focus inside it. `present` covers its leaving content the same way.
+
 **Frame request.** Asking GPUI to draw the next frame: `window.request_animation_frame()`. `ginga_gpui::Motion` and `ginga_gpui::Presence` do it while their value moves, and stop when it is settled.
 
 **Clock** (`ginga_gpui::Clock`). The frame's time as the `Duration` the engine counts in, from the first frame the clock saw. The engine never reads a clock; the adapter reads one and hands the time on.

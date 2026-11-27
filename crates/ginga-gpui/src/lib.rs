@@ -25,6 +25,7 @@
 
 use std::time::{Duration, Instant};
 
+pub use cover::{CoverExt, Covered};
 pub use drag::{Drag, DragExt, DragState, Dragged};
 /// The engine itself, for what the adapter does not wrap: a [`ginga::Motion`]
 /// that a [`Sequence`] moves, read with a view's [`Clock`].
@@ -41,6 +42,7 @@ pub use present::{Present, present};
 pub use shared::{Shared, SharedExt};
 pub use variant::Variant;
 
+mod cover;
 mod drag;
 mod keyframes;
 mod look;

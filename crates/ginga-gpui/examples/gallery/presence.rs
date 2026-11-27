@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use ginga_gpui::{Easing, InOut, Phase, Presence, Tween};
+use ginga_gpui::{CoverExt, Easing, InOut, Phase, Presence, Tween};
 use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, px, rgb};
 
 pub struct Toast {
@@ -44,17 +44,20 @@ impl Render for Toast {
             } else {
                 (*shown.content).to_owned()
             };
+            // While it leaves, the toast takes no clicks and loses the focus.
             page = page.child(
-                div()
-                    .absolute()
-                    .top(px(40.) + rise)
-                    .left(px(40.))
-                    .px(px(16.))
-                    .py(px(10.))
-                    .rounded(px(8.))
-                    .bg(rgb(0x0030_a46c))
-                    .opacity(shown.progress)
-                    .child(label),
+                shown.cover(
+                    div()
+                        .absolute()
+                        .top(px(40.) + rise)
+                        .left(px(40.))
+                        .px(px(16.))
+                        .py(px(10.))
+                        .rounded(px(8.))
+                        .bg(rgb(0x0030_a46c))
+                        .opacity(shown.progress)
+                        .child(label),
+                ),
             );
         }
         page.child(

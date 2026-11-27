@@ -28,6 +28,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[decisions/2026-11-27-keyframes-are-an-array-of-stops]]: keyframes keep their stops in an array (#30).
 - [[decisions/2026-11-27-a-transition-for-each-value]]: each value of a look has its own transition, over defaults (#27).
 - [[decisions/2026-11-27-a-sequence-is-a-schedule]]: a sequence is a schedule of delays, and an end is reported once by the app (#34).
+- [[decisions/2026-11-27-two-goals-performance-then-agents]]: performance first, then ease of use for AI agents; and where the ideas came from.
 - [[decisions/2026-11-27-files-for-contributors]]: CONTRIBUTING, code of conduct, security policy and issue forms, pointing at `AGENTS.md` and this folder (#48).
 
 ## Codebase

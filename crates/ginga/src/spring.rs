@@ -177,6 +177,34 @@ pub(crate) enum Phase {
 }
 
 impl Phase {
+    /// The distance to the target of a channel released `offset` away from
+    /// its target at `velocity`. The first half of [`Phase::apply`], for a
+    /// frame that only draws: the velocity costs as much again.
+    pub(crate) fn left(&self, offset: f32, velocity: f32) -> f32 {
+        match *self {
+            Self::Critical { w, t, decay } => (offset + (velocity + w * offset) * t) * decay,
+            Self::Under {
+                zw,
+                wd,
+                decay,
+                sin,
+                cos,
+            } => {
+                let b = (velocity + zw * offset) / wd;
+                decay * (offset * cos + b * sin)
+            }
+            Self::Over {
+                slow,
+                fast,
+                slow_decay,
+                fast_decay,
+            } => {
+                let c1 = (velocity - fast * offset) / (slow - fast);
+                c1 * slow_decay + (offset - c1) * fast_decay
+            }
+        }
+    }
+
     /// The distance to the target and the velocity of a channel released
     /// `offset` away from its target at `velocity`.
     pub(crate) fn apply(&self, offset: f32, velocity: f32) -> (f32, f32) {
@@ -257,6 +285,22 @@ mod tests {
             .fold(f32::MIN, f32::max);
         assert!(furthest > 1.0, "it overshoots by {furthest}");
         assert!(at(Spring::BOUNCY, 2.0).0.abs() < 0.01);
+    }
+
+    #[test]
+    fn the_distance_alone_is_the_distance_with_the_velocity() {
+        for spring in [Spring::SMOOTH, Spring::BOUNCY, over()] {
+            for seconds in [0.0, 0.05, 0.1, 0.2, 0.7] {
+                let phase = spring.phase(seconds);
+                for (offset, velocity) in [(-100.0, 0.0), (0.0, 900.0), (40.0, -2000.0)] {
+                    assert_eq!(
+                        phase.left(offset, velocity),
+                        phase.apply(offset, velocity).0,
+                        "{spring:?} at {seconds}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

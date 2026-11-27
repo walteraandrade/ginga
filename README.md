@@ -158,14 +158,15 @@ In the one app measured so far, a frame that skipped the heavy view cost about 4
 
 ## What it costs
 
-`cargo run --release --example bench`, best of nine rounds on the machine this was written on (2026-11-26):
+`cargo run --release --example bench`, best of 31 interleaved rounds, on a shared cloud Xeon at 2.1 GHz (2026-11-27). A frame costs one thing while the value moves and another once it is settled, so the two are timed apart:
 
-| One frame of | Time |
-| --- | --- |
-| a value at rest | 7 ns |
-| a spring, 1 to 4 channels | 12 to 25 ns |
-| a spring with 4 channels and a new target every frame | 165 ns |
-| a tween, 2 channels | 11 to 15 ns |
+| One frame of | Moving | Settled |
+| --- | --- | --- |
+| a value at rest | | 3 ns |
+| a spring, 1 or 4 channels | 10 to 12 ns | 4 to 5 ns |
+| a bouncy spring, 1 or 4 channels | 21 to 28 ns | 4 to 5 ns |
+| a tween, 2 channels | 12 to 33 ns | 4 ns |
+| a spring with 4 channels and a new target every frame | 258 ns | |
 
 Reading and retargeting a motion never allocates; [`tests/no_alloc.rs`](crates/ginga/tests/no_alloc.rs) fails if it does.
 

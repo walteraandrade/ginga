@@ -70,8 +70,9 @@ struct State<C> {
     settled: bool,
 }
 
-/// What a reader needs. A tween's speed costs two more looks at its curve, so
-/// a frame that only draws does not ask for it.
+/// What a reader needs. A spring's speed costs as much again as its place, and
+/// a tween's two more looks at its curve, so a frame that only draws does not
+/// ask for it.
 #[derive(Clone, Copy)]
 enum Read {
     Value,
@@ -214,17 +215,34 @@ impl<T: Animatable> Motion<T> {
                 ..
             } => {
                 let phase = spring.phase(now.saturating_sub(start).as_secs_f32());
-                let (mut value, mut velocity) = (self.target, velocity);
-                for ((place, speed), released) in value
-                    .as_mut()
-                    .iter_mut()
-                    .zip(velocity.as_mut())
-                    .zip(offset.as_ref())
-                {
-                    let (left, moving) = phase.apply(*released, *speed);
-                    *place += left;
-                    *speed = moving;
-                }
+                let mut value = self.target;
+                let velocity = match read {
+                    Read::Value => {
+                        for ((place, released), speed) in value
+                            .as_mut()
+                            .iter_mut()
+                            .zip(offset.as_ref())
+                            .zip(velocity.as_ref())
+                        {
+                            *place += phase.left(*released, *speed);
+                        }
+                        T::Channels::default()
+                    }
+                    Read::ValueAndSpeed => {
+                        let mut velocity = velocity;
+                        for ((place, speed), released) in value
+                            .as_mut()
+                            .iter_mut()
+                            .zip(velocity.as_mut())
+                            .zip(offset.as_ref())
+                        {
+                            let (left, moving) = phase.apply(*released, *speed);
+                            *place += left;
+                            *speed = moving;
+                        }
+                        velocity
+                    }
+                };
                 State {
                     value,
                     velocity,

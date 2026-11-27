@@ -8,7 +8,8 @@ ginga: motion for Rust UIs, as a pure function of time. The README says what it 
 cargo fmt --all
 cargo clippy --all-targets -- -D warnings
 cargo test                                  # seconds
-cargo clippy -p ginga-gpui -- -D warnings   # only when crates/ginga-gpui changed; the first build takes minutes
+cargo clippy -p ginga-gpui --all-targets -- -D warnings   # only when crates/ginga-gpui changed; the first build takes minutes
+cargo test -p ginga-gpui                                  # the same; GPUI's test platform needs no display
 ```
 
 ## The engine (`crates/ginga`)

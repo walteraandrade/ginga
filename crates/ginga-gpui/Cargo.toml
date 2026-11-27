@@ -12,3 +12,7 @@ gpui = { package = "gpui-pre", version = "=0.3.12", default-features = false }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# GPUI's test platform: a clock the test moves and a simulated next frame, no display.
+gpui = { package = "gpui-pre", version = "=0.3.12", default-features = false, features = ["test-support"] }

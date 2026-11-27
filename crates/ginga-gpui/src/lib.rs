@@ -19,7 +19,8 @@
 //! ```
 //!
 //! `toward` reads the frame's clock, asks GPUI for another frame while the
-//! value is moving, and moves at once when the desktop asks for reduced motion.
+//! value is moving, and moves at once when the desktop asks for reduced motion,
+//! once the transition's delay, if it has one, is over.
 
 #![forbid(unsafe_code)]
 
@@ -214,20 +215,33 @@ impl Clock {
         let now = cx.background_executor().now();
         now.saturating_duration_since(*self.epoch.get_or_insert(now))
     }
-}
 
-/// The transition to use this frame: `transition`, or none at all when the
-/// desktop asks for reduced motion.
-pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition {
-    if reduced(cx) {
-        Transition::Instant
-    } else {
-        transition.into()
+    /// The same time, read without starting the clock: zero before its
+    /// first frame, as [`now`](Self::now) would say then.
+    pub(crate) fn peek(&self, cx: &App) -> Duration {
+        self.epoch.map_or(Duration::ZERO, |epoch| {
+            cx.background_executor()
+                .now()
+                .saturating_duration_since(epoch)
+        })
     }
 }
 
-/// The desktop asks for reduced motion: then every motion in the adapter is
-/// at its target at once. The one place that asks.
+/// The transition to use this frame: `transition`, or, when the desktop asks
+/// for reduced motion, the same with no motion. A delay is timing, not
+/// motion, so it is kept: the value holds still until it is over, then is at
+/// its target at once ([`Transition::without_motion`]).
+pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition {
+    let transition = transition.into();
+    if reduced(cx) {
+        transition.without_motion()
+    } else {
+        transition
+    }
+}
+
+/// The desktop asks for reduced motion: then every motion in the adapter
+/// drops its motion, and is at its target at once after its delay. The one place that asks.
 fn reduced(cx: &App) -> bool {
     cx.reduce_motion()
 }
@@ -253,7 +267,8 @@ impl<T: Animate> Motion<T> {
     ///
     /// Call it while rendering the view that owns the motion. While the value
     /// is moving it asks GPUI to render that view again on the next frame.
-    /// When the desktop asks for reduced motion the value is at `target` at once.
+    /// When the desktop asks for reduced motion the value is at `target` at
+    /// once, after the transition's delay (see [`unless_reduced`]).
     pub fn toward(
         &mut self,
         target: T,
@@ -304,7 +319,8 @@ impl<T: Animate> Motion<T> {
 /// }
 /// ```
 ///
-/// `show` and `hide` move at once when the desktop asks for reduced motion.
+/// `show` and `hide` move at once when the desktop asks for reduced motion,
+/// after the transition's delay (see [`unless_reduced`]).
 #[derive(Debug, Clone)]
 pub struct Presence<T> {
     presence: ginga::Presence<T>,
@@ -336,6 +352,21 @@ impl<T> Presence<T> {
         }
     }
 
+    /// `content` on its way out with `exit` from now, from fully here: a
+    /// thing that is only seen leaving, made where it goes, such as in an
+    /// event handler. Its way out counts from this call, not from the frame
+    /// that first draws it. Under reduced motion it is
+    /// gone at once.
+    #[must_use]
+    pub fn leaving(content: T, exit: impl Into<Transition>, cx: &App) -> Self {
+        let mut clock = Clock::default();
+        let now = clock.now(cx);
+        Self {
+            presence: ginga::Presence::leaving(content, unless_reduced(exit, cx), now),
+            clock,
+        }
+    }
+
     /// Shows `content`. What was hidden or leaving arrives with `enter`; what
     /// was already shown only changes content.
     pub fn show(&mut self, content: T, enter: impl Into<Transition>, cx: &App) {
@@ -363,10 +394,28 @@ impl<T> Presence<T> {
         self.presence.sample(now)
     }
 
+    /// What [`frame`](Self::frame) would hand back now, read from `&self`
+    /// with no window: for an event handler, between frames. It asks for no
+    /// frame and lets go of nothing. While rendering, call `frame` once and
+    /// hand on the [`Shown`] it returns: a second read of the time in one
+    /// render can disagree with the first.
+    #[must_use]
+    pub fn sample(&self, cx: &App) -> Option<Shown<'_, T>> {
+        self.presence.sample(self.clock.peek(cx))
+    }
+
     /// The content should be on screen: it was shown and not hidden since.
+    /// The same as `wanted().is_some()`.
     #[must_use]
     pub fn is_wanted(&self) -> bool {
         self.presence.is_wanted()
+    }
+
+    /// The content that should be on screen, for an event handler that asks
+    /// what is open: `None` from the moment of `hide`, while it still leaves.
+    #[must_use]
+    pub fn wanted(&self) -> Option<&T> {
+        self.presence.wanted()
     }
 }
 

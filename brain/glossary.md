@@ -20,7 +20,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Transitions** (`Transitions`). A transition for each value of a look. A value's own wins over the one for the whole look (`all`), which wins over the defaults it is laid over (`or`), which win over ginga's own: a spring for places and sizes, a short tween for opacity and colors.
 
-**Instant** (`Transition::Instant`). No motion: the value is on its target at once. What reduced motion uses.
+**Instant** (`Transition::Instant`). No motion: the value is on its target at once. Delayed, it jumps when the delay ends. Reduced motion uses it after each transition's delay (`without_motion`).
 
 **Spring** (`Spring`). A transition with no fixed length that keeps the value's speed across a change of course. Built from a response and a bounce. The presets are `Spring::SNAPPY`, `Spring::SMOOTH` and `Spring::BOUNCY`.
 
@@ -42,7 +42,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Round.** One pass of keyframes from the first stop to the last. `times(n)` plays `n`, `forever()` never stops; *mirrored* rounds go back and forth, and a *pause* holds still between them. Keyframes that repeat forever are never settled, and their *settles at* is `None`.
 
-**Frame cap** (`ginga_gpui::Keyframes::at_most_every`). Asking for the next frame no sooner than a set time after this one, with a timer instead of a frame request, so a slow loop is drawn at a lower rate than the display's.
+**Frame cap** (`ginga_gpui::Keyframes::at_most_every`). Asking for the next frame no sooner than a set time after this one, with a timer instead of a frame request, so a slow loop is drawn at a lower rate than the display's. It caps one set of keyframes, not a view, as GPUI's `Animation::with_max_fps` caps one element (#65).
 
 **Easing** (`Easing`). The shape of a tween: how progress in time becomes progress in value. `Linear`, `Out`, `OutExpo`, a CSS `Bezier`, your own `Custom` curve and others.
 
@@ -86,7 +86,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 ## Things that come and go
 
-**Presence** (`Presence`). Something you show and hide that stays drawable while it leaves: it keeps its content until its way out is over. It never decides what leaving looks like; it gives a phase and a progress, and the view draws them. `ginga_gpui::Presence` is the same for a GPUI view.
+**Presence** (`Presence`). Something you show and hide that stays drawable while it leaves: it keeps its content until its way out is over. It never decides what leaving looks like; it gives a phase and a progress, and the view draws them. `ginga_gpui::Presence` is the same for a GPUI view. Its **wanted** content (`wanted()`) is what was shown and not hidden since: from `hide` on there is none, though the content is still drawn while it leaves. *Not the phase*: an exiting presence is drawn but not wanted. `Presence::leaving` makes one that is only seen leaving.
 
 **Content.** What a presence or a list presence shows. While it leaves, it is what it was when it was hidden.
 
@@ -94,7 +94,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Way in** and **way out.** The motion of something arriving and of something leaving. Each is a transition, given together as an `InOut` or one at a time to `show` and `hide`. When the way out is over, the content is dropped.
 
-**In-out** (`InOut`). A pair of transitions: how something arrives and how it leaves. `InOut::INSTANT` for reduced motion.
+**In-out** (`InOut`). A pair of transitions: how something arrives and how it leaves. `InOut::INSTANT` arrives and leaves at once, with no delay.
 
 **Phase** (`Phase`). Where something shown is in its life: `Entering`, `Present` or `Exiting`. Something `Exiting` is still drawn but should no longer take clicks or the focus.
 
@@ -134,7 +134,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Clock** (`ginga_gpui::Clock`). The frame's time as the `Duration` the engine counts in, from the first frame the clock saw. The engine never reads a clock; the adapter reads one and hands the time on.
 
-**Reduced motion.** The desktop's setting for less motion. Under it, the adapter's motions and presences use `Transition::Instant` (`unless_reduced`).
+**Reduced motion.** The desktop's setting for less motion. Under it, the adapter's motions, looks and presences keep each transition's delay and drop its motion (`unless_reduced`, `Transition::without_motion`, `Transitions::without_motion`): a delayed value holds still, then is at its target at once. A variant's schedule and a shared element's trip are dropped whole. See [[decisions/2026-11-27-reduced-motion-keeps-delays]].
 
 **Animate** (`ginga_gpui::Animate`) and **stand-in** (`ginga_gpui::InPixels`). The orphan rule keeps the adapter from implementing `Animatable` for GPUI's own types, so each GPUI type that can move names a stand-in that the engine moves instead. `InPixels` is the stand-in for pixels: it stops a tenth of a pixel from the target.
 

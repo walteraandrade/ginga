@@ -14,7 +14,7 @@ use gpui::{
     div, px,
 };
 
-use crate::{Animate, Clock, unless_reduced};
+use crate::{Animate, Clock, reduced};
 
 /// Declares on any styled element that it is one thing with every other
 /// element of the same key; see [`Shared`].
@@ -148,8 +148,9 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
     ) -> (LayoutId, Frame) {
         let id = id.expect("a shared element has an id");
         let now = now(cx);
-        // Under reduced motion it comes from nowhere: it is in its place at once.
-        let travels = !matches!(unless_reduced(self.transition, cx), Transition::Instant);
+        // Under reduced motion it comes from nowhere: it is in its place at
+        // once, with no wait for a delay either.
+        let travels = !reduced(cx) && !matches!(self.transition, Transition::Instant);
         let key = (window.window_handle().window_id(), self.key.clone());
         let places = cx.default_global::<Places>();
         let kept = window.with_element_state(id, |kept: Option<Kept>, _| {
@@ -241,7 +242,12 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
             frame.element.prepaint(window, cx);
         }
         let now = frame.now;
-        let transition = unless_reduced(self.transition, cx);
+        // Under reduced motion a trip under way goes at once, with no wait.
+        let transition = if reduced(cx) {
+            Transition::Instant
+        } else {
+            self.transition
+        };
         let (kept, changed) = window.with_element_state(id, |kept: Option<Kept>, _| {
             let mut kept = kept.expect("laid out before it is prepainted");
             let target = bounds.to_repr();

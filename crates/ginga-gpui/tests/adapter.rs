@@ -36,12 +36,16 @@ fn next_frame<V: Render>(window: &WindowHandle<V>, cx: &mut TestAppContext) -> u
 struct Panel {
     width: Motion<Pixels>,
     target: Pixels,
+    /// How long the glide waits before it starts.
+    delay: Duration,
     drawn: Rc<RefCell<Vec<Pixels>>>,
 }
 
 impl Render for Panel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let width = self.width.toward(self.target, glide(), window, cx);
+        let width = self
+            .width
+            .toward(self.target, glide().delay(self.delay), window, cx);
         self.drawn.borrow_mut().push(width);
         div().w(width)
     }
@@ -54,6 +58,7 @@ fn open_panel(cx: &mut TestAppContext) -> (WindowHandle<Panel>, Rc<RefCell<Vec<P
         move |_, _| Panel {
             width: Motion::at(px(0.)),
             target: px(0.),
+            delay: Duration::ZERO,
             drawn,
         }
     });
@@ -113,6 +118,41 @@ fn toward_moves_at_once_under_reduced_motion(cx: &mut TestAppContext) {
     set_target(&window, px(100.), cx);
     assert_eq!(*drawn.borrow().last().unwrap(), px(100.));
     assert_eq!(next_frame(&window, cx), 0);
+}
+
+#[gpui::test]
+fn toward_keeps_the_delay_under_reduced_motion(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let (window, drawn) = open_panel(cx);
+    window
+        .update(cx, |panel, _, _| panel.delay = ms(160))
+        .unwrap();
+    set_target(&window, px(100.), cx);
+    assert_eq!(*drawn.borrow().last().unwrap(), px(0.), "it holds still");
+    cx.executor().advance_clock(ms(150));
+    assert_eq!(next_frame(&window, cx), 1);
+    assert_eq!(*drawn.borrow().last().unwrap(), px(0.));
+    cx.executor().advance_clock(ms(10));
+    assert_eq!(next_frame(&window, cx), 1);
+    assert_eq!(*drawn.borrow().last().unwrap(), px(100.), "then at once");
+    assert_eq!(next_frame(&window, cx), 0, "and settled");
+}
+
+#[gpui::test]
+fn show_keeps_its_delay_under_reduced_motion(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let (window, drawn) = open_toaster(cx);
+    window
+        .update(cx, |toaster, _, cx| {
+            toaster.toast.show(Rc::new(()), glide().delay(ms(100)), cx);
+            cx.notify();
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(last(&drawn), Some((Phase::Entering, 0.0)));
+    cx.executor().advance_clock(ms(100));
+    next_frame(&window, cx);
+    assert_eq!(last(&drawn), Some((Phase::Present, 1.0)));
 }
 
 /// Each frame of a presence: its phase and progress, or nothing drawn.
@@ -227,6 +267,102 @@ fn show_and_hide_move_at_once_under_reduced_motion(cx: &mut TestAppContext) {
     assert_eq!(last(&drawn), None);
     assert_eq!(Rc::strong_count(&alive), 1);
     assert_eq!(next_frame(&window, cx), 0);
+}
+
+/// The toast's sample and wanted content, read from `&self` with no window.
+fn read_toast(
+    window: &WindowHandle<Toaster>,
+    cx: &mut TestAppContext,
+) -> (Option<(Phase, f32)>, bool) {
+    window
+        .update(cx, |toaster, _, cx| {
+            let sample = toaster
+                .toast
+                .sample(cx)
+                .map(|shown| (shown.phase, shown.progress));
+            (sample, toaster.toast.wanted().is_some())
+        })
+        .unwrap()
+}
+
+#[gpui::test]
+fn a_presence_is_read_without_a_window_as_its_frame_would_be(cx: &mut TestAppContext) {
+    let (window, drawn) = open_toaster(cx);
+    assert_eq!(read_toast(&window, cx), (None, false));
+    show_toast(&window, Rc::new(()), cx);
+    cx.executor().advance_clock(ms(100));
+    assert_eq!(
+        read_toast(&window, cx),
+        (Some((Phase::Entering, 0.5)), true),
+        "halfway in, between frames"
+    );
+    assert_eq!(
+        next_frame(&window, cx),
+        1,
+        "the arriving toast asked for its one frame"
+    );
+    assert_eq!(
+        last(&drawn),
+        Some((Phase::Entering, 0.5)),
+        "the frame agrees"
+    );
+
+    hide_toast(&window, cx);
+    assert_eq!(
+        read_toast(&window, cx),
+        (Some((Phase::Exiting, 0.5)), false),
+        "not wanted from the moment it is hidden, though still drawn, from halfway"
+    );
+}
+
+#[gpui::test]
+fn a_presence_made_leaving_starts_fully_here_on_its_way_out(cx: &mut TestAppContext) {
+    let (window, drawn) = open_toaster(cx);
+    let alive = Rc::new(());
+    make_leaving(&window, alive.clone(), cx);
+    cx.run_until_parked();
+    assert_eq!(last(&drawn), Some((Phase::Exiting, 1.0)));
+    assert_eq!(
+        read_toast(&window, cx),
+        (Some((Phase::Exiting, 1.0)), false),
+        "sampled as drawn, and never wanted"
+    );
+    cx.executor().advance_clock(ms(200));
+    assert_eq!(next_frame(&window, cx), 1);
+    assert_eq!(last(&drawn), None, "gone once its way out is over");
+    assert_eq!(Rc::strong_count(&alive), 1, "the content is dropped");
+    assert_eq!(next_frame(&window, cx), 0, "and no frame is asked for");
+}
+
+#[gpui::test]
+fn a_presence_made_leaving_counts_its_way_out_from_when_it_was_made(cx: &mut TestAppContext) {
+    let (window, drawn) = open_toaster(cx);
+    make_leaving(&window, Rc::new(()), cx);
+    cx.executor().advance_clock(ms(100));
+    assert_eq!(read_toast(&window, cx).0, Some((Phase::Exiting, 0.5)));
+    next_frame(&window, cx);
+    assert_eq!(
+        last(&drawn),
+        Some((Phase::Exiting, 0.5)),
+        "drawn first halfway out"
+    );
+}
+
+/// Replaces the toast with one that only leaves, without drawing it.
+fn make_leaving(window: &WindowHandle<Toaster>, content: Rc<()>, cx: &mut TestAppContext) {
+    window
+        .update(cx, |toaster, _, cx| {
+            toaster.toast = Presence::leaving(content, glide(), cx);
+            cx.notify();
+        })
+        .unwrap();
+}
+
+#[gpui::test]
+fn a_presence_made_leaving_under_reduced_motion_is_gone_at_once(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let gone = cx.update(|cx| Presence::leaving((), glide(), cx).sample(cx).is_none());
+    assert!(gone);
 }
 
 /// A view that is expensive to draw, and counts how often it is.

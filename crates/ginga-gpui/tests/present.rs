@@ -28,6 +28,8 @@ struct Stage {
     swap: Swap,
     /// Without the arriving and leaving looks, both ways are instant.
     looks: bool,
+    /// How long each way waits before it starts.
+    delay: Duration,
     drawn: Drawn,
     clicks: Rc<Cell<u32>>,
     focus: FocusHandle,
@@ -35,7 +37,7 @@ struct Stage {
 
 impl Render for Stage {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let fade = Tween::new(ms(100), Easing::Linear);
+        let fade = Tween::new(ms(100), Easing::Linear).delay(self.delay);
         let (drawn, clicks, focus) = (self.drawn.clone(), self.clicks.clone(), self.focus.clone());
         let shown = present(
             "stage",
@@ -78,7 +80,7 @@ struct Opened<'a> {
 }
 
 fn open<'a>(cx: &'a mut TestAppContext, first: Option<&'static str>, swap: Swap) -> Opened<'a> {
-    open_with(cx, first, swap, true)
+    open_with(cx, first, swap, true, Duration::ZERO)
 }
 
 fn open_with<'a>(
@@ -86,6 +88,7 @@ fn open_with<'a>(
     first: Option<&'static str>,
     swap: Swap,
     looks: bool,
+    delay: Duration,
 ) -> Opened<'a> {
     let wanted = Rc::new(Cell::new(first));
     let (drawn, clicks) = (Drawn::default(), Rc::new(Cell::new(0)));
@@ -97,6 +100,7 @@ fn open_with<'a>(
             wanted,
             swap,
             looks,
+            delay,
             drawn,
             clicks,
             focus,
@@ -224,7 +228,7 @@ fn content_that_has_the_focus_loses_it_when_its_way_out_starts(cx: &mut TestAppC
 
 #[gpui::test]
 fn without_looks_both_ways_are_instant(cx: &mut TestAppContext) {
-    let mut stage = open_with(cx, Some("toast"), Swap::Sync, false);
+    let mut stage = open_with(cx, Some("toast"), Swap::Sync, false, Duration::ZERO);
     assert_eq!(stage.last(), [("toast", 0.)], "there at once");
     assert_eq!(stage.cx.update(Window::simulate_next_frame), 0);
     stage.want(None);
@@ -233,9 +237,29 @@ fn without_looks_both_ways_are_instant(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn without_looks_a_swap_that_waits_is_instant_too(cx: &mut TestAppContext) {
-    let mut stage = open_with(cx, Some("old"), Swap::Wait, false);
+    let mut stage = open_with(cx, Some("old"), Swap::Wait, false, Duration::ZERO);
     stage.want(Some("new"));
     assert_eq!(stage.last(), [("new", 0.)], "the old one left at once");
+}
+
+#[gpui::test]
+fn under_reduced_motion_each_way_keeps_its_delay(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let mut stage = open_with(cx, Some("toast"), Swap::Sync, true, ms(60));
+    assert_eq!(
+        stage.after(0),
+        [("toast", 40.)],
+        "it waits where it arrives from"
+    );
+    assert_eq!(stage.after(50), [("toast", 40.)]);
+    assert_eq!(stage.after(10), [("toast", 0.)], "then is in place at once");
+    stage.want(None);
+    assert_eq!(
+        stage.after(50),
+        [("toast", 0.)],
+        "still there while its way out waits"
+    );
+    assert_eq!(stage.after(10), [], "then gone at once");
 }
 
 #[gpui::test]

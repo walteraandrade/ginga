@@ -33,6 +33,8 @@ mod list;
 mod look;
 #[cfg(target_os = "linux")]
 mod presence;
+#[cfg(target_os = "linux")]
+mod pulse;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
 #[cfg(target_os = "linux")]

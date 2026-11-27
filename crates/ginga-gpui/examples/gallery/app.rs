@@ -63,7 +63,7 @@ impl Page {
     pub fn all(cx: &mut App) -> Vec<Page> {
         use crate::{
             color::Button, island::IslandPage, list::Rows, look::Card, presence::Toast,
-            toward::Toward,
+            pulse::Pulse, toward::Toward,
         };
         vec![
             Page::new(
@@ -95,6 +95,12 @@ impl Page {
                 "A button changes color; red to blue passes through purple, never green.",
                 cx.new(|_| Button::new()),
                 Button::play,
+            ),
+            Page::new(
+                "pulse",
+                "A mark breathes and three dots pulse, through keyframes that repeat.",
+                cx.new(Pulse::new),
+                Pulse::play,
             ),
             Page::new(
                 "island",

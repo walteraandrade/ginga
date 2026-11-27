@@ -18,7 +18,8 @@
 //! [`Transition::Instant`]. What can move is anything [`Animatable`].
 //!
 //! Something that is shown and hidden, and must stay drawn while it leaves,
-//! is a [`Presence`]; a list of such things is a [`PresenceList`].
+//! is a [`Presence`]; a list of such things is a [`PresenceList`]. A value that
+//! goes through several stops, and can repeat, is [`Keyframes`].
 //!
 //! To check a motion without a screen, print a [`Trace`].
 //!
@@ -46,6 +47,7 @@
 mod animatable;
 mod color;
 mod easing;
+mod keyframes;
 mod look;
 mod motion;
 mod presence;
@@ -57,6 +59,7 @@ mod transition;
 pub use animatable::Animatable;
 pub use color::Color;
 pub use easing::Easing;
+pub use keyframes::{Keyframes, KeyframesError, Stop};
 pub use look::{Look, LookMotion};
 pub use motion::{Motion, Sample};
 pub use presence::{InOut, Phase, Presence, Shown};

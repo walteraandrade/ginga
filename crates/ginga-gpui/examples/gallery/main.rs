@@ -24,6 +24,8 @@
 #[cfg(target_os = "linux")]
 mod app;
 #[cfg(target_os = "linux")]
+mod color;
+#[cfg(target_os = "linux")]
 mod island;
 #[cfg(target_os = "linux")]
 mod list;

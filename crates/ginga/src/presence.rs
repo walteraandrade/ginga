@@ -128,6 +128,26 @@ impl<T> Presence<T> {
         }
     }
 
+    /// `content` on its way out with `exit`, from fully here: a thing that is
+    /// only seen leaving, such as a copy of what was just removed.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Easing, Phase, Presence, Tween};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let ghost = Presence::leaving("Ask", Tween::new(ms(100), Easing::Linear), ms(0));
+    /// let shown = ghost.sample(ms(0)).unwrap();
+    /// assert_eq!((shown.phase, shown.progress), (Phase::Exiting, 1.0));
+    /// assert!(ghost.sample(ms(100)).is_none());
+    /// ```
+    #[must_use]
+    pub fn leaving(content: T, exit: impl Into<Transition>, now: Duration) -> Self {
+        let mut presence = Self::present(content);
+        presence.hide(exit, now);
+        presence
+    }
+
     /// Shows `content`. What was hidden or leaving arrives with `enter`, from
     /// as far in as it still is; what was already shown only changes content.
     pub fn show(&mut self, content: T, enter: impl Into<Transition>, now: Duration) {
@@ -180,9 +200,18 @@ impl<T> Presence<T> {
     }
 
     /// The content should be on screen: it was shown and not hidden since.
+    /// The same as `wanted().is_some()`.
     #[must_use]
     pub fn is_wanted(&self) -> bool {
         self.wanted
+    }
+
+    /// The content that should be on screen: what was shown, until it is
+    /// hidden. `None` from the moment of `hide`, while the content still
+    /// leaves.
+    #[must_use]
+    pub fn wanted(&self) -> Option<&T> {
+        self.content.as_ref().filter(|_| self.wanted)
     }
 
     /// What is held to be drawn: shown, or on its way out.
@@ -210,6 +239,7 @@ impl<T> Presence<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::{Easing, Spring, Tween};
 
     fn ms(millis: u64) -> Duration {
@@ -218,6 +248,26 @@ mod tests {
 
     fn fade() -> Tween {
         Tween::new(ms(100), Easing::Linear)
+    }
+
+    #[test]
+    fn wanted_is_the_shown_content_until_it_is_hidden() {
+        let mut toast = Presence::absent();
+        assert_eq!(toast.wanted(), None);
+        toast.show("Saved", fade(), ms(0));
+        assert_eq!(toast.wanted(), Some(&"Saved"));
+        toast.hide(fade(), ms(200));
+        assert_eq!(toast.wanted(), None, "hidden, though still leaving");
+        assert!(toast.sample(ms(250)).is_some());
+        toast.show("Saved again", fade(), ms(250));
+        assert_eq!(toast.wanted(), Some(&"Saved again"), "turned around");
+        for toast in [
+            Presence::absent(),
+            Presence::present(1),
+            Presence::leaving(1, fade(), ms(0)),
+        ] {
+            assert_eq!(toast.is_wanted(), toast.wanted().is_some());
+        }
     }
 
     fn life<T: Copy>(presence: &mut Presence<T>, now: u64) -> Option<(T, Phase, f32)> {

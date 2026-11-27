@@ -98,6 +98,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Phase** (`Phase`). Where something shown is in its life: `Entering`, `Present` or `Exiting`. Something `Exiting` is still drawn but should no longer take clicks or the focus.
 
+**Cover** (`CoverExt::cover`, `Covered`). What a presence draws, covered while the content leaves: a child over it takes the pointer, and a keyboard focus inside it is taken away. Nothing wraps it, so its layout does not change. `present` covers its leaving content the same way.
+
 **Present.** The phase of something shown and still. *Not settled*: see *settled*.
 
 **Progress.** How much of something shown is here: `0.0` gone, `1.0` fully here. A view draws it as opacity, scale, height or anything else. A bouncy spring passes both ends a little.

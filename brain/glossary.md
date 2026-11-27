@@ -66,6 +66,12 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Trail** (`Trail`). The last places of a value moved by hand and their times, kept at least 15 ms apart in an array of eight: the speed it is let go with, over the last 100 ms, or zero if it was held still for 50 ms.
 
+**Map** (`Map`, `Map::of`). A value derived from a number: one range mapped onto a range of anything that moves, in a straight line per channel, going on past the ends unless `.clamped()`. Read from a motion with `of`, it samples, settles and traces like one.
+
+**Sequence** (`Sequence`, `Step`). Motions started as one at set times: `then` after the step before, `with` together with it, `at` a given time. It sets each target once with a delay and keeps only the times; a *step* is one motion's start and end.
+
+**Settled once** (`SettledOnce`). Says `true` once, on the first check at or after an end time: for code that runs once when a motion or a sequence settles. A new target before the end moves the end, and the old one is never reported.
+
 **Snap point.** A value a coast may come to rest on: of the snap points given, the one nearest to where it would rest.
 
 **Closed-form.** How the engine computes: the value at a time comes from where the motion started, not from stepping the last frame forward. A skipped frame changes nothing.

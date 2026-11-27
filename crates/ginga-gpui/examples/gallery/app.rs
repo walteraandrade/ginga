@@ -62,8 +62,8 @@ impl Page {
     /// more line here, and a module in `main.rs`.
     pub fn all(cx: &mut App) -> Vec<Page> {
         use crate::{
-            color::Button, drag::Throw, island::IslandPage, list::Rows, look::Card,
-            presence::Toast, pulse::Pulse, toward::Toward, transitions::Arrive,
+            color::Button, compose::Compose, drag::Throw, island::IslandPage, list::Rows,
+            look::Card, presence::Toast, pulse::Pulse, toward::Toward, transitions::Arrive,
         };
         vec![
             Page::new(
@@ -113,6 +113,12 @@ impl Page {
                 "A mark breathes and three dots pulse, through keyframes that repeat.",
                 cx.new(Pulse::new),
                 Pulse::play,
+            ),
+            Page::new(
+                "compose",
+                "A bar's color follows its width; an entrance of three steps.",
+                cx.new(|_| Compose::new()),
+                Compose::play,
             ),
             Page::new(
                 "island",

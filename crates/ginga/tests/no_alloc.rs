@@ -8,8 +8,8 @@ use std::{
 };
 
 use ginga::{
-    Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop,
-    Trail, Transition, Transitions, Tween,
+    Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Map, Motion, PresenceList, Sequence,
+    SettledOnce, Spring, Stop, Trail, Transition, Transitions, Tween,
 };
 
 struct Counting;
@@ -245,5 +245,48 @@ fn letting_go_and_coasting_allocates_nothing() {
     }
     let after = allocations();
     assert!(checksum.is_finite());
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn reading_derived_values_and_running_a_sequence_allocates_nothing() {
+    let ms = Duration::from_millis;
+    let width = Map::new(0.0, 1.0, 40.0, 240.0).unwrap();
+    let fill = Map::new(40.0, 240.0, Color::hex(0xe5_484d), Color::hex(0x30_a46c))
+        .unwrap()
+        .clamped();
+    let mut progress = Motion::at(0.0);
+    let (mut a, mut b, mut c) = (Motion::at(0.0), Motion::at(0.0), Motion::at(0.0));
+    let mut ended = SettledOnce::default();
+    let mut checksum = 0.0;
+    let before = allocations();
+    for frame in 0..10_000u64 {
+        let now = Duration::from_micros(frame * 8_333);
+        if frame % 120 == 0 {
+            let side = if (frame / 120).is_multiple_of(2) {
+                1.0
+            } else {
+                0.0
+            };
+            progress.set_target(side, Spring::BOUNCY, now);
+            let mut entrance = Sequence::starting_at(now);
+            let first = entrance.then(&mut a, side, Spring::SNAPPY);
+            entrance.with(&mut b, side, Tween::new(ms(200), Easing::Out));
+            entrance.at(
+                first.ends.saturating_sub(ms(80)),
+                &mut c,
+                side,
+                Spring::SMOOTH,
+            );
+            checksum += entrance.settles_at().as_secs_f32();
+        }
+        let px = width.of(&progress).sample(now).value;
+        checksum += px + fill.at(px).green + c.sample(now).value;
+        if ended.check(c.settles_at(), now) {
+            checksum += 1.0;
+        }
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
     assert_eq!(after - before, 0);
 }

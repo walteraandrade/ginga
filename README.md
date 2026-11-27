@@ -154,7 +154,7 @@ div()
     .child(dot.clone())
 ```
 
-In the one app measured so far, a frame that skipped the heavy view cost about 40 % less, and one frame in four skipped it: [the measurement](docs/measurements/2026-11-26-ai-caret-island/README.md).
+Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops, a frame cost the main thread about 20 ms with the island and 48 to 50 ms without it, and the heavy view did not render once: [the measurement](docs/measurements/2026-11-27-island-alone/README.md) (software rendering, no GPU). In an app it depends on what else asks for frames: in Desafinado a frame that skipped the heavy view cost about 40 % less, but only one frame in four skipped it: [that measurement](docs/measurements/2026-11-26-ai-caret-island/README.md).
 
 ## What it costs
 

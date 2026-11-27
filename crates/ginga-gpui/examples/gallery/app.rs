@@ -14,7 +14,8 @@ use gpui::{
     WindowOptions, div, point, prelude::FluentBuilder as _, px, rgb, size,
 };
 
-/// The window's size, which is also the size of a recorded frame.
+/// The window's size, which is also the size of a recorded frame. The
+/// `record` script's screen must be at least as large.
 const WIDTH: f32 = 960.;
 const HEIGHT: f32 = 600.;
 /// How long a recording waits for the window before it presses Play.

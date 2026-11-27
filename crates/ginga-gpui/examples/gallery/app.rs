@@ -190,6 +190,9 @@ fn open(cx: &mut App, chosen: Option<&str>) -> Entity<Gallery> {
 /// Records page `name` into `folder`: frames, then a contact sheet.
 fn record(name: String, folder: PathBuf) {
     gpui_platform::application().run(move |cx: &mut App| {
+        // A recording shows the motion whatever the desktop's setting, which
+        // xvfb-run passes on from the caller's session.
+        cx.set_reduce_motion(false);
         let gallery = open(cx, Some(&name));
         let timer = cx.background_executor().clone();
         cx.spawn(async move |cx| {

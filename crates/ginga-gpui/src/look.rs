@@ -8,7 +8,7 @@ use gpui::{
     LayoutId, ParentElement, Pixels, Position, Rgba, Styled, Window, px,
 };
 
-use crate::{Clock, unless_reduced};
+use crate::{Animate, Clock, unless_reduced};
 
 /// Declares on any styled element how it should look now; see [`Looked`].
 pub trait LookExt: Styled + IntoElement + 'static {
@@ -161,18 +161,12 @@ fn styled<E: Styled>(mut element: E, look: Look) -> E {
 
 /// A color of the engine as GPUI's.
 fn rgba(color: Color) -> Rgba {
-    Rgba {
-        r: color.red,
-        g: color.green,
-        b: color.blue,
-        a: color.alpha,
-    }
+    Rgba::from_repr(color)
 }
 
 /// A GPUI color as a color a [`Look`] can name: `color(rgb(0x3b6ef5))`.
-pub fn color(color: impl Into<Rgba>) -> Color {
-    let Rgba { r, g, b, a } = color.into();
-    Color::new(r, g, b, a)
+pub fn color(gpui_color: impl Into<Rgba>) -> Color {
+    gpui_color.into().to_repr()
 }
 
 impl<E: ParentElement> ParentElement for Looked<E> {
@@ -299,6 +293,13 @@ mod tests {
         assert_eq!(style.position, Some(Position::Absolute));
         assert_eq!(pixels(style.inset.left), Some(px(100.)));
         assert_eq!(pixels(style.inset.top), Some(px(50.)));
+    }
+
+    #[test]
+    fn a_gpui_color_keeps_its_alpha_on_the_way_in_and_out() {
+        let half = color(gpui::rgba(0x3b6e_f580));
+        assert_eq!(half.alpha, 128. / 255.);
+        assert_eq!(rgba(half), gpui::rgba(0x3b6e_f580));
     }
 
     #[test]

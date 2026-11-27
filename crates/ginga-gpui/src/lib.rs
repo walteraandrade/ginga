@@ -34,7 +34,8 @@ pub use look::{LookExt, LookState, Looked, color};
 
 mod look;
 use gpui::{
-    AnyElement, App, Context, IntoElement, Pixels, Point, Render, Size, Window, point, px, size,
+    AnyElement, App, Context, Hsla, IntoElement, Pixels, Point, Render, Rgba, Size, Window, point,
+    px, size,
 };
 
 /// A GPUI value that ginga can move.
@@ -94,6 +95,39 @@ impl Animate for Pixels {
 
     fn from_repr(InPixels([value]): InPixels<1>) -> Self {
         px(value)
+    }
+}
+
+/// A color moves as the engine's [`Color`]: in linear light, its alpha
+/// premultiplied, so between two colors there are only colors between them.
+impl Animate for Rgba {
+    type Repr = Color;
+
+    fn to_repr(self) -> Color {
+        Color::new(self.r, self.g, self.b, self.a)
+    }
+
+    fn from_repr(color: Color) -> Self {
+        Rgba {
+            r: color.red,
+            g: color.green,
+            b: color.blue,
+            a: color.alpha,
+        }
+    }
+}
+
+/// As [`Rgba`]: the hue is not a channel, so red on its way to blue passes
+/// through purple, not green.
+impl Animate for Hsla {
+    type Repr = Color;
+
+    fn to_repr(self) -> Color {
+        Rgba::from(self).to_repr()
+    }
+
+    fn from_repr(color: Color) -> Self {
+        Rgba::from_repr(color).into()
     }
 }
 

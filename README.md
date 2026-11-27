@@ -184,10 +184,10 @@ Limits that come from GPUI and not from this library: a `div` has no transform, 
 
 ```sh
 cargo fmt --all
-cargo clippy --all-targets -- -D warnings   # the engine
-cargo test                                  # the engine, in seconds
+cargo clippy --all-targets -- -D warnings                 # the engine
+cargo test                                                # the engine, in seconds
 cargo clippy -p ginga-gpui --all-targets -- -D warnings   # the GPUI adapter; the first build takes minutes
-cargo test -p ginga-gpui                    # the adapter on GPUI's test platform, no display
+cargo test -p ginga-gpui                                  # the adapter on GPUI's test platform, no display
 ```
 
 Rules for changes are in [AGENTS.md](AGENTS.md). No license has been chosen yet.

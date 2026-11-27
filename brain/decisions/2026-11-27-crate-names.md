@@ -11,5 +11,6 @@
 1. `cargo package --workspace --no-verify` packages both crates. It fails if the engine dependency has lost its `version`.
 2. Unpack `target/package/ginga-0.1.0.crate` and run `cargo test --doc` in it: the README's examples are the engine's doc tests.
 3. `cargo package --list -p ginga-gpui` lists `README.md`, `LICENSE-MIT` and `LICENSE-APACHE`.
+4. Both crates show the root README, GPUI section included, and its relative links (`docs/`, `brain/`) do not resolve on crates.io. Decide whether each crate gets a README of its own.
 
 Then `cargo publish -p ginga`, then `cargo publish -p ginga-gpui`. Write that decision in a new file here.

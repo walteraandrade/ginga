@@ -149,6 +149,28 @@ fn open_toaster(cx: &mut TestAppContext) -> (WindowHandle<Toaster>, Drawn) {
     (window, drawn)
 }
 
+/// Shows the toast with `content`, and lets the window catch up.
+fn show_toast(window: &WindowHandle<Toaster>, content: Rc<()>, cx: &mut TestAppContext) {
+    window
+        .update(cx, |toaster, _, cx| {
+            toaster.toast.show(content, glide(), cx);
+            cx.notify();
+        })
+        .unwrap();
+    cx.run_until_parked();
+}
+
+/// Hides the toast, and lets the window catch up.
+fn hide_toast(window: &WindowHandle<Toaster>, cx: &mut TestAppContext) {
+    window
+        .update(cx, |toaster, _, cx| {
+            toaster.toast.hide(glide(), cx);
+            cx.notify();
+        })
+        .unwrap();
+    cx.run_until_parked();
+}
+
 fn last(drawn: &Drawn) -> Option<(Phase, f32)> {
     *drawn.borrow().last().unwrap()
 }
@@ -157,13 +179,7 @@ fn last(drawn: &Drawn) -> Option<(Phase, f32)> {
 fn a_presence_lets_go_of_its_content_once_the_way_out_is_over(cx: &mut TestAppContext) {
     let (window, drawn) = open_toaster(cx);
     let alive = Rc::new(());
-    window
-        .update(cx, |toaster, _, cx| {
-            toaster.toast.show(alive.clone(), glide(), cx);
-            cx.notify();
-        })
-        .unwrap();
-    cx.run_until_parked();
+    show_toast(&window, alive.clone(), cx);
     assert_eq!(last(&drawn), Some((Phase::Entering, 0.0)));
     cx.executor().advance_clock(ms(200));
     next_frame(&window, cx);
@@ -174,13 +190,7 @@ fn a_presence_lets_go_of_its_content_once_the_way_out_is_over(cx: &mut TestAppCo
         "a present toast asks for no frame"
     );
 
-    window
-        .update(cx, |toaster, _, cx| {
-            toaster.toast.hide(glide(), cx);
-            cx.notify();
-        })
-        .unwrap();
-    cx.run_until_parked();
+    hide_toast(&window, cx);
     cx.executor().advance_clock(ms(100));
     assert_eq!(next_frame(&window, cx), 1);
     assert_eq!(last(&drawn), Some((Phase::Exiting, 0.5)));
@@ -202,23 +212,11 @@ fn show_and_hide_move_at_once_under_reduced_motion(cx: &mut TestAppContext) {
     cx.update(|cx| cx.set_reduce_motion(true));
     let (window, drawn) = open_toaster(cx);
     let alive = Rc::new(());
-    window
-        .update(cx, |toaster, _, cx| {
-            toaster.toast.show(alive.clone(), glide(), cx);
-            cx.notify();
-        })
-        .unwrap();
-    cx.run_until_parked();
+    show_toast(&window, alive.clone(), cx);
     assert_eq!(last(&drawn), Some((Phase::Present, 1.0)));
     assert_eq!(next_frame(&window, cx), 0);
 
-    window
-        .update(cx, |toaster, _, cx| {
-            toaster.toast.hide(glide(), cx);
-            cx.notify();
-        })
-        .unwrap();
-    cx.run_until_parked();
+    hide_toast(&window, cx);
     assert_eq!(last(&drawn), None);
     assert_eq!(Rc::strong_count(&alive), 1);
     assert_eq!(next_frame(&window, cx), 0);

@@ -56,17 +56,26 @@ struct Entry<K, T> {
     /// Where the item is drawn along the list, heading for its place, less
     /// `shift`. `None` until its place is first told.
     position: Option<Motion<Place>>,
-    /// How far the layout moved the item when items before it were swept
-    /// out: added to `position`, so that move is not travel.
+    /// How far the layout moved the item, told since its motion was set:
+    /// added to `position` to compare with a place told now.
     shift: f32,
+    /// How far the item may have moved since its place was last told,
+    /// because items before it were let go: the next place told settles it.
+    swept: f32,
 }
 
 impl<K, T> Entry<K, T> {
     /// The place last told for the item, or `None` before the first.
-    fn place(&self) -> Option<f32> {
+    fn told(&self) -> Option<f32> {
         self.position
             .as_ref()
             .map(|position| position.target().0 + self.shift)
+    }
+
+    /// Where the item is laid out now if the layout moved it up when items
+    /// before it were let go, or `None` before its first place.
+    fn expected(&self) -> Option<f32> {
+        self.told().map(|told| told + self.swept)
     }
 
     /// The item as drawn at `now`, or `None` once its way out is over.
@@ -183,8 +192,9 @@ impl<K, T> PresenceList<K, T> {
     /// does not travel. A place that is not a finite number is ignored.
     ///
     /// When an item's way out is over and it is let go, the items after it
-    /// move up by the room it took, from its place to the next item's. That
-    /// move is the layout's, not travel: they stay drawn at their place, and
+    /// may move up by the room it took, from its place to the next item's.
+    /// When the next place told for one of them is that, or the place it had,
+    /// the move is the layout's, not travel: it stays drawn at its place, and
     /// an item on its way somewhere keeps going. A row that folds as it
     /// leaves takes no room by then, so nothing moves.
     ///
@@ -226,10 +236,17 @@ impl<K, T> PresenceList<K, T> {
             if !at.is_finite() {
                 continue;
             }
-            let shift = entry.shift;
+            let (told, expected) = (entry.told(), entry.expected());
+            let swept = core::mem::take(&mut entry.swept);
+            let near = |place: Option<f32>| {
+                place.is_some_and(|place| (at - place).abs() < Place::PRECISION)
+            };
             if let Some(position) = &mut entry.position {
-                if (at - (position.target().0 + shift)).abs() >= Place::PRECISION / 2.0 {
-                    position.toward(Place(at - shift), transition, now);
+                if near(expected) {
+                    // The layout moved it as the sweep did: not travel.
+                    entry.shift += swept;
+                } else if !near(told) {
+                    position.toward(Place(at - entry.shift), transition, now);
                 }
             } else {
                 entry.position = Some(Motion::at(Place(at)));
@@ -238,17 +255,18 @@ impl<K, T> PresenceList<K, T> {
         }
     }
 
-    /// Lets go of the items whose way out is over. The items after one move
-    /// up in the layout by the room it took, from its place to the next
-    /// item's: that move is the layout's, so it is added to their shift and
-    /// they do not travel. An item still on its way somewhere keeps going.
+    /// Lets go of the items whose way out is over. The items after one may
+    /// move up in the layout by the room it took, from its place to the next
+    /// item's: when the next place told for them is that, the move is the
+    /// layout's and they do not travel. A place that stays put is no move
+    /// either.
     fn sweep(&mut self, now: Duration) {
-        // How far the items from here on moved up, and the place of the
-        // first item of the run being swept.
+        // How far the items from here on may have moved up, and the place of
+        // the first item of the run being let go.
         let mut moved = 0.0;
         let mut swept_from: Option<f32> = None;
         self.entries.retain_mut(|entry| {
-            let place = entry.place().map(|place| place - moved);
+            let place = entry.expected().map(|place| place - moved);
             if !entry.wanted && entry.amount.sample(now).settled {
                 swept_from = swept_from.or(place);
                 return false;
@@ -256,7 +274,7 @@ impl<K, T> PresenceList<K, T> {
             if let (Some(from), Some(place)) = (swept_from.take(), place) {
                 moved += place - from;
             }
-            entry.shift -= moved;
+            entry.swept -= moved;
             true
         });
     }
@@ -310,6 +328,7 @@ impl<K: PartialEq, T> PresenceList<K, T> {
                     amount,
                     position: None,
                     shift: 0.0,
+                    swept: 0.0,
                 });
                 continue;
             };
@@ -561,6 +580,8 @@ ms        3       1       2
         );
         assert_eq!(offsets(&mut rows, 1_050), "1:-20 2:20");
         assert_eq!(drawn(&mut rows, 1_100), "2");
+        // 2 was already at the top: letting go of 1 below it moves nothing.
+        rows.place_all(|_, _| 0.0, glide(), ms(1_100));
         assert_eq!(offsets(&mut rows, 1_100), "2:0");
     }
 
@@ -733,11 +754,13 @@ ms        3       1       2
         lay_out(&mut rows, glide(), 0);
         list(&[2, 3], 1_000, &mut rows);
         lay_out(&mut rows, glide(), 1_050);
-        // 1 is swept by this sync, which also swaps 2 and 3: only the swap travels.
+        // 1 is let go by this sync, which also moves 3 to the top. 2 stays
+        // where it was drawn, at 40, so it does not move; 3 travels from
+        // where it was drawn, at 80.
         list(&[3, 2], 1_200, &mut rows);
         lay_out(&mut rows, glide(), 1_200);
-        assert_eq!(offsets(&mut rows, 1_200), "3:40 2:-40");
-        assert_eq!(offsets(&mut rows, 1_250), "3:20 2:-20");
+        assert_eq!(offsets(&mut rows, 1_200), "3:80 2:0");
+        assert_eq!(offsets(&mut rows, 1_250), "3:40 2:0");
     }
 
     #[test]
@@ -765,5 +788,38 @@ ms        3       1       2
         assert_eq!(drawn_at(&rows, 1_150), [(2, 0.0)]);
         lay_out(&mut rows, glide(), 1_150);
         assert_eq!(offsets(&mut rows, 1_150), "2:0");
+    }
+
+    #[test]
+    fn places_told_by_key_do_not_move_when_an_item_is_let_go() {
+        let mut rows = PresenceList::new();
+        let by_key = |rows: &mut PresenceList<u32, String>, now: u64| {
+            rows.place_all(|_, row| *row.key as f32 * 40.0, glide(), ms(now));
+        };
+        list(&[1, 2, 3], 0, &mut rows);
+        by_key(&mut rows, 0);
+        list(&[2, 3], 1_000, &mut rows);
+        for now in [1_000, 1_050, 1_100, 1_150] {
+            by_key(&mut rows, now);
+        }
+        assert_eq!(offsets(&mut rows, 1_150), "2:0 3:0");
+        assert!(rows.sample(ms(1_150)).all(|row| !row.moving()));
+    }
+
+    #[test]
+    fn rows_a_fraction_apart_settle_after_items_are_let_go() {
+        let mut rows = PresenceList::new();
+        let rows_of = |rows: &mut PresenceList<u32, String>, now: u64| {
+            rows.place_all(|index, _| index as f32 * 33.3, glide(), ms(now));
+        };
+        list(&[1, 2, 3, 4, 5], 0, &mut rows);
+        rows_of(&mut rows, 0);
+        list(&[2, 4, 5], 1_000, &mut rows);
+        list(&[4, 5], 1_050, &mut rows);
+        for now in [1_000, 1_050, 1_100, 1_150, 1_200] {
+            rows_of(&mut rows, now);
+        }
+        assert_eq!(offsets(&mut rows, 1_200), "4:0 5:0");
+        assert!(rows.sample(ms(1_200)).all(|row| !row.moving()));
     }
 }

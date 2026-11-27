@@ -10,14 +10,7 @@ body:
     id: what-to-build
     attributes:
       label: What to build
-      description: The behavior, from the point of view of whoever uses the crates. One thin slice that can be shown working on its own.
-    validations:
-      required: true
-  - type: textarea
-    id: why
-    attributes:
-      label: Why the calls that exist don't do it
-      description: What you tried with the calls in the README, and where it falls short.
+      description: The behavior, from the point of view of whoever uses the crates, as one thin slice that can be shown working on its own. Say what you tried with the calls in the README, and where they fall short.
     validations:
       required: true
   - type: textarea
@@ -27,6 +20,8 @@ body:
       description: How we'll know it works. Values at given times, or a trace, where it can be.
       placeholder: |
         - [ ] ...
+    validations:
+      required: true
   - type: textarea
     id: blocked-by
     attributes:

@@ -227,3 +227,65 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         element.paint(window, cx);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::{AbsoluteLength, DefiniteLength, Length, Position, Styled, div};
+
+    use super::*;
+
+    fn pixels(length: Option<Length>) -> Option<Pixels> {
+        match length? {
+            Length::Definite(DefiniteLength::Absolute(AbsoluteLength::Pixels(pixels))) => {
+                Some(pixels)
+            }
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn each_named_value_reaches_the_style() {
+        let look = Look::new()
+            .offset(12., -4.)
+            .opacity(0.25)
+            .size(80., 40.)
+            .radius(6.);
+        let mut element = styled(div(), look);
+        let style = element.style();
+        assert_eq!(style.position, Some(Position::Relative));
+        assert_eq!(pixels(style.inset.left), Some(px(12.)));
+        assert_eq!(pixels(style.inset.top), Some(px(-4.)));
+        assert_eq!(style.opacity, Some(0.25));
+        assert_eq!(pixels(style.size.width), Some(px(80.)));
+        assert_eq!(pixels(style.size.height), Some(px(40.)));
+        assert_eq!(
+            style.corner_radii.top_left,
+            Some(AbsoluteLength::Pixels(px(6.)))
+        );
+    }
+
+    #[test]
+    fn a_value_past_its_range_is_drawn_at_the_end_of_it() {
+        let look = Look::new().opacity(1.4).size(-3., -1.).radius(-2.);
+        let mut element = styled(div(), look);
+        let style = element.style();
+        assert_eq!(style.opacity, Some(1.0));
+        assert_eq!(pixels(style.size.width), Some(px(0.)));
+        assert_eq!(pixels(style.size.height), Some(px(0.)));
+        assert_eq!(
+            style.corner_radii.bottom_right,
+            Some(AbsoluteLength::Pixels(px(0.)))
+        );
+        let faded = styled(div(), Look::new().opacity(-0.2)).style().opacity;
+        assert_eq!(faded, Some(0.0));
+    }
+
+    #[test]
+    fn a_value_the_look_does_not_name_is_left_alone() {
+        let mut element = styled(div().w(px(10.)).opacity(0.5), Look::new().height(20.));
+        let style = element.style();
+        assert_eq!(pixels(style.size.width), Some(px(10.)));
+        assert_eq!(style.opacity, Some(0.5));
+        assert_eq!(style.position, None);
+    }
+}

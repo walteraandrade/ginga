@@ -1,9 +1,9 @@
 //! Keyframes a view draws, with a cap on how often they ask for a frame.
 
-use std::{cell::Cell, rc::Rc, time::Duration};
+use std::time::Duration;
 
 use ginga::{KeyframesError, Sample, Stop};
-use gpui::{App, Window};
+use gpui::{App, EntityId, Window};
 
 use crate::{Animate, Clock};
 
@@ -30,13 +30,19 @@ use crate::{Animate, Clock};
 /// sooner than a set time after the last one. When the desktop asks for
 /// reduced motion they rest where they end (or, when they repeat forever, on
 /// the first stop) and ask for no frames.
-#[derive(Debug, Clone)]
+///
+/// The builders mirror [`ginga::Keyframes`]'s rather than taking one built
+/// there: the engine's keyframes hold the stand-in of each value, such as
+/// [`InPixels`](crate::InPixels) for pixels, which a view should not have to
+/// spell.
+#[derive(Debug, Clone, Copy)]
 pub struct Keyframes<T: Animate, const N: usize> {
     stops: ginga::Keyframes<T::Repr, N>,
     clock: Clock,
     every: Option<Duration>,
-    /// A frame is already asked for, after `every`.
-    asked: Rc<Cell<bool>>,
+    /// The view a capped frame is asked for, and the time until which it
+    /// is: until then, that view asks for no other.
+    asked: Option<(EntityId, Duration)>,
 }
 
 impl<T: Animate, const N: usize> Keyframes<T, N> {
@@ -52,7 +58,7 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
             stops: ginga::Keyframes::new(stops)?,
             clock: Clock::default(),
             every: None,
-            asked: Rc::default(),
+            asked: None,
         })
     }
 
@@ -85,8 +91,16 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
     }
 
     /// Asks for a frame no sooner than `every` after the one being drawn, to
-    /// draw a slow loop at a lower rate than the display's: 33 ms is about 30
-    /// frames a second. The values stay those of each frame's time.
+    /// draw a slow loop at a lower rate than the display's. The values stay
+    /// those of each frame's time.
+    ///
+    /// The frame after the wait is drawn when the display next draws, so the
+    /// rate is a little lower than one every `every`: at 60 Hz, 30 ms gives
+    /// about 30 frames a second, and 33 ms about 20. It caps only the frames
+    /// these keyframes ask for: another motion in the same view, or in a view
+    /// below it, that asks for every frame draws the view, and these keyframes
+    /// with it, on every frame. Draw a capped loop in a view of its own, such
+    /// as an [`Island`](crate::Island).
     #[must_use]
     pub fn at_most_every(mut self, every: Duration) -> Self {
         self.every = Some(every);
@@ -115,10 +129,8 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
     /// motion.
     fn sample(&mut self, cx: &App) -> Sample<T::Repr> {
         if cx.reduce_motion() {
-            let rest = self.stops.settles_at().unwrap_or(Duration::ZERO);
-            let value = self.stops.sample(rest).value;
             return Sample {
-                value,
+                value: self.stops.rest(),
                 settled: true,
             };
         }
@@ -126,20 +138,23 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
         self.stops.sample(now)
     }
 
-    fn ask_for_a_frame(&self, window: &Window, cx: &App) {
+    fn ask_for_a_frame(&mut self, window: &Window, cx: &App) {
         let Some(every) = self.every else {
             window.request_animation_frame();
             return;
         };
-        if self.asked.replace(true) {
+        let view = window.current_view();
+        let now = self.clock.now(cx);
+        if self
+            .asked
+            .is_some_and(|(asked, until)| asked == view && now < until)
+        {
             return;
         }
-        let view = window.current_view();
-        let asked = self.asked.clone();
+        self.asked = Some((view, now.saturating_add(every)));
         let timer = cx.background_executor().timer(every);
         cx.spawn(async move |cx| {
             timer.await;
-            asked.set(false);
             cx.update(|cx| cx.notify(view));
         })
         .detach();

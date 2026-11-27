@@ -90,34 +90,67 @@ fn keyframes_draw_each_frames_value_and_stop_asking_once_played(cx: &mut TestApp
     assert_eq!(next_frame(&window, cx), 0, "and asking for no more frames");
 }
 
+/// 0 to 128 and back in 256 ms, linear: every 32 ms is a value exact in `f32`.
+fn ramp() -> Keyframes<f32, 3> {
+    Keyframes::new([
+        Stop::new(ms(0), 0.0, Easing::Linear),
+        Stop::new(ms(128), 128.0, Easing::Linear),
+        Stop::new(ms(256), 0.0, Easing::Linear),
+    ])
+    .unwrap()
+}
+
+/// Moves the clock by `millis` and runs what is due, timers included.
+fn wait(millis: u64, cx: &mut TestAppContext) {
+    cx.executor().advance_clock(ms(millis));
+    cx.run_until_parked();
+}
+
 #[gpui::test]
 fn a_capped_loop_asks_for_a_frame_no_sooner_than_its_cap(cx: &mut TestAppContext) {
-    let (window, drawn) = open(up_and_down().forever().at_most_every(ms(40)), cx);
+    let (window, drawn) = open(ramp().forever().at_most_every(ms(32)), cx);
     let renders = || drawn.borrow().len();
     assert_eq!(renders(), 1);
     assert_eq!(next_frame(&window, cx), 0, "no request for the next frame");
 
-    cx.executor().advance_clock(ms(39));
-    cx.run_until_parked();
-    assert_eq!(renders(), 1, "not before 40 ms");
-
-    cx.executor().advance_clock(ms(1));
-    cx.run_until_parked();
-    assert_eq!(renders(), 2, "at 40 ms the view is drawn again");
-    assert!(
-        (last(&drawn) - 40.0).abs() < 1e-3,
-        "with the value at its own time"
-    );
+    wait(31, cx);
+    assert_eq!(renders(), 1, "not before 32 ms");
+    wait(1, cx);
+    assert_eq!(renders(), 2, "at 32 ms the view is drawn again");
+    assert_eq!(last(&drawn), 32.0, "with the value at its own time");
 
     for _ in 0..3 {
-        cx.executor().advance_clock(ms(10));
-        cx.run_until_parked();
+        wait(10, cx);
     }
     assert_eq!(renders(), 2, "one timer at a time");
-    cx.executor().advance_clock(ms(10));
-    cx.run_until_parked();
+    wait(2, cx);
     assert_eq!(renders(), 3);
-    assert!((last(&drawn) - 80.0).abs() < 1e-3);
+    assert_eq!(last(&drawn), 64.0);
+}
+
+#[gpui::test]
+fn copies_of_a_capped_loop_in_two_views_are_each_drawn_again(cx: &mut TestAppContext) {
+    let capped = ramp().forever().at_most_every(ms(32));
+    let (_, first) = open(capped, cx);
+    let (_, second) = open(capped, cx);
+    wait(32, cx);
+    assert_eq!(first.borrow().len(), 2);
+    assert_eq!(second.borrow().len(), 2);
+    assert_eq!(last(&second), 32.0);
+}
+
+#[gpui::test]
+fn capped_keyframes_that_settle_are_drawn_once_settled_and_then_ask_for_nothing(
+    cx: &mut TestAppContext,
+) {
+    let (window, drawn) = open(ramp().at_most_every(ms(64)), cx);
+    for _ in 0..4 {
+        wait(64, cx);
+    }
+    assert_eq!(*drawn.borrow(), [0.0, 64.0, 128.0, 64.0, 0.0]);
+    wait(500, cx);
+    assert_eq!(drawn.borrow().len(), 5, "settled, it asks for no frame");
+    assert_eq!(next_frame(&window, cx), 0);
 }
 
 #[gpui::test]

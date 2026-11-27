@@ -1,6 +1,6 @@
 use core::{fmt, time::Duration};
 
-use crate::{Animatable, Easing, Sample};
+use crate::{Animatable, Easing, Sample, trace::Row};
 
 /// One stop of [`Keyframes`]: the value at a time, and the easing that
 /// arrives there from the stop before.
@@ -262,6 +262,19 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
     }
 }
 
+impl<T: Animatable, const N: usize> crate::trace::sealed::Sealed for Keyframes<T, N> {}
+
+impl<T: Animatable, const N: usize> crate::trace::Traceable for Keyframes<T, N> {
+    fn row(&self, at: Duration) -> Row {
+        let sample = self.sample(at);
+        Row {
+            at,
+            values: sample.value.to_channels().as_ref().to_vec(),
+            settled: sample.settled,
+        }
+    }
+}
+
 /// How many whole `period`s fit in `since`, and what is left.
 fn split(since: Duration, period: Duration) -> (u128, Duration) {
     let period = period.as_nanos();
@@ -311,6 +324,22 @@ mod tests {
                 (50.0, true),
                 (50.0, true)
             ]
+        );
+    }
+
+    #[test]
+    fn a_trace_shows_each_stop_passed_at_its_time() {
+        let trace = crate::Trace::of(&up_and_half_back(), ms(0), ms(50));
+        assert_eq!(
+            trace.to_string(),
+            "\
+ms           value
+0            0.000
+50          50.000
+100        100.000
+150         75.000
+200         50.000  settled
+"
         );
     }
 

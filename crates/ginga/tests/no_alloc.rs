@@ -7,7 +7,10 @@ use std::{
     time::Duration,
 };
 
-use ginga::{Easing, InOut, Look, LookMotion, Motion, PresenceList, Spring, Transition, Tween};
+use ginga::{
+    Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop, Transition,
+    Tween,
+};
 
 struct Counting;
 
@@ -135,6 +138,44 @@ fn running_a_look_allocates_nothing() {
         };
         let sample = card.toward(look, Spring::BOUNCY, now);
         checksum += sample.value.opacity.unwrap_or_default();
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn building_and_reading_keyframes_allocates_nothing() {
+    let ms = Duration::from_millis;
+    let mut checksum = 0.0;
+    let before = allocations();
+    // A breath: in, hold, out, mirrored forever with a pause; and pulsing
+    // dots, each started a little later, three times.
+    let breath = Keyframes::new([
+        Stop::new(ms(0), (0.6, 0.9), Easing::Linear),
+        Stop::new(ms(900), (1.0, 1.0), Easing::InOut),
+        Stop::new(ms(1_200), (1.0, 1.0), Easing::Linear),
+    ])
+    .unwrap()
+    .forever()
+    .mirrored()
+    .pause(ms(300));
+    let dots = [0u32, 1, 2].map(|n| {
+        Keyframes::new([
+            Stop::new(ms(0), 0.3, Easing::Linear),
+            Stop::new(ms(300), 1.0, Easing::OutExpo),
+            Stop::new(ms(600), 0.3, Easing::InOut),
+        ])
+        .unwrap()
+        .times(3)
+        .starting_at(ms(150) * n)
+    });
+    for frame in 0..10_000u64 {
+        let now = Duration::from_micros(frame * 8_333);
+        checksum += breath.sample(now).value.0;
+        for dot in &dots {
+            checksum += dot.sample(now).value;
+        }
     }
     let after = allocations();
     assert!(checksum > 0.0);

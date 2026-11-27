@@ -104,8 +104,7 @@ fn it_is_drawn_as_a_declared_look_at_rest_is(cx: &mut TestAppContext) {
             move |_, _| Cards { painted, declared }
         });
         cx.run_until_parked();
-        let cards = painted.borrow().cards.clone();
-        cards
+        painted.borrow().cards.clone()
     };
     let declared = draw(true, cx);
     assert_eq!(draw(false, cx), declared);

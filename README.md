@@ -193,4 +193,4 @@ Rules for changes are in [AGENTS.md](AGENTS.md).
 
 ## License
 
-Either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. A contribution you submit for inclusion is offered under the same two, with no other terms.
+Either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. Unless you say otherwise, a contribution you submit for inclusion, as defined in the Apache-2.0 license, is offered under the same two, with no other terms.

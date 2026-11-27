@@ -294,8 +294,7 @@ fn an_island_is_drawn_on_the_next_frame_and_the_cached_view_beside_it_is_not(
         }
     });
     cx.run_until_parked();
-    let (heavy_before, dot_before) = (heavy_renders.get(), dot_renders.get());
-    assert_eq!((heavy_before, dot_before), (1, 1));
+    assert_eq!((heavy_renders.get(), dot_renders.get()), (1, 1));
 
     let dot = window.update(cx, |page, _, _| page.dot.clone()).unwrap();
     dot.update(cx, |island, cx| {

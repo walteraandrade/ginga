@@ -31,7 +31,8 @@ enum Place {
 }
 
 /// A 20 px card that slides in from an offset of 8, 0 to `offset` on a
-/// linear 100 ms tween, counting the clicks it gets.
+/// linear 100 ms tween, counting the clicks it gets. 40 px wide under the
+/// pointer.
 struct Card {
     place: Place,
     offset: (f32, f32),
@@ -62,7 +63,8 @@ impl Render for Card {
                 Look::new().offset(x, y),
                 Tween::new(ms(100), Easing::Linear),
             )
-            .from(Look::new().offset(8., 0.));
+            .from(Look::new().offset(8., 0.))
+            .hover(Look::new().width(40.));
         div().relative().size_full().child(card)
     }
 }
@@ -150,4 +152,29 @@ fn the_pointer_finds_the_card_where_it_is_painted(cx: &mut TestAppContext) {
     assert_eq!(card.after(100), point(px(150.), px(40.)));
     assert!(card.clicked_at(160., 50.), "a click where it is painted");
     assert!(!card.clicked_at(110., 50.), "none where it is laid out");
+}
+
+#[gpui::test]
+fn the_pointer_hovers_the_card_where_it_is_painted(cx: &mut TestAppContext) {
+    let mut card = open(cx, Place::Absolute);
+    card.after(100);
+    card.cx.update(|_, cx| {
+        card.view.update(cx, |card, cx| {
+            card.offset = (50., 0.);
+            cx.notify();
+        });
+    });
+    card.after(100);
+    let width = |card: &mut Opened<'_>, x: f32| {
+        card.cx
+            .simulate_mouse_move(point(px(x), px(50.)), None, Modifiers::none());
+        card.after(16);
+        card.painted.borrow().last().unwrap().size.width
+    };
+    assert_eq!(
+        width(&mut card, 160.),
+        px(40.),
+        "hovered where it is painted"
+    );
+    assert_eq!(width(&mut card, 110.), px(20.), "not where it is laid out");
 }

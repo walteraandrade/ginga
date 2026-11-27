@@ -9,7 +9,7 @@ use gpui::{
     MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Styled, Window, point, px,
 };
 
-use crate::{Animate, Clock, InPixels, look::prepaint_at};
+use crate::{Animate, Clock, InPixels};
 
 /// How an element is dragged: along which axis, inside which limits, onto
 /// which snap points, and how it coasts when it is let go.
@@ -291,7 +291,6 @@ pub trait DragExt: Styled + IntoElement + 'static {
             element: Some(self),
             state: state.clone(),
             drag,
-            offset: Point::default(),
         }
     }
 }
@@ -312,9 +311,10 @@ pub struct Dragged<E> {
     element: Option<E>,
     state: DragState,
     drag: Drag,
-    /// This frame's offset, from layout to prepaint.
-    offset: Point<Pixels>,
 }
+
+/// A dragged element laid out, with this frame's offset.
+type LaidOut = (AnyElement, LayoutId, Point<Pixels>);
 
 impl<E: ParentElement> ParentElement for Dragged<E> {
     fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
@@ -333,7 +333,7 @@ impl<E: Styled + IntoElement + 'static> IntoElement for Dragged<E> {
 }
 
 impl<E: Styled + IntoElement + 'static> Element for Dragged<E> {
-    type RequestLayoutState = AnyElement;
+    type RequestLayoutState = LaidOut;
     type PrepaintState = Hitbox;
 
     fn id(&self) -> Option<ElementId> {
@@ -350,27 +350,33 @@ impl<E: Styled + IntoElement + 'static> Element for Dragged<E> {
         _inspector_id: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, AnyElement) {
-        self.offset = self.state.frame(window, cx);
+    ) -> (LayoutId, LaidOut) {
+        let offset = self.state.frame(window, cx);
         let mut element = self
             .element
             .take()
             .expect("an element is laid out once")
             .into_any_element();
-        (element.request_layout(window, cx), element)
+        let layout = element.request_layout(window, cx);
+        (layout, (element, layout, offset))
     }
 
     fn prepaint(
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        element: &mut AnyElement,
+        _bounds: Bounds<Pixels>,
+        (element, layout, offset): &mut LaidOut,
         window: &mut Window,
         cx: &mut App,
     ) -> Hitbox {
-        prepaint_at(element, self.offset, window, cx);
-        window.insert_hitbox(bounds + self.offset, HitboxBehavior::Normal)
+        // Inside the offset, where it is painted, as GPUI snaps it to the
+        // pixel; after the children, as before the offset was painted.
+        window.with_element_offset(*offset, |window| {
+            element.prepaint(window, cx);
+            let painted = window.layout_bounds(*layout);
+            window.insert_hitbox(painted, HitboxBehavior::Normal)
+        })
     }
 
     fn paint(
@@ -378,7 +384,7 @@ impl<E: Styled + IntoElement + 'static> Element for Dragged<E> {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
-        element: &mut AnyElement,
+        (element, ..): &mut LaidOut,
         hitbox: &mut Hitbox,
         window: &mut Window,
         cx: &mut App,

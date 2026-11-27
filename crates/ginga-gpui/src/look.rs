@@ -360,13 +360,14 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         moving: Option<Moving>,
         window: &mut Window,
         cx: &mut App,
-    ) -> ((LayoutId, Drawn), Moving) {
+    ) -> ((LayoutId, LaidOut), Moving) {
         let (look, moving, held) = self.frame(moving, window, cx);
         let element = self.element.take().expect("an element is laid out once");
         let mut element = styled(element, look).into_any_element();
         let layout = element.request_layout(window, cx);
         self.held = held;
-        let drawn = Drawn {
+        let drawn = LaidOut {
+            layout,
             element,
             gestures: moving.gestures.clone(),
             offset: offset_of(look),
@@ -375,9 +376,13 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
     }
 }
 
-/// An element laid out with its look, waiting to be painted.
-pub struct Drawn {
+/// An element laid out with its look, waiting to be prepainted and painted.
+/// `pub` in a private module: it appears in `Looked`'s `Element` impl, and
+/// cannot be named outside the crate.
+pub struct LaidOut {
+    /// The element, styled with this frame's look.
     element: AnyElement,
+    layout: LayoutId,
     /// What the pointer is doing to it.
     gestures: Rc<Cell<Gestures>>,
     /// How far from its laid-out place it is painted.
@@ -452,14 +457,23 @@ pub(crate) fn offset_of(look: Look) -> Point<Pixels> {
 }
 
 /// Prepaints `element` moved by `offset`, with its children: what is painted
-/// and where the pointer finds it move, and the layout does not.
-pub(crate) fn prepaint_at(
+/// and where the pointer finds it move, and the layout does not. `hitbox`
+/// runs first, inside the offset, with where the element is painted, as GPUI
+/// snaps it to the pixel; what it returns is handed back.
+pub(crate) fn prepaint_at<R>(
     element: &mut AnyElement,
+    layout: LayoutId,
     offset: Point<Pixels>,
+    hitbox: impl FnOnce(Bounds<Pixels>, &mut Window) -> R,
     window: &mut Window,
     cx: &mut App,
-) {
-    window.with_element_offset(offset, |window| element.prepaint(window, cx));
+) -> R {
+    window.with_element_offset(offset, |window| {
+        let painted = window.layout_bounds(layout);
+        let hitbox = hitbox(painted, window);
+        element.prepaint(window, cx);
+        hitbox
+    })
 }
 
 /// `element` painted `offset` away from where it is laid out.
@@ -485,7 +499,7 @@ impl IntoElement for PaintedAt {
 }
 
 impl Element for PaintedAt {
-    type RequestLayoutState = AnyElement;
+    type RequestLayoutState = (AnyElement, LayoutId);
     type PrepaintState = ();
 
     fn id(&self) -> Option<ElementId> {
@@ -502,9 +516,10 @@ impl Element for PaintedAt {
         _inspector_id: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, AnyElement) {
+    ) -> (LayoutId, (AnyElement, LayoutId)) {
         let mut element = self.element.take().expect("an element is laid out once");
-        (element.request_layout(window, cx), element)
+        let layout = element.request_layout(window, cx);
+        (layout, (element, layout))
     }
 
     fn prepaint(
@@ -512,11 +527,11 @@ impl Element for PaintedAt {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
-        element: &mut AnyElement,
+        (element, layout): &mut (AnyElement, LayoutId),
         window: &mut Window,
         cx: &mut App,
     ) {
-        prepaint_at(element, self.offset, window, cx);
+        prepaint_at(element, *layout, self.offset, |_, _| (), window, cx);
     }
 
     fn paint(
@@ -524,7 +539,7 @@ impl Element for PaintedAt {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
-        element: &mut AnyElement,
+        (element, _): &mut (AnyElement, LayoutId),
         (): &mut (),
         window: &mut Window,
         cx: &mut App,
@@ -560,7 +575,7 @@ impl<E: Styled + IntoElement + 'static> IntoElement for Looked<E> {
 }
 
 impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
-    type RequestLayoutState = Drawn;
+    type RequestLayoutState = LaidOut;
     /// Where the pointer is heard, when a look for it is wanted.
     type PrepaintState = Option<Hitbox>;
 
@@ -606,17 +621,22 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         &mut self,
         id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        _bounds: Bounds<Pixels>,
         drawn: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) -> Option<Hitbox> {
         // Inserted before the children's, so theirs lie over it, as GPUI's
         // own elements do; where it is painted.
-        let hitbox = self
-            .hears_the_pointer()
-            .then(|| window.insert_hitbox(bounds + drawn.offset, HitboxBehavior::Normal));
-        prepaint_at(&mut drawn.element, drawn.offset, window, cx);
+        let hears = self.hears_the_pointer();
+        let hitbox = prepaint_at(
+            &mut drawn.element,
+            drawn.layout,
+            drawn.offset,
+            |painted, window| hears.then(|| window.insert_hitbox(painted, HitboxBehavior::Normal)),
+            window,
+            cx,
+        );
         // GPUI lays out a cached view in prepaint, so only now have all the
         // children inside said when they end.
         if let Some(held) = self.held.take() {
@@ -644,7 +664,7 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
-        Drawn {
+        LaidOut {
             element, gestures, ..
         }: &mut Self::RequestLayoutState,
         hitbox: &mut Option<Hitbox>,

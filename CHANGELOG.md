@@ -5,6 +5,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 ## Unreleased
 
 - Variants: a parent's name that its children follow one after another, before or after the parent (`Variant`, `Order`, `ginga_gpui::Variant`, `.leads(..)`, `.follows(..)`). `Transitions::delay` and `LookMotion::settles_at`.
+- `Presence::wanted` and `Presence::leaving`, in the engine and the adapter, and `ginga_gpui::Presence::sample(cx)`, read with no window.
 
 ## 0.1.0
 

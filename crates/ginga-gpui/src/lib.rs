@@ -214,6 +214,16 @@ impl Clock {
         let now = cx.background_executor().now();
         now.saturating_duration_since(*self.epoch.get_or_insert(now))
     }
+
+    /// The same time, read without starting the clock: zero before its
+    /// first frame, as [`now`](Self::now) would say then.
+    pub(crate) fn peek(&self, cx: &App) -> Duration {
+        self.epoch.map_or(Duration::ZERO, |epoch| {
+            cx.background_executor()
+                .now()
+                .saturating_duration_since(epoch)
+        })
+    }
 }
 
 /// The transition to use this frame: `transition`, or none at all when the
@@ -336,6 +346,19 @@ impl<T> Presence<T> {
         }
     }
 
+    /// `content` on its way out with `exit` from this frame, from fully
+    /// here: a thing that is only seen leaving. Under reduced motion it is
+    /// gone at once.
+    #[must_use]
+    pub fn leaving(content: T, exit: impl Into<Transition>, cx: &App) -> Self {
+        let mut clock = Clock::default();
+        let now = clock.now(cx);
+        Self {
+            presence: ginga::Presence::leaving(content, unless_reduced(exit, cx), now),
+            clock,
+        }
+    }
+
     /// Shows `content`. What was hidden or leaving arrives with `enter`; what
     /// was already shown only changes content.
     pub fn show(&mut self, content: T, enter: impl Into<Transition>, cx: &App) {
@@ -363,10 +386,26 @@ impl<T> Presence<T> {
         self.presence.sample(now)
     }
 
+    /// What [`frame`](Self::frame) would hand back now, read from `&self`
+    /// with no window: for an event handler, or a draw from `&self`
+    /// methods. It asks for no frame and lets go of nothing, so draw with
+    /// `frame` once per render.
+    #[must_use]
+    pub fn sample(&self, cx: &App) -> Option<Shown<'_, T>> {
+        self.presence.sample(self.clock.peek(cx))
+    }
+
     /// The content should be on screen: it was shown and not hidden since.
     #[must_use]
     pub fn is_wanted(&self) -> bool {
         self.presence.is_wanted()
+    }
+
+    /// The content that should be on screen, for an event handler that asks
+    /// what is open: `None` from the moment of `hide`, while it still leaves.
+    #[must_use]
+    pub fn wanted(&self) -> Option<&T> {
+        self.presence.wanted()
     }
 }
 

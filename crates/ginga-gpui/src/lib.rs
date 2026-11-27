@@ -38,14 +38,16 @@ pub use ginga::{
 pub use keyframes::Keyframes;
 pub use look::{LookExt, LookState, Looked, color, set_default_look_transitions};
 pub use present::{Present, present};
+pub use shared::{Shared, SharedExt};
 
 mod drag;
 mod keyframes;
 mod look;
 mod present;
+mod shared;
 use gpui::{
-    AnyElement, App, Context, Hsla, IntoElement, Pixels, Point, Render, Rgba, Size, Window, point,
-    px, size,
+    AnyElement, App, Bounds, Context, Hsla, IntoElement, Pixels, Point, Render, Rgba, Size, Window,
+    point, px, size,
 };
 
 /// A GPUI value that ginga can move.
@@ -164,6 +166,25 @@ impl Animate for Size<Pixels> {
 
     fn from_repr(InPixels([width, height]): InPixels<2>) -> Self {
         size(px(width), px(height))
+    }
+}
+
+/// A box moves as its place and its size together: four channels that stop
+/// a tenth of a pixel from the target.
+impl Animate for Bounds<Pixels> {
+    type Repr = InPixels<4>;
+
+    fn to_repr(self) -> InPixels<4> {
+        InPixels([
+            f32::from(self.origin.x),
+            f32::from(self.origin.y),
+            f32::from(self.size.width),
+            f32::from(self.size.height),
+        ])
+    }
+
+    fn from_repr(InPixels([x, y, width, height]): InPixels<4>) -> Self {
+        Bounds::new(point(px(x), px(y)), size(px(width), px(height)))
     }
 }
 

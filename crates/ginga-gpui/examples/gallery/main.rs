@@ -41,6 +41,8 @@ mod look;
 mod presence;
 #[cfg(target_os = "linux")]
 mod pulse;
+#[cfg(target_os = "linux")]
+mod shared;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
 #[cfg(target_os = "linux")]

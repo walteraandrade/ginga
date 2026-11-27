@@ -122,6 +122,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Travelling** (checked by `ShownItem::moving`). An item is on its way to its place: its offset is not settled. *Not the offset*: an offset can pass `0.0` while it travels, so `moving()` checks this.
 
+**Shared element** (`SharedExt::shared`, `Shared`) and **traveller**. Elements in different spots that declare one key are one thing. The one that appears while another of its key has just gone is the *traveller*: drawn above the rest, it moves and resizes from the other's bounds to its own *destination*, the bounds layout gives it, which is kept empty at its size meanwhile. *Not a list's place or travelling*: those are `PresenceList::place_all`'s, for items along one list. See [[codebase/a-shared-element]].
+
 ## In a GPUI view
 
 **Test platform.** GPUI with its `test-support` feature: windows with no display, a clock the test moves and frames the test delivers. How the adapter's tests run ([[codebase/testing-the-adapter]]).
@@ -146,7 +148,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Drag** (`ginga_gpui::Drag`, `.draggable`). The pointer takes an element and it follows exactly, with no spring between them. Let go, it is *thrown*: it keeps the pointer's speed, which a *trail* measures, and coasts. A pointer still for 50 ms before it lets go sets the element down instead. `DragState` holds where the element is; `throw` lets it go without a pointer.
 
-**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), the transitions page with a transition for each value (#27), the compose page with maps and sequences (#34), the gestures page with hover, pressed and focused looks (#29), the ways page with ways in and out (#28), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), the transitions page with a transition for each value (#27), the compose page with maps and sequences (#34), the gestures page with hover, pressed and focused looks (#29), the ways page with ways in and out (#28), the shared page with shared elements (#33), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
 
 ## Looks
 

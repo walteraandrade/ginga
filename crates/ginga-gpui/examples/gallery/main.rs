@@ -50,6 +50,8 @@ mod toward;
 #[cfg(target_os = "linux")]
 mod transitions;
 #[cfg(target_os = "linux")]
+mod variants;
+#[cfg(target_os = "linux")]
 mod ways;
 
 fn main() {

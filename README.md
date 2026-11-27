@@ -34,7 +34,7 @@ Early work: until 1.0, a new minor version can change the API. Two crates, on cr
 | Crate | What it is | Depends on |
 | --- | --- | --- |
 | [`ginga`](https://github.com/walteraandrade/ginga/tree/main/crates/ginga) | The engine: springs, tweens, keyframes, coasting, colors, looks, presences and slots, derived values, sequences, trails and the trace. | nothing |
-| [`ginga-gpui`](https://github.com/walteraandrade/ginga/tree/main/crates/ginga-gpui) | GPUI views: the frame's clock and frame requests, reduced motion, a look declared on an element, ways in and out, shared elements, dragging, loops and islands. | `gpui-pre =0.3.12`, the GPUI that `gpui-kit` 0.9.1 builds on |
+| [`ginga-gpui`](https://github.com/walteraandrade/ginga/tree/main/crates/ginga-gpui) | GPUI views: the frame's clock and frame requests, reduced motion, a look declared on an element, variants, ways in and out, shared elements, dragging, loops and islands. | `gpui-pre =0.3.12`, the GPUI that `gpui-kit` 0.9.1 builds on |
 
 ```toml
 [dependencies]
@@ -482,6 +482,51 @@ div().id(tab).children((tab == selected).then(|| {
 
 While it travels it is drawn above the rest, and its destination stays empty at its size, with its margins and its position, so nothing around it moves. A key names one thing in a window, so two tab bars need a key each. It comes only from an element of its key drawn in the frame before, in the same window; the frame it appears in measures where it goes and draws nothing, so a trip starts with one blank frame. Under reduced motion it is in its destination at once. Its content is laid out again at each size it passes, since GPUI cannot scale an element. Two elements of one key must have different ids around them, such as tabs that each have an id: to GPUI, two with the same ids around them are one element, which takes its new place at once.
 
+### A parent and its children
+
+A `Variant` is a name a parent shows, such as `Closed` or `Open`, that its children follow one after another. The view keeps it and hands it by hand to the parent, with `.leads(&menu)`, and to each child, with `.follows(&menu, n)`. Each element picks its own look for the name. When the name changes, child `n` starts one step after child `n - 1`, and the parent goes before them (`Order::ParentFirst`), after them (`Order::ChildrenFirst`) or with the first one (`Order::Together`, the default).
+
+```rust,ignore
+// In the view's state:
+let menu = Variant::new(Menu::Closed).stagger(ms(40)).order(Order::ParentFirst);
+
+// While rendering:
+let open = self.menu.name() == Menu::Open;
+div()
+    .look("menu", if open { Look::new().height(176.) } else { Look::new().height(32.) }, Spring::SNAPPY)
+    .leads(&self.menu)
+    .children((0..4).map(|n| {
+        let row = if open { Look::new().offset(0., 0.).opacity(1.) } else { Look::new().offset(-12., 0.).opacity(0.) };
+        div().look(("row", n), row, Spring::SNAPPY).follows(&self.menu, n)
+    }))
+
+// On a click: every view that drew the menu renders again, cached ones too.
+self.menu.set(Menu::Open, cx);
+```
+
+A parent that goes after its children waits for the ones drawn inside it. Times count from the change of name, so a child drawn a frame late keeps its place. Under reduced motion, everything changes at once.
+
+In the engine, a `Variant` is the schedule alone. Each element asks for its delay and says when it will be settled, so the side that waits knows how long:
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Look, LookMotion, Order, Transitions, Tween, Variant};
+
+let ms = Duration::from_millis;
+let fade = Transitions::from(Tween::new(ms(100), Easing::Linear));
+let mut menu = Variant::new(false).stagger(ms(50)).order(Order::ParentFirst);
+let (mut panel, mut rows) = (LookMotion::at(Look::new().opacity(0.0)), [LookMotion::at(Look::new().opacity(0.0)); 3]);
+
+menu.set(true, ms(0));
+panel.set_target(Look::new().opacity(1.0), fade.delay(menu.parent_delay(ms(0))), ms(0));
+menu.parent_ends(panel.settles_at().unwrap());
+for (n, row) in (0..).zip(&mut rows) {
+    row.set_target(Look::new().opacity(1.0), fade.delay(menu.child_delay(n, ms(0))), ms(0));
+}
+// The panel fades in over 100 ms; then the rows, 50 ms apart.
+assert_eq!(rows.map(|row| row.sample(ms(175)).value.opacity.unwrap()), [0.75, 0.25, 0.0]);
+```
+
 ## An element to drag
 
 `.draggable(&state, drag)` lets the pointer drag any styled element. While it is held it is exactly under the pointer, with no spring between them; let go, it keeps the pointer's speed and coasts. A `Drag` says how: `.along(Axis::Horizontal)`, `.within(min, max)` to spring back inside limits, `.snap_to(points)` to come to rest on the nearest one, and `.coast(Coast::SLOW)`. The view owns a `DragState`, `DragState::default()` or `DragState::at(offset)`: `offset()` is where the element was last drawn, `rest()` where it comes to rest, `is_held()` whether the pointer holds it, and `throw(velocity, &drag, cx)` lets it go as a pointer would, for a key or a button.
@@ -573,7 +618,6 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 
 - Animate a change of size that layout makes: an item whose content grows takes its new size at once. A size that a look names does move.
 - Gestures beyond a drag with one pointer: pinch, rotate, a drag on a touchpad's scroll.
-- Variants: a parent's look that its children follow, each with its own ([#31](https://github.com/walteraandrade/ginga/issues/31)).
 
 Limits that come from GPUI and not from this library: a `div` has no transform, so moving a box means changing its position or size and laying out again; and there is no way to redraw one element without rendering its view.
 
@@ -584,7 +628,7 @@ ginga takes ideas that work elsewhere and fits them to its two goals ([What it i
 | Inspiration | The idea taken | Where it is in ginga |
 | --- | --- | --- |
 | [Motion](https://motion.dev) (formerly Framer Motion) | You say the target and the library takes care of the way there. The value and its speed live outside the drawing (`MotionValue`). What leaves stays on screen until its way out is over (`AnimatePresence`). | `Motion::toward`, `Presence`, `PresenceList` |
-| Motion's `animate`, `whileHover`, `layoutId` and drag | A look declared on the element; a look for a moment; one thing in two places; a drag that is thrown and springs back. | `.look(..)`, `.hover(..)`, `.pressed(..)`, `.focused(..)`, `.shared(..)`, `.draggable(..)` |
+| Motion's `animate`, `whileHover`, `layoutId`, variants and drag | A look declared on the element; a look for a moment; one thing in two places; a parent's name that its children follow, one after another; a drag that is thrown and springs back. | `.look(..)`, `.hover(..)`, `.pressed(..)`, `.focused(..)`, `.shared(..)`, `.leads(..)` and `.follows(..)`, `.draggable(..)` |
 | [lilt](https://github.com/ejjonny/lilt), for iced | Time is an argument. There is no tick. | `toward(target, transition, now)`, `sample(now)` |
 | [SwiftUI](https://developer.apple.com/xcode/swiftui/) | A spring described by its duration and its bounce, not by mass and stiffness. A spring that is interrupted keeps its speed. | `Spring::new(response)`, `.bounce(..)` |
 | SwiftUI and [Jetpack Compose](https://developer.android.com/compose) | A type moves if it can become a row of numbers and come back. Each number has its own speed. | `Animatable`, `to_channels`, `from_channels` |

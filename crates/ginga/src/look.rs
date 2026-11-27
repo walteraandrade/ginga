@@ -404,6 +404,36 @@ macro_rules! values {
                 }
             }
 
+            /// Every value's transition, starting `delay` after the target is
+            /// set, as [`Transition::delay`] gives it. Each value's transition
+            /// is resolved first, ginga's defaults included, so lay these over
+            /// any defaults ([`or`](Self::or)) before delaying them: defaults
+            /// laid under them afterwards change nothing.
+            ///
+            /// ```
+            /// use std::time::Duration;
+            /// use ginga::{Easing, Look, LookMotion, Transitions, Tween};
+            ///
+            /// let ms = Duration::from_millis;
+            /// let fade = Transitions::new().opacity(Tween::new(ms(100), Easing::Linear));
+            /// let mut row = LookMotion::at(Look::new().opacity(0.0));
+            /// row.set_target(Look::new().opacity(1.0), fade.delay(ms(50)), ms(0));
+            /// assert_eq!(row.sample(ms(50)).value.opacity, Some(0.0));
+            /// assert_eq!(row.sample(ms(100)).value.opacity, Some(0.5));
+            /// ```
+            #[must_use]
+            pub fn delay(self, delay: Duration) -> Self {
+                Self {
+                    own: Layer {
+                        $($field: Some(
+                            self.named(|layer| layer.$field).unwrap_or($default).delay(delay),
+                        ),)*
+                    },
+                    all: None,
+                    under: Layer::EMPTY,
+                }
+            }
+
             /// The transition this names for one value, layer by layer: its
             /// own, the whole look's, then the defaults under it. The one place
             /// that says the order.
@@ -448,6 +478,31 @@ macro_rules! values {
                     now,
                 );)*
                 self.target = look;
+            }
+
+            /// When the last value the target names is settled on it, or
+            /// `None` when every value was only placed, with
+            /// [`at`](Self::at) or [`jump_to`](Self::jump_to). For a spring it
+            /// is a safe bound, as [`Motion::settles_at`] says.
+            ///
+            /// ```
+            /// use std::time::Duration;
+            /// use ginga::{Easing, Look, LookMotion, Transitions, Tween};
+            ///
+            /// let ms = Duration::from_millis;
+            /// let mut card = LookMotion::at(Look::new().width(0.0).opacity(0.0));
+            /// let slow_fade = Transitions::new().all(Tween::new(ms(100), Easing::Linear))
+            ///     .opacity(Tween::new(ms(300), Easing::Linear));
+            /// card.set_target(Look::new().width(100.0).opacity(1.0), slow_fade, ms(20));
+            /// assert_eq!(card.settles_at(), Some(ms(320)));
+            /// ```
+            #[must_use]
+            pub fn settles_at(&self) -> Option<Duration> {
+                let mut at = None;
+                $(if self.target.$field.is_some() {
+                    at = at.max(self.$field.settles_at());
+                })*
+                at
             }
 
             /// The look at `now`, with the values the target names. It never

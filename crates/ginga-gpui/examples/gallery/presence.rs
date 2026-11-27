@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use ginga_gpui::{Easing, InOut, Phase, Presence, Tween};
+use ginga_gpui::{Easing, InOut, Look, LookExt, Phase, Presence, Tween};
 use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, px, rgb};
 
 pub struct Toast {
@@ -36,9 +36,10 @@ impl Toast {
 impl Render for Toast {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut page = div().relative().size_full();
-        // The lines to copy: `frame` gives what to draw, and how far in it is.
+        // The lines to copy: `frame` gives what to draw, and how far in it
+        // is; `with_look` draws it with the look mixed that far.
         if let Some(shown) = self.toast.frame(window, cx) {
-            let rise = px(24. * (1. - shown.progress));
+            let from = Look::new().offset(0., 24.).opacity(0.);
             let label = if shown.phase == Phase::Exiting {
                 format!("{} (leaving)", shown.content)
             } else {
@@ -47,14 +48,14 @@ impl Render for Toast {
             page = page.child(
                 div()
                     .absolute()
-                    .top(px(40.) + rise)
+                    .top(px(40.))
                     .left(px(40.))
                     .px(px(16.))
                     .py(px(10.))
                     .rounded(px(8.))
                     .bg(rgb(0x0030_a46c))
-                    .opacity(shown.progress)
-                    .child(label),
+                    .child(label)
+                    .with_look(from.mix(Look::new(), shown.progress)),
             );
         }
         page.child(

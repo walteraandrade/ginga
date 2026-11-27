@@ -94,6 +94,25 @@ assert_eq!(breath.settles_at(), Some(ms(2_700)));
 
 Keyframes that repeat forever are never settled, and their `settles_at` is `None`: whoever draws them asks for frames as long as they are drawn. Stops that are not in order, or a first stop not at zero, do not build. The stops are an array, so keyframes are plain data and reading them never allocates.
 
+### Let go with a speed
+
+`motion.coast(velocity, coast, now)` lets a value go with a speed, in units per second: it keeps that speed at first and slows to a stop by the same share every instant, so it glides and never stops with a jolt. A `Coast` is `Coast::QUICK` (a time constant of 0.1 s), `Coast::SLOW` (0.5 s) or `Coast::new(time_constant)`, and the value rests a time constant's worth of its first speed on: `coast.rest(from, velocity)`. `coast_within(velocity, coast, min, max, now)` comes to rest inside limits, and a value that would pass one, or is past it already, moves with the coast's spring to it instead; `coast_to_nearest(velocity, coast, &points, now)` comes to rest on the nearest snap point the same way. Each keeps the speed it was let go with, and is settled exactly where it rests. `.spring(Spring::BOUNCY)` on a coast makes a wall bouncier. A `Trail` gives the speed a value is let go with: `trail.note(now, value)` as it is moved by hand, then `trail.speed(now)`, over the last 100 ms, and zero if it was held still for 50 ms.
+
+```rust
+use std::time::Duration;
+use ginga::{Coast, Motion};
+
+let ms = Duration::from_millis;
+let mut card = Motion::at(0.0);
+card.coast(1_000.0, Coast::QUICK, ms(0)); // thrown at 1,000 px/s
+assert_eq!(card.target(), 100.0);         // rests 100 px on
+assert!((card.sample(ms(100)).value - 63.2).abs() < 0.1); // 1 - 1/e of the way after 0.1 s
+
+let mut knob = Motion::at(0.0);
+knob.coast_within(3_000.0, Coast::QUICK, 0.0, 200.0, ms(0)); // it would pass 200
+assert_eq!(knob.sample(knob.settles_at().unwrap()).value, 200.0);
+```
+
 ## Things that come and go
 
 A `Presence` is something you show and hide. Hiding does not drop it: the presence keeps the content, as it was, until its way out is over, so there is always something to draw the exit with.
@@ -281,6 +300,18 @@ When the look changes, the element moves from where it is, and a spring keeps it
 
 In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
 
+## An element to drag
+
+`.draggable(&state, drag)` lets the pointer drag any styled element. While it is held it is exactly under the pointer, with no spring between them; let go, it keeps the pointer's speed and coasts. A `Drag` says how: `.along(Axis::Horizontal)`, `.within(min, max)` to spring back inside limits, `.snap_to(points)` to come to rest on the nearest one, and `.coast(Coast::SLOW)`. The view owns a `DragState`, `DragState::default()` or `DragState::at(offset)`: `offset()` is where the element was last drawn, `rest()` where it comes to rest, `is_held()` whether the pointer holds it, and `throw(velocity, &drag, cx)` lets it go as a pointer would, for a key or a button.
+
+```rust,ignore
+// The view owns `knob: DragState`. A slider's knob with five stops:
+let stops = (0..5).map(|stop| point(px(93. * stop as f32), px(0.)));
+div().size(px(28.)).draggable(&self.knob, Drag::new().along(Axis::Horizontal).snap_to(stops))
+```
+
+Like a look, the offset moves the element by `left` and `top` from its place in the layout. With snap points, the limits are left out: put the points inside them. Only the topmost element under the pointer is taken, and a move with the button up lets it go, as when a release was lost outside the window. Under reduced motion a thrown element is at once where it comes to rest.
+
 ## A loop in a view
 
 `ginga_gpui::Keyframes` are keyframes a view owns. They start on the first frame that draws them, `restart(cx)` plays them again, and they rest where they end under reduced motion (`rest()`: a loop on its first stop). A slow loop need not be drawn at the display's rate: `.at_most_every(d)` asks for the next frame no sooner than `d` after this one. It holds back only its own requests, so draw the loop in a view of its own, such as an `Island`, or another motion in the view draws it on every frame anyway.
@@ -359,7 +390,7 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 - Animate a change of size that layout makes: an item whose content grows takes its new size at once. A size that a look names does move.
 - Shared elements.
 - Sequences.
-- Gestures and drag.
+- Gestures beyond a drag with one pointer: pinch, rotate, a drag on a touchpad's scroll.
 
 Limits that come from GPUI and not from this library: a `div` has no transform, so moving a box means changing its position or size and laying out again; and there is no way to redraw one element without rendering its view.
 

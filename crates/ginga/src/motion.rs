@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use crate::{Animatable, Easing, Spring, Transition, Tween};
+use crate::{Animatable, Coast, Easing, Spring, Transition, Tween};
 
 /// A value on its way to a target.
 ///
@@ -64,6 +64,13 @@ enum Drive<C> {
         tween: Tween,
         start: Duration,
         from: C,
+    },
+    Coast {
+        coast: Coast,
+        start: Duration,
+        /// The speed each channel was let go with.
+        velocity: C,
+        settle: Duration,
     },
 }
 
@@ -150,6 +157,119 @@ impl<T: Animatable> Motion<T> {
         };
     }
 
+    /// Lets the value go at `now` with `velocity`, in units per second: it
+    /// coasts on and slows to a stop where [`Coast::rest`] says. A speed that
+    /// is not a number, or not finite, counts as none.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Coast, Motion};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let mut card = Motion::at(0.0);
+    /// card.coast(1_000.0, Coast::QUICK, ms(0));
+    /// assert_eq!(card.target(), 100.0);
+    /// assert!(card.sample(ms(100)).value > 60.0); // most of the way in one time constant
+    /// assert_eq!(card.sample(ms(2_000)).value, 100.0);
+    /// ```
+    pub fn coast(&mut self, velocity: T, coast: Coast, now: Duration) {
+        let from = self.state(now, Read::Value).value;
+        let velocity = finite(velocity.to_channels());
+        let mut seconds = 0f32;
+        for speed in velocity.as_ref() {
+            seconds = seconds.max(coast.settle_secs(*speed, T::PRECISION));
+        }
+        self.goal = coast.rest(T::from_channels(from), T::from_channels(velocity));
+        self.target = self.goal.to_channels();
+        self.drive = if seconds > 0.0 {
+            Drive::Coast {
+                coast,
+                start: now,
+                velocity,
+                settle: now
+                    .saturating_add(Duration::try_from_secs_f32(seconds).unwrap_or(Duration::MAX)),
+            }
+        } else {
+            Drive::Rest
+        };
+    }
+
+    /// As [`coast`](Self::coast), but it comes to rest with every channel
+    /// within `min..=max`: a value that would coast past a limit moves with
+    /// the coast's spring to that limit instead, keeping its speed, so it
+    /// passes the limit a little and comes back. `min` and `max` may be given
+    /// in either order on each channel.
+    ///
+    /// The value moves as one: when any channel would pass a limit, every
+    /// channel moves with the spring, to where it would have come to rest.
+    /// A card thrown into a wall springs off it as a whole.
+    pub fn coast_within(&mut self, velocity: T, coast: Coast, min: T, max: T, now: Duration) {
+        let velocity = T::from_channels(finite(velocity.to_channels()));
+        let from = T::from_channels(self.state(now, Read::Value).value);
+        let mut rest = coast.rest(from, velocity).to_channels();
+        let mut past = false;
+        for ((place, one), other) in rest
+            .as_mut()
+            .iter_mut()
+            .zip(min.to_channels().as_ref())
+            .zip(max.to_channels().as_ref())
+        {
+            let inside = place.clamp(one.min(*other), one.max(*other));
+            past |= inside != *place;
+            *place = inside;
+        }
+        if past {
+            let rest = T::from_channels(rest);
+            self.fling(rest, coast.spring, velocity.to_channels(), now);
+        } else {
+            self.coast(velocity, coast, now);
+        }
+    }
+
+    /// As [`coast`](Self::coast), but it comes to rest on whichever of
+    /// `points` is nearest to where it would coast to, moving there with the
+    /// coast's spring and keeping its speed. With no points it coasts.
+    pub fn coast_to_nearest(&mut self, velocity: T, coast: Coast, points: &[T], now: Duration) {
+        let velocity = T::from_channels(finite(velocity.to_channels()));
+        let from = T::from_channels(self.state(now, Read::Value).value);
+        let rest = coast.rest(from, velocity).to_channels();
+        let distance = |point: &T| -> f32 {
+            point
+                .to_channels()
+                .as_ref()
+                .iter()
+                .zip(rest.as_ref())
+                .map(|(a, b)| (a - b) * (a - b))
+                .sum()
+        };
+        let nearest = points
+            .iter()
+            .min_by(|a, b| distance(a).total_cmp(&distance(b)));
+        match nearest {
+            Some(&point) => self.fling(point, coast.spring, velocity.to_channels(), now),
+            None => self.coast(velocity, coast, now),
+        }
+    }
+
+    /// Heads for `target` with `spring`, from where the value is at `now` and
+    /// with `velocity` instead of the speed it had.
+    fn fling(&mut self, target: T, spring: Spring, velocity: T::Channels, now: Duration) {
+        let state = State {
+            value: self.state(now, Read::Value).value,
+            velocity,
+            settled: false,
+        };
+        self.goal = target;
+        self.target = target.to_channels();
+        // A spring with no response moves the value there at once. A let-go
+        // happens now, so a delay on the coast's spring is not waited for.
+        self.drive = if spring.is_instant() {
+            Drive::Rest
+        } else {
+            self.spring(spring, &state, now)
+        };
+    }
+
     /// Puts the value at `value`, at rest, with no motion.
     pub fn jump_to(&mut self, value: T) {
         *self = Self::at(value);
@@ -188,7 +308,7 @@ impl<T: Animatable> Motion<T> {
     pub fn settles_at(&self) -> Option<Duration> {
         match self.drive {
             Drive::Rest => None,
-            Drive::Spring { settle, .. } => Some(settle),
+            Drive::Spring { settle, .. } | Drive::Coast { settle, .. } => Some(settle),
             Drive::Tween { tween, start, .. } => Some(start.saturating_add(tween.duration)),
         }
     }
@@ -233,6 +353,62 @@ impl<T: Animatable> Motion<T> {
         }
     }
 
+    /// Where a tween from `from` is `elapsed` after it starts, and how fast it
+    /// goes there when `read` asks for the speed.
+    fn tweening(
+        &self,
+        tween: Tween,
+        elapsed: Duration,
+        from: T::Channels,
+        read: Read,
+    ) -> State<T::Channels> {
+        let length = tween.duration.as_secs_f32();
+        let progress = elapsed.as_secs_f32() / length;
+        let eased = tween.easing.at(progress);
+        let slope = match read {
+            Read::Value => 0.0,
+            Read::ValueAndSpeed => tween.easing.slope(progress) / length,
+        };
+        let (mut value, mut velocity) = (from, from);
+        for ((place, speed), target) in value
+            .as_mut()
+            .iter_mut()
+            .zip(velocity.as_mut())
+            .zip(self.target.as_ref())
+        {
+            let span = target - *place;
+            *speed = span * slope;
+            *place += span * eased;
+        }
+        State {
+            value,
+            velocity,
+            settled: false,
+        }
+    }
+
+    /// Where a coast is `elapsed` after its release at `velocity`: short of
+    /// its rest by what it has yet to travel, and as fast as it still goes.
+    fn coasting(
+        &self,
+        coast: Coast,
+        elapsed: Duration,
+        velocity: T::Channels,
+    ) -> State<T::Channels> {
+        let seconds = elapsed.as_secs_f32();
+        let (mut value, mut speeds) = (self.target, velocity);
+        for (place, speed) in value.as_mut().iter_mut().zip(speeds.as_mut()) {
+            let (left, moving) = coast.left(*speed, seconds);
+            *place -= left;
+            *speed = moving;
+        }
+        State {
+            value,
+            velocity: speeds,
+            settled: false,
+        }
+    }
+
     fn state(&self, now: Duration, read: Read) -> State<T::Channels> {
         let resting = State {
             value: self.target,
@@ -241,7 +417,7 @@ impl<T: Animatable> Motion<T> {
         };
         match self.drive {
             Drive::Rest => resting,
-            Drive::Spring { settle, .. } if now >= settle => resting,
+            Drive::Spring { settle, .. } | Drive::Coast { settle, .. } if now >= settle => resting,
             Drive::Tween { tween, start, .. } if now >= start.saturating_add(tween.duration) => {
                 resting
             }
@@ -308,33 +484,28 @@ impl<T: Animatable> Motion<T> {
                     settled: false,
                 }
             }
+            Drive::Coast {
+                coast,
+                start,
+                velocity,
+                ..
+            } => self.coasting(coast, now.saturating_sub(start), velocity),
             Drive::Tween { tween, start, from } => {
-                let length = tween.duration.as_secs_f32();
-                let progress = now.saturating_sub(start).as_secs_f32() / length;
-                let eased = tween.easing.at(progress);
-                let slope = match read {
-                    Read::Value => 0.0,
-                    Read::ValueAndSpeed => tween.easing.slope(progress) / length,
-                };
-                let (mut value, mut velocity) = (from, from);
-                for ((place, speed), target) in value
-                    .as_mut()
-                    .iter_mut()
-                    .zip(velocity.as_mut())
-                    .zip(self.target.as_ref())
-                {
-                    let span = target - *place;
-                    *speed = span * slope;
-                    *place += span * eased;
-                }
-                State {
-                    value,
-                    velocity,
-                    settled: false,
-                }
+                self.tweening(tween, now.saturating_sub(start), from, read)
             }
         }
     }
+}
+
+/// `channels` with each that is not finite as zero: a speed that is not a
+/// number is no speed.
+fn finite<C: AsMut<[f32]>>(mut channels: C) -> C {
+    for channel in channels.as_mut() {
+        if !channel.is_finite() {
+            *channel = 0.0;
+        }
+    }
+    channels
 }
 
 #[cfg(test)]

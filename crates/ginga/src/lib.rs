@@ -45,6 +45,7 @@
 #![forbid(unsafe_code)]
 
 mod animatable;
+mod coast;
 mod color;
 mod easing;
 mod keyframes;
@@ -54,9 +55,11 @@ mod presence;
 mod presence_list;
 mod spring;
 mod trace;
+mod trail;
 mod transition;
 
 pub use animatable::Animatable;
+pub use coast::{Coast, CoastError};
 pub use color::Color;
 pub use easing::Easing;
 pub use keyframes::{Keyframes, KeyframesError, Stop};
@@ -66,6 +69,7 @@ pub use presence::{InOut, Phase, Presence, Shown};
 pub use presence_list::{PresenceList, ShownItem};
 pub use spring::{Spring, SpringError};
 pub use trace::{Row, Trace, Traceable};
+pub use trail::Trail;
 pub use transition::{Transition, Tween};
 
 /// The README's examples, run as tests.

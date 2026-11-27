@@ -25,14 +25,16 @@
 
 use std::time::{Duration, Instant};
 
+pub use drag::{Drag, DragExt, DragState, Dragged};
 use ginga::Animatable;
 pub use ginga::{
-    Color, Easing, InOut, KeyframesError, Look, LookMotion, Phase, PresenceList, Sample, Shown,
-    ShownItem, Spring, SpringError, Stop, Trace, Transition, Tween,
+    Coast, CoastError, Color, Easing, InOut, KeyframesError, Look, LookMotion, Phase, PresenceList,
+    Sample, Shown, ShownItem, Spring, SpringError, Stop, Trace, Transition, Tween,
 };
 pub use keyframes::Keyframes;
 pub use look::{LookExt, LookState, Looked, color};
 
+mod drag;
 mod keyframes;
 mod look;
 use gpui::{

@@ -8,8 +8,8 @@ use std::{
 };
 
 use ginga::{
-    Color, Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop,
-    Transition, Tween,
+    Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop,
+    Trail, Transition, Tween,
 };
 
 struct Counting;
@@ -207,5 +207,39 @@ fn building_and_reading_keyframes_allocates_nothing() {
     }
     let after = allocations();
     assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn letting_go_and_coasting_allocates_nothing() {
+    let ms = Duration::from_millis;
+    let snaps = [(0.0, 0.0), (240.0, 0.0), (480.0, 0.0)];
+    let mut checksum = 0.0;
+    let before = allocations();
+    // A card dragged, thrown, caught again and thrown at a snap point; a knob
+    // thrown past its end.
+    let mut card = Motion::at((0.0, 0.0));
+    let mut knob = Motion::at(0.0);
+    let mut trail = Trail::default();
+    for throw in 0..200u64 {
+        let now = ms(throw * 300);
+        let speed = (throw % 7) as f32 * 400.0 - 1_200.0;
+        card.jump_to(card.sample(now).value);
+        card.coast((speed, -speed / 2.0), Coast::QUICK, now);
+        checksum += card.sample(now + ms(16)).value.0;
+        card.coast_to_nearest((speed, 0.0), Coast::SLOW, &snaps, now + ms(32));
+        for place in 0..20u64 {
+            trail.note(now + ms(place), (place as f32, 0.0));
+        }
+        checksum += trail.speed(now + ms(20)).0;
+        knob.coast_within(speed, Coast::QUICK, 0.0, 200.0, now);
+        for frame in 0..18 {
+            let at = now + ms(frame * 16);
+            checksum += card.sample(at).value.1 + knob.sample(at).value;
+            checksum += card.velocity(at)[0];
+        }
+    }
+    let after = allocations();
+    assert!(checksum.is_finite());
     assert_eq!(after - before, 0);
 }

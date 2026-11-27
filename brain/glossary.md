@@ -92,6 +92,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 ## In a GPUI view
 
+**Test platform.** GPUI with its `test-support` feature: windows with no display, a clock the test moves and frames the test delivers. How the adapter's tests run ([[codebase/testing-the-adapter]]).
+
 **Frame.** One time GPUI draws the window. A view that moves something asks for the next frame while it moves. *Not a sample*: see *sample*.
 
 **Frame request.** Asking GPUI to draw the next frame: `window.request_animation_frame()`. `ginga_gpui::Motion` and `ginga_gpui::Presence` do it while their value moves, and stop when it is settled.

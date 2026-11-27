@@ -17,6 +17,8 @@ publish = false
 [workspace.dependencies]
 # Keep `version` in step with [workspace.package] version.
 ginga = { path = "crates/ginga", version = "0.1.0" }
+# The GPUI snapshot that gpui-kit 0.9.1 builds on. An app must use the same one.
+gpui = { package = "gpui-pre", version = "=0.3.12", default-features = false }
 
 [workspace.lints.rust]
 # The library forbids unsafe in its own source; one test needs it to count allocations.

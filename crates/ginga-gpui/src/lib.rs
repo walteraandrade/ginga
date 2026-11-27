@@ -304,7 +304,8 @@ impl<T> Presence<T> {
 /// - the views above it are cheap to render.
 ///
 /// An island keeps a state and a function that draws it. Motions that the
-/// function drives ask for frames of the island alone.
+/// function drives ask for frames of the island, so the island and the views
+/// above it render again on each frame, and the cached views beside it don't.
 ///
 /// ```ignore
 /// struct Dot {

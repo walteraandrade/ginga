@@ -263,9 +263,10 @@ Limits that come from GPUI and not from this library: a `div` has no transform, 
 
 ```sh
 cargo fmt --all
-cargo clippy --all-targets -- -D warnings   # the engine
-cargo test                                  # the engine, in seconds
-cargo clippy -p ginga-gpui -- -D warnings   # the GPUI adapter; the first build takes minutes
+cargo clippy --all-targets -- -D warnings                 # the engine
+cargo test                                                # the engine, in seconds
+cargo clippy -p ginga-gpui --all-targets -- -D warnings   # the GPUI adapter; the first build takes minutes
+cargo test -p ginga-gpui                                  # the adapter on GPUI's test platform, no display
 ```
 
 The engine needs Rust 1.87 or newer and the adapter Rust 1.95, the oldest that builds its GPUI. CI checks each on that version, on every pull request.

@@ -5,7 +5,7 @@ use std::{env, fs, path::PathBuf, process::Command, rc::Rc, time::Duration};
 use gpui::{
     AnyView, App, AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, WindowBounds,
-    WindowOptions, div, point, px, rgb, size,
+    WindowOptions, div, point, prelude::FluentBuilder as _, px, rgb, size,
 };
 
 /// The window's size, which is also the size of a recorded frame.
@@ -153,8 +153,6 @@ impl Render for Gallery {
             )
     }
 }
-
-use gpui::prelude::FluentBuilder as _;
 
 /// Opens the gallery on page `chosen`.
 fn open(cx: &mut App, chosen: Option<&str>) -> Entity<Gallery> {

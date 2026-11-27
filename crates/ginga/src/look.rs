@@ -118,6 +118,84 @@ impl Look {
     }
 }
 
+impl Look {
+    /// The look `part` of the way from this one to `to`: `0.0` gives this
+    /// one, `1.0` gives `to` exactly, and a part past either end goes on in
+    /// the same line, as a spring's overshoot should. NaN counts as `0.0`.
+    ///
+    /// A value both looks name moves in a straight line; a color mixes in
+    /// linear light. An offset or an opacity that only one of them names
+    /// moves from or to where a thing sits without one: no offset, and fully
+    /// opaque. Any other value that only `to` names stays as `to` has it, and
+    /// any other value that only this look names is left out.
+    ///
+    /// It is how a way in or out is drawn: the look a thing arrives from,
+    /// mixed into its own look by how far it has arrived.
+    ///
+    /// ```
+    /// use ginga::Look;
+    ///
+    /// let own = Look::new().width(200.0);
+    /// let from = Look::new().offset(0.0, 40.0).opacity(0.0);
+    /// assert_eq!(
+    ///     from.mix(own, 0.25),
+    ///     Look::new().offset(0.0, 30.0).opacity(0.25).width(200.0)
+    /// );
+    /// assert_eq!(from.mix(own, 1.0), own);
+    /// ```
+    #[must_use]
+    pub fn mix(self, to: Look, part: f32) -> Look {
+        let (from, to) = (self.finite(), to.finite());
+        let part = if part.is_nan() { 0.0 } else { part };
+        if part == 1.0 {
+            return to;
+        }
+        let at_rest = |value: Option<f32>, rest| value.or(Some(rest));
+        let offset = |value: Option<(f32, f32)>| value.map(|(x, y)| Pixels([x, y]));
+        let moving = from.offset.is_some() || to.offset.is_some();
+        Look {
+            offset: moving
+                .then(|| {
+                    let rest = Some(Pixels([0.0, 0.0]));
+                    mix(
+                        offset(from.offset).or(rest),
+                        offset(to.offset).or(rest),
+                        part,
+                    )
+                })
+                .flatten()
+                .map(|Pixels([x, y])| (x, y)),
+            opacity: (from.opacity.is_some() || to.opacity.is_some())
+                .then(|| mix(at_rest(from.opacity, 1.0), at_rest(to.opacity, 1.0), part))
+                .flatten(),
+            width: mix(from.width, to.width, part),
+            height: mix(from.height, to.height, part),
+            radius: mix(from.radius, to.radius, part),
+            background: mix(from.background, to.background, part),
+            text_color: mix(from.text_color, to.text_color, part),
+            border_color: mix(from.border_color, to.border_color, part),
+        }
+    }
+}
+
+/// One value of [`Look::mix`]: in a straight line when both name it, as
+/// `to` has it when only `to` does, and left out otherwise.
+fn mix<T: crate::Animatable>(from: Option<T>, to: Option<T>, part: f32) -> Option<T> {
+    let (from, to) = match (from, to) {
+        (Some(from), Some(to)) => (from, to),
+        (_, to) => return to,
+    };
+    if part == 0.0 {
+        return Some(from);
+    }
+    let mut channels = from.to_channels();
+    let end = to.to_channels();
+    for (channel, end) in channels.as_mut().iter_mut().zip(end.as_ref()) {
+        *channel += (end - *channel) * part;
+    }
+    Some(T::from_channels(channels))
+}
+
 /// Pixels, or any unit where a tenth is too small to see: an offset, a size
 /// and a radius settle a tenth from their target, where an opacity settles a
 /// thousandth from it.
@@ -947,5 +1025,30 @@ ms               x           y     opacity
         let sample = card.sample(ms(10));
         assert_eq!(sample.value, Look::new().width(40.0).radius(4.0));
         assert!(sample.settled);
+    }
+
+    #[test]
+    fn a_mix_moves_what_both_name_and_brings_offset_and_opacity_from_where_a_thing_sits() {
+        let own = Look::new().width(200.0).background(Color::hex(0x00_0000));
+        let from = Look::new()
+            .offset(0.0, 40.0)
+            .opacity(0.0)
+            .width(100.0)
+            .radius(8.0);
+        let half = from.mix(own, 0.5);
+        assert_eq!(half.offset, Some((0.0, 20.0)));
+        assert_eq!(half.opacity, Some(0.5));
+        assert_eq!(half.width, Some(150.0));
+        assert_eq!(half.radius, None, "only the start names it: left out");
+        assert_eq!(half.background, own.background, "only the end names it");
+        assert_eq!(from.mix(own, 1.0), own, "the end, exactly");
+        assert_eq!(from.mix(own, f32::NAN), from.mix(own, 0.0));
+        assert_eq!(
+            from.mix(own, 1.5).width,
+            Some(250.0),
+            "past the end it goes on"
+        );
+        let leave_to = Look::new().opacity(0.0);
+        assert_eq!(own.mix(leave_to, 0.5).opacity, Some(0.5), "from opaque");
     }
 }

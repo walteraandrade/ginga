@@ -29,6 +29,8 @@ mod island;
 mod list;
 #[cfg(target_os = "linux")]
 mod presence;
+#[cfg(all(test, target_os = "linux"))]
+mod tests;
 #[cfg(target_os = "linux")]
 mod toward;
 

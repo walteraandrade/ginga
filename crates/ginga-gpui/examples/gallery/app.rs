@@ -33,14 +33,14 @@ const FPS: u32 = 30;
 
 /// One page of the gallery: a view, and what its Play button does.
 #[derive(Clone)]
-struct Page {
+pub struct Page {
     /// The page's name, as `--record` takes it.
-    name: &'static str,
+    pub name: &'static str,
     /// What the page shows, in a line.
     about: &'static str,
     view: AnyView,
     /// Starts the page's motion.
-    play: Rc<dyn Fn(&mut App)>,
+    pub play: Rc<dyn Fn(&mut App)>,
 }
 
 impl Page {
@@ -60,7 +60,7 @@ impl Page {
 
     /// Every page, in the order of the list on the left. A new page is one
     /// more line here, and a module in `main.rs`.
-    fn all(cx: &mut App) -> Vec<Page> {
+    pub fn all(cx: &mut App) -> Vec<Page> {
         use crate::{island::IslandPage, list::Rows, presence::Toast, toward::Toward};
         vec![
             Page::new(
@@ -92,17 +92,33 @@ impl Page {
 }
 
 /// The window: the list of pages on the left, the chosen page on the right.
-struct Gallery {
+pub struct Gallery {
     pages: Vec<Page>,
     chosen: usize,
     /// Frames drawn, so a recording knows when the window is on screen.
     drawn: u32,
 }
 
+impl Gallery {
+    /// The gallery, on page `chosen`.
+    pub fn new(cx: &mut App, chosen: usize) -> Self {
+        Self {
+            pages: Page::all(cx),
+            chosen,
+            drawn: 0,
+        }
+    }
+
+    /// The page on screen.
+    pub fn chosen(&self) -> Page {
+        self.pages[self.chosen].clone()
+    }
+}
+
 impl Render for Gallery {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.drawn += 1;
-        let chosen = self.pages[self.chosen].clone();
+        let chosen = self.chosen();
         let list = self.pages.iter().enumerate().map(|(index, page)| {
             let here = index == self.chosen;
             div()
@@ -170,30 +186,24 @@ impl Render for Gallery {
 
 /// Opens the gallery on page `chosen`.
 fn open(cx: &mut App, chosen: Option<&str>) -> Entity<Gallery> {
-    let pages = Page::all(cx);
-    let chosen = match chosen {
-        None => 0,
-        Some(name) => pages
+    let mut gallery = Gallery::new(cx, 0);
+    if let Some(name) = chosen {
+        let pages = &gallery.pages;
+        gallery.chosen = pages
             .iter()
             .position(|page| page.name == name)
             .unwrap_or_else(|| {
                 let names: Vec<_> = pages.iter().map(|page| page.name).collect();
                 panic!("no page {name:?}: the pages are {}", names.join(", "))
-            }),
-    };
+            });
+    }
     let bounds = Bounds::new(point(px(0.), px(0.)), size(px(WIDTH), px(HEIGHT)));
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         ..WindowOptions::default()
     };
     let window = cx
-        .open_window(options, |_, cx| {
-            cx.new(|_| Gallery {
-                pages,
-                chosen,
-                drawn: 0,
-            })
-        })
+        .open_window(options, |_, cx| cx.new(|_| gallery))
         .expect("a window opens; to record, run under a display such as xvfb-run");
     window
         .update(cx, |_, _, cx| cx.entity())
@@ -252,7 +262,7 @@ fn record(name: String, folder: PathBuf) {
             for pause in [Duration::ZERO, AGAIN] {
                 timer.timer(pause).await;
                 cx.update(|cx| {
-                    let page = gallery.read(cx).pages[gallery.read(cx).chosen].clone();
+                    let page = gallery.read(cx).chosen();
                     (page.play)(cx);
                 });
             }

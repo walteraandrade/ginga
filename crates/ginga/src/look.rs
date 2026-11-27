@@ -361,21 +361,19 @@ ms               x           y     opacity
 
     #[test]
     fn a_change_of_course_starts_where_the_look_is_and_a_spring_keeps_its_speed() {
+        let width = |card: &LookMotion, at| card.sample(ms(at)).value.width.unwrap();
         let mut card = LookMotion::at(Look::new().width(100.0));
         card.set_target(Look::new().width(200.0), Spring::SNAPPY, ms(0));
-        let before = card.sample(ms(100)).value.width.unwrap();
-        let speed = card.width.velocity(ms(100));
+        let old_course = card;
+        let before = width(&card, 100);
         card.set_target(Look::new().width(0.0), Spring::SNAPPY, ms(100));
-        assert_eq!(card.sample(ms(100)).value.width, Some(before), "no jump");
-        let [kept] = card.width.velocity(ms(100));
-        assert!(
-            (kept - speed[0]).abs() < 0.01,
-            "the speed is kept: {kept} against {speed:?}"
-        );
-        assert!(
-            card.sample(ms(102)).value.width.unwrap() > before,
-            "it keeps going the same way for a moment before it turns"
-        );
+        assert_eq!(width(&card, 100), before, "no jump");
+        // In the next millisecond it moves as far as the old course would:
+        // the speed is the same, only the pull has turned.
+        let step = width(&card, 101) - before;
+        let old_step = width(&old_course, 101) - before;
+        assert!(step > 0.3, "it keeps going up for a moment: {step}");
+        assert!((step - old_step).abs() < 0.1, "{step} against {old_step}");
     }
 
     #[test]

@@ -119,6 +119,56 @@ assert_eq!(
 
 An item on its way out is still drawn, so it can still be clicked or focused unless you say otherwise: check for `Phase::Exiting`.
 
+An item whose place changes can travel there. Tell the list where its items are laid out with `place_all`: a function that gets each item, with its index in the order `frame` gives them, and answers its place; the list answers, in each item's `offset`, how far from its place to draw it this frame, a distance that heads for zero. A reorder in the middle of a move turns around from where the item is, with its speed. Places are told apart to a tenth, so give them in pixels or another unit where a tenth is too small to see.
+
+```rust
+use std::time::Duration;
+use ginga::{InOut, PresenceList, Spring};
+
+let ms = Duration::from_millis;
+let mut rows = PresenceList::new();
+
+rows.sync([("a", ()), ("b", ())], InOut::INSTANT, ms(0));
+rows.place_all(|index, _| index as f32 * 40.0, Spring::SNAPPY, ms(0));
+
+rows.sync([("b", ()), ("a", ())], InOut::INSTANT, ms(1_000)); // "b" goes first
+rows.place_all(|index, _| index as f32 * 40.0, Spring::SNAPPY, ms(1_000));
+
+let b = rows.frame(ms(1_000)).next().unwrap();
+assert_eq!((*b.key, b.offset), ("b", 40.0)); // drawn where it was, 40 below its new place
+assert!(b.moving()); // ask for another frame
+```
+
+In a GPUI list of rows of one height, a row's place is its index times the height, known before layout. Each row is drawn `offset` away from it:
+
+```rust,ignore
+const ROW: f32 = 40.;
+
+let transition = ginga_gpui::unless_reduced(Spring::SNAPPY, cx);
+self.rows.place_all(|index, _| index as f32 * ROW, transition, now);
+
+let mut moving = false;
+let rows: Vec<_> = self
+    .rows
+    .frame(now)
+    .map(|row| {
+        moving |= row.moving();
+        div()
+            .h(px(ROW))
+            .relative()
+            .top(px(row.offset))
+            .opacity(row.progress)
+            .child(row.content.label.clone())
+    })
+    .collect();
+if moving {
+    window.request_animation_frame();
+}
+div().flex().flex_col().children(rows)
+```
+
+Only the place moves: GPUI cannot scale a `div`, so a row whose size changes takes its new size at once.
+
 ## Motion as text
 
 `Trace::of(&motion, from, step)` reads a motion at regular times until it settles. Printing it gives one row per step:
@@ -202,7 +252,7 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 
 ## What it does not do yet
 
-- Animate layout: an item of a `PresenceList` that moves to a new place jumps there.
+- Animate a change of size: an item that grows or shrinks takes its new size at once.
 - Shared elements.
 - Sequences and keyframes.
 - Gestures and drag.

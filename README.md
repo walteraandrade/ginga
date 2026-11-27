@@ -189,4 +189,8 @@ cargo test                                  # the engine, in seconds
 cargo clippy -p ginga-gpui -- -D warnings   # the GPUI adapter; the first build takes minutes
 ```
 
-Rules for changes are in [AGENTS.md](AGENTS.md). No license has been chosen yet.
+Rules for changes are in [AGENTS.md](AGENTS.md).
+
+## License
+
+Either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. A contribution you submit for inclusion is offered under the same two, with no other terms.

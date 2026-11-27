@@ -182,7 +182,11 @@ fn a_presence_lets_go_of_its_content_once_the_way_out_is_over(cx: &mut TestAppCo
     show_toast(&window, alive.clone(), cx);
     assert_eq!(last(&drawn), Some((Phase::Entering, 0.0)));
     cx.executor().advance_clock(ms(200));
-    next_frame(&window, cx);
+    assert_eq!(
+        next_frame(&window, cx),
+        1,
+        "an arriving toast asks for a frame"
+    );
     assert_eq!(last(&drawn), Some((Phase::Present, 1.0)));
     assert_eq!(
         next_frame(&window, cx),

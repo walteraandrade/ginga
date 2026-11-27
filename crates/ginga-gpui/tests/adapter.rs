@@ -332,9 +332,7 @@ impl Render for HeavyWithDot {
 }
 
 #[gpui::test]
-fn without_an_island_the_heavy_view_is_drawn_on_every_frame_of_its_motion(
-    cx: &mut TestAppContext,
-) {
+fn without_an_island_the_heavy_view_is_drawn_on_every_frame_of_its_motion(cx: &mut TestAppContext) {
     let renders = Rc::new(Cell::new(0));
     let window = cx.open_window(size(px(400.), px(300.)), {
         let renders = renders.clone();

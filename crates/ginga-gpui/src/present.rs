@@ -99,12 +99,12 @@ impl<T: PartialEq + 'static> Present<T> {
             return InOut::INSTANT;
         }
         InOut {
-            enter: if self.arrive_from.is_some() {
+            enter: if moves(self.arrive_from) {
                 self.ways.enter
             } else {
                 Transition::Instant
             },
-            exit: if self.leave_to.is_some() {
+            exit: if moves(self.leave_to) {
                 self.ways.exit
             } else {
                 Transition::Instant
@@ -152,6 +152,17 @@ impl<T: PartialEq + 'static> Present<T> {
         }
         styled(drawn, look)
     }
+}
+
+/// A way in or out with this look moves something: only an offset and an
+/// opacity are mixed in, so a look without either is no way at all, and
+/// asks for no frames.
+fn moves(look: Option<Look>) -> bool {
+    look.is_some_and(|look| {
+        look.offset
+            .is_some_and(|(x, y)| x.is_finite() && y.is_finite())
+            || look.opacity.is_some_and(f32::is_finite)
+    })
 }
 
 /// Content with the number it was given when it was first shown. Two are
@@ -326,5 +337,23 @@ impl<T: PartialEq + 'static> Element for Present<T> {
         cx: &mut App,
     ) {
         element.paint(window, cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ginga::Color;
+
+    use super::*;
+
+    #[test]
+    fn only_a_look_with_an_offset_or_an_opacity_is_a_way_that_moves() {
+        assert!(moves(Some(Look::new().offset(0., 16.))));
+        assert!(moves(Some(Look::new().opacity(0.))));
+        assert!(!moves(Some(
+            Look::new().width(0.).background(Color::TRANSPARENT)
+        )));
+        assert!(!moves(Some(Look::new().opacity(f32::NAN))));
+        assert!(!moves(None));
     }
 }

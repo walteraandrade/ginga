@@ -82,6 +82,8 @@ impl<T: PartialEq> Slot<T> {
     /// `content` arrives with `ways.enter`, at once with [`Swap::Sync`] or
     /// once everything leaving is gone with [`Swap::Wait`].
     pub fn show(&mut self, content: T, ways: InOut, now: Duration) {
+        // What is gone by now is gone, whether a frame saw it go or not.
+        self.let_go(now);
         if self.current.content() == Some(&content) {
             self.current.come_back(ways.enter, now);
             return;
@@ -101,7 +103,7 @@ impl<T: PartialEq> Slot<T> {
         match self.waits_until {
             // Still unseen: the new content waits in its place.
             Some(until) if now < until && self.current.content().is_some() => {
-                enter = enter.delay(until.saturating_sub(now));
+                enter = after(enter, until.saturating_sub(now));
             }
             _ if self.current.content().is_some() => {
                 self.current.hide(ways.exit, now);
@@ -123,7 +125,7 @@ impl<T: PartialEq> Slot<T> {
                         .map(|leaving| leaving.gone_at(now))
                         .fold(now, Duration::max);
                     self.waits_until = Some(until);
-                    enter = enter.delay(until.saturating_sub(now));
+                    enter = after(enter, until.saturating_sub(now));
                 }
             }
             _ => self.waits_until = None,
@@ -148,11 +150,16 @@ impl<T: PartialEq> Slot<T> {
     /// until its wait is over. Like [`Presence::frame`], it lets go of content
     /// whose way out is over.
     pub fn frame(&mut self, now: Duration) -> [Option<Shown<'_, T>>; 3] {
+        self.let_go(now);
+        self.sample(now)
+    }
+
+    /// Drops the contents whose way out is over at `now`.
+    fn let_go(&mut self, now: Duration) {
         for leaving in &mut self.leaving {
             leaving.let_go(now);
         }
         self.current.let_go(now);
-        self.sample(now)
     }
 
     /// What to draw at `now`, as [`frame`](Self::frame) gives it, without
@@ -176,6 +183,12 @@ impl<T: PartialEq> Slot<T> {
     pub fn is_wanted(&self) -> bool {
         self.current.is_wanted()
     }
+}
+
+/// `enter`, started `wait` later than it would be: a delay of its own is
+/// kept, after the wait.
+fn after(enter: crate::Transition, wait: Duration) -> crate::Transition {
+    enter.delay(wait.saturating_add(enter.start_delay()))
 }
 
 #[cfg(test)]
@@ -411,5 +424,26 @@ mod tests {
         slot.set_swap(Swap::Wait);
         slot.show("B", ways(), ms(0));
         assert_eq!(line(&mut slot, 50), " 50  A out 0.50    -");
+    }
+
+    #[test]
+    fn a_way_in_with_a_delay_of_its_own_waits_that_long_after_the_old_is_gone() {
+        let mut slot = Slot::new(Swap::Wait);
+        slot.show("Old", InOut::INSTANT, ms(0));
+        let late = InOut::new(ways().enter.delay(ms(50)), ways().exit);
+        slot.show("New", late, ms(100));
+        assert_eq!(line(&mut slot, 225), "225  -             New in 0.00");
+        assert_eq!(line(&mut slot, 300), "300  -             New in 0.50");
+    }
+
+    #[test]
+    fn what_was_gone_before_a_show_is_gone_even_with_no_frame_between() {
+        let mut slot = Slot::new(Swap::Wait);
+        slot.show("A", InOut::INSTANT, ms(0));
+        slot.show("B", ways(), ms(100));
+        // No frame at 200, when A is gone: A comes back as new content, and waits for B.
+        slot.show("A", ways(), ms(250));
+        assert_eq!(line(&mut slot, 300), "300  B out 0.25    -");
+        assert_eq!(line(&mut slot, 400), "400  -             A in 0.50");
     }
 }

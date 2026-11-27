@@ -157,7 +157,7 @@ impl Look {
 impl Look {
     /// The look `part` of the way from this one to `to`: `0.0` gives this
     /// one for what both name, `1.0` gives `to` exactly, and a part past either end goes on in
-    /// the same line, as a spring's overshoot should. NaN counts as `0.0`.
+    /// the same line, as a spring's overshoot should. A part that is not finite counts as `0.0`.
     ///
     /// A value both looks name moves in a straight line; a color mixes in
     /// linear light. An offset or an opacity that only one of them names
@@ -182,7 +182,8 @@ impl Look {
     #[must_use]
     pub fn mix(self, to: Look, part: f32) -> Look {
         let (from, to) = (self.finite(), to.finite());
-        let part = if part.is_nan() { 0.0 } else { part };
+        // Not finite: there is no look that far, so it stays at the start.
+        let part = if part.is_finite() { part } else { 0.0 };
         if part == 1.0 {
             return to;
         }

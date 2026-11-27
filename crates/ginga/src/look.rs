@@ -4,15 +4,15 @@ use crate::{Motion, Sample, Transition, trace::Row};
 
 /// How a thing should look: a set of visual values, each one optional.
 ///
-/// A value the look does not name is left to whoever draws: the element keeps
-/// its own style for it. Build a look by naming values one at a time:
+/// A value the look does not name is left to whoever draws, who keeps the
+/// value it has without the look. Build a look by naming values one at a time:
 ///
 /// ```
 /// use ginga::Look;
 ///
 /// let card = Look::new().size(240.0, 160.0).opacity(1.0);
 /// assert_eq!(card.width, Some(240.0));
-/// assert_eq!(card.radius, None); // left to the element
+/// assert_eq!(card.radius, None); // not named
 /// ```
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Look {

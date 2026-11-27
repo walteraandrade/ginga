@@ -7,6 +7,8 @@ default-members = ["crates/ginga"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+# The oldest Rust the engine is checked with; CI runs on it.
+rust-version = "1.87"
 publish = false
 
 [workspace.lints.rust]

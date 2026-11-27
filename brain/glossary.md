@@ -62,6 +62,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Time constant.** How quickly a coast slows: `Coast::QUICK` 0.1 s, `Coast::SLOW` 0.5 s. *Not a duration*: a coast, like a spring, settles when what it has left falls under the precision.
 
+**Trail** (`Trail`). The last places of a value moved by hand and their times, kept at least 15 ms apart in an array of eight: the speed it is let go with, over the last 100 ms, or zero if it was held still for 50 ms.
+
 **Snap point.** A value a coast may come to rest on: of the snap points given, the one nearest to where it would rest.
 
 **Closed-form.** How the engine computes: the value at a time comes from where the motion started, not from stepping the last frame forward. A skipped frame changes nothing.
@@ -128,7 +130,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Stale pane.** A cached view that shows old state because it changed without being notified. The risk an island brings.
 
-**Drag** (`ginga_gpui::Drag`, `.draggable`). The pointer takes an element and it follows exactly, with no spring between them. Let go, it is *thrown*: it keeps the pointer's speed, measured over the last 100 ms, and coasts. A pointer still for 50 ms before it lets go sets the element down instead. `DragState` holds where the element is; `throw` lets it go without a pointer.
+**Drag** (`ginga_gpui::Drag`, `.draggable`). The pointer takes an element and it follows exactly, with no spring between them. Let go, it is *thrown*: it keeps the pointer's speed, which a *trail* measures, and coasts. A pointer still for 50 ms before it lets go sets the element down instead. `DragState` holds where the element is; `throw` lets it go without a pointer.
 
 **Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
 

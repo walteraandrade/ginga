@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-use ginga::Coast;
+use ginga::{Coast, Trail};
 use gpui::{
     AnyElement, App, Axis, Bounds, DispatchPhase, Element, ElementId, GlobalElementId, Hitbox,
     HitboxBehavior, InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent,
@@ -11,13 +11,6 @@ use gpui::{
 };
 
 use crate::{Animate, Clock, InPixels};
-
-/// How long before it is let go the pointer's speed is measured over.
-const SPEED_OVER: Duration = Duration::from_millis(100);
-
-/// How long the pointer may stay still before it is let go and still throw
-/// the element: held longer, the element is set down.
-const STILL_FOR: Duration = Duration::from_millis(50);
 
 /// How an element is dragged: along which axis, inside which limits, onto
 /// which snap points, and how it coasts when it is let go.
@@ -33,7 +26,7 @@ pub struct Drag {
     coast: Coast,
     along: Option<Axis>,
     within: Option<(InPixels<2>, InPixels<2>)>,
-    snaps: Rc<[InPixels<2>]>,
+    snaps: Option<Rc<[InPixels<2>]>>,
 }
 
 impl Default for Drag {
@@ -51,7 +44,7 @@ impl Drag {
             coast: Coast::QUICK,
             along: None,
             within: None,
-            snaps: Rc::new([]),
+            snaps: None,
         }
     }
 
@@ -76,7 +69,8 @@ impl Drag {
     /// [`within`](Self::within) are left out: put the points inside them.
     #[must_use]
     pub fn snap_to(mut self, points: impl IntoIterator<Item = Point<Pixels>>) -> Self {
-        self.snaps = points.into_iter().map(Animate::to_repr).collect();
+        let points: Rc<[InPixels<2>]> = points.into_iter().map(Animate::to_repr).collect();
+        self.snaps = (!points.is_empty()).then_some(points);
         self
     }
 
@@ -140,40 +134,8 @@ struct Held {
     from: Point<Pixels>,
     /// Its offset now.
     at: Point<Pixels>,
-    /// The pointer's last places and their times, oldest first once full.
-    trail: [Option<(Duration, Point<Pixels>)>; 8],
-    next: usize,
-}
-
-impl Held {
-    fn note(&mut self, now: Duration, pointer: Point<Pixels>) {
-        self.trail[self.next] = Some((now, pointer));
-        self.next = (self.next + 1) % self.trail.len();
-    }
-
-    /// The pointer's speed at `now`, in pixels per second: over the last
-    /// [`SPEED_OVER`], and none if it has been still for [`STILL_FOR`].
-    fn speed(&self, now: Duration) -> Point<Pixels> {
-        let still = point(px(0.), px(0.));
-        let places = self.trail.iter().flatten();
-        let Some(&(last_time, last)) = places.clone().max_by_key(|(time, _)| *time) else {
-            return still;
-        };
-        if now.saturating_sub(last_time) > STILL_FOR {
-            return still;
-        }
-        let Some(&(first_time, first)) = places
-            .filter(|(time, _)| last_time.saturating_sub(*time) <= SPEED_OVER)
-            .min_by_key(|(time, _)| *time)
-        else {
-            return still;
-        };
-        let seconds = last_time.saturating_sub(first_time).as_secs_f32();
-        if seconds <= 0.0 {
-            return still;
-        }
-        point((last.x - first.x) / seconds, (last.y - first.y) / seconds)
-    }
+    /// The pointer's last places, for the speed it lets go with.
+    trail: Trail<InPixels<2>>,
 }
 
 impl DragState {
@@ -239,10 +201,9 @@ impl DragState {
             pointer,
             from,
             at: from,
-            trail: [None; 8],
-            next: 0,
+            trail: Trail::default(),
         };
-        held.note(now, pointer);
+        held.trail.note(now, pointer.to_repr());
         dragging.held = Some(held);
     }
 
@@ -258,7 +219,7 @@ impl DragState {
             pointer.y - held.pointer.y,
         ));
         held.at = point(held.from.x + movement.x, held.from.y + movement.y);
-        held.note(now, pointer);
+        held.trail.note(now, pointer.to_repr());
         true
     }
 
@@ -285,7 +246,8 @@ impl DragState {
         let Some(held) = dragging.held.take() else {
             return false;
         };
-        dragging.let_go(held.at, held.speed(now), drag, now, cx);
+        let speed = Point::from_repr(held.trail.speed(now));
+        dragging.let_go(held.at, speed, drag, now, cx);
         true
     }
 }
@@ -303,8 +265,8 @@ impl Dragging {
         let speed = drag.keep_along(velocity).to_repr();
         let motion = &mut self.motion;
         motion.jump_to(from.to_repr());
-        if !drag.snaps.is_empty() {
-            motion.coast_to_nearest(speed, drag.coast, &drag.snaps, now);
+        if let Some(snaps) = &drag.snaps {
+            motion.coast_to_nearest(speed, drag.coast, snaps, now);
         } else if let Some((min, max)) = drag.within {
             motion.coast_within(speed, drag.coast, min, max, now);
         } else {
@@ -420,6 +382,9 @@ impl<E: Styled + IntoElement + 'static> Element for Dragged<E> {
         cx: &mut App,
     ) {
         element.paint(window, cx);
+        // The view that draws the element is drawn again after each change,
+        // and not the whole window: views cached beside it stay as they are.
+        let view = window.current_view();
         let (state, hitbox) = (self.state.clone(), hitbox.clone());
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
             if phase == DispatchPhase::Bubble
@@ -427,22 +392,35 @@ impl<E: Styled + IntoElement + 'static> Element for Dragged<E> {
                 && hitbox.is_hovered(window)
             {
                 state.press(event.position, cx);
-                window.refresh();
+                // The topmost draggable under the pointer takes it, and no
+                // other beneath it.
+                cx.stop_propagation();
+                cx.notify(view);
             }
         });
         let (state, drag) = (self.state.clone(), self.drag.clone());
-        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
-            if phase == DispatchPhase::Capture && state.move_to(event.position, &drag, cx) {
-                window.refresh();
+        window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+            if phase != DispatchPhase::Capture {
+                return;
+            }
+            // A move with the button up is a release that was lost, as
+            // outside the window: the element is let go there.
+            let changed = if event.pressed_button == Some(MouseButton::Left) {
+                state.move_to(event.position, &drag, cx)
+            } else {
+                state.release(&drag, cx)
+            };
+            if changed {
+                cx.notify(view);
             }
         });
         let (state, drag) = (self.state.clone(), self.drag.clone());
-        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+        window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
             if phase == DispatchPhase::Capture
                 && event.button == MouseButton::Left
                 && state.release(&drag, cx)
             {
-                window.refresh();
+                cx.notify(view);
             }
         });
     }

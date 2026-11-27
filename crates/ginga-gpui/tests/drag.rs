@@ -1,12 +1,12 @@
 //! A drag, checked on GPUI's test platform: the test moves the pointer and
 //! the clock, and delivers the frames.
 
-use std::time::Duration;
+use std::{cell::Cell, rc::Rc, time::Duration};
 
-use ginga_gpui::{Drag, DragExt, DragState};
+use ginga_gpui::{Coast, Drag, DragExt, DragState, Spring};
 use gpui::{
-    Axis, Context, IntoElement, Modifiers, MouseButton, ParentElement, Pixels, Point, Render,
-    Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    AppContext, Axis, Context, IntoElement, Modifiers, MouseButton, ParentElement, Pixels, Point,
+    Render, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
 };
 
 fn ms(millis: u64) -> Duration {
@@ -217,4 +217,153 @@ fn a_throw_without_a_pointer_moves_as_a_pointers_would(cx: &mut TestAppContext) 
     assert_eq!(card.rest(), at(100., 300.));
     assert!(frames_until_still(cx) > 10);
     assert_eq!(card.offset(), at(100., 300.));
+}
+
+#[gpui::test]
+fn a_drag_along_the_vertical_axis_leaves_x_out(cx: &mut TestAppContext) {
+    let (card, cx) = open_board(Drag::new().along(Axis::Vertical), cx);
+    throw(cx, at(50., 50.), at(10., 10.), 5);
+    assert_eq!(card.rest(), at(0., 150.));
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_limit_still_decides_where_it_rests(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let walls = Drag::new().within(at(0., 0.), at(80., 80.));
+    let (card, cx) = open_board(walls, cx);
+    throw(cx, at(50., 50.), at(10., 10.), 5);
+    assert_eq!(next_frame(cx), 0);
+    assert_eq!(card.offset(), at(80., 80.));
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_snap_point_still_decides_where_it_rests(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let stops = Drag::new().snap_to([at(0., 0.), at(240., 0.)]);
+    let (card, cx) = open_board(stops, cx);
+    throw(cx, at(50., 50.), at(10., 0.), 5);
+    assert_eq!(next_frame(cx), 0);
+    assert_eq!(card.offset(), at(240., 0.));
+}
+
+#[gpui::test]
+fn a_coasting_element_is_caught_where_it_is_drawn(cx: &mut TestAppContext) {
+    let (card, cx) = open_board(Drag::new(), cx);
+    throw(cx, at(50., 50.), at(10., 0.), 5);
+    next_frame(cx);
+    cx.executor().advance_clock(ms(50));
+    next_frame(cx);
+    let drawn = card.offset();
+    assert!(drawn.x > px(50.) && drawn.x < px(150.), "{drawn:?}");
+    // Pressed where it is now, it stops there, under the pointer.
+    let pointer = point(drawn.x + px(50.), px(50.));
+    press(cx, pointer);
+    assert!(card.is_held());
+    assert_eq!(card.offset(), drawn);
+    assert_eq!(card.rest(), drawn);
+}
+
+#[gpui::test]
+fn a_move_with_the_button_up_lets_the_element_go(cx: &mut TestAppContext) {
+    let (card, cx) = open_board(Drag::new(), cx);
+    press(cx, at(50., 50.));
+    move_to(cx, at(80., 50.), ms(16));
+    // The release was lost outside the window; the pointer comes back up.
+    cx.executor().advance_clock(ms(200));
+    cx.simulate_mouse_move(at(300., 300.), None, Modifiers::none());
+    assert!(!card.is_held());
+    assert_eq!(card.rest(), at(30., 0.));
+}
+
+/// Two cards, one on top of the other.
+struct Stack {
+    under: DragState,
+    over: DragState,
+}
+
+impl Render for Stack {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let card = || div().absolute().size(px(100.));
+        div()
+            .size_full()
+            .child(card().draggable(&self.under, Drag::new()))
+            .child(card().draggable(&self.over, Drag::new()))
+    }
+}
+
+#[gpui::test]
+fn only_the_topmost_element_under_the_pointer_is_taken(cx: &mut TestAppContext) {
+    let (under, over) = (DragState::default(), DragState::default());
+    let (_, cx) = cx.add_window_view({
+        let (under, over) = (under.clone(), over.clone());
+        move |_, _| Stack { under, over }
+    });
+    cx.run_until_parked();
+    press(cx, at(50., 50.));
+    assert!(over.is_held());
+    assert!(!under.is_held());
+}
+
+/// A card that starts away from its place, `absolute`, and a heavy view
+/// beside it that is cached and counts its renders.
+struct Placed {
+    card: DragState,
+    heavy: gpui::Entity<Heavy>,
+}
+
+struct Heavy {
+    renders: Rc<Cell<u32>>,
+}
+
+impl Render for Heavy {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        self.renders.set(self.renders.get() + 1);
+        div().size(px(10.))
+    }
+}
+
+impl Render for Placed {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .child(div().absolute().size(px(100.)).draggable(
+                &self.card,
+                Drag::new().coast(Coast::SLOW.spring(Spring::BOUNCY)),
+            ))
+            .child(self.heavy.clone().cached(gpui::StyleRefinement::default()))
+    }
+}
+
+#[gpui::test]
+fn an_absolute_element_moves_from_its_parents_corner_and_only_its_view_is_drawn(
+    cx: &mut TestAppContext,
+) {
+    let renders = Rc::new(Cell::new(0));
+    let card = DragState::at(at(200., 100.));
+    let (_, cx) = cx.add_window_view({
+        let (card, renders) = (card.clone(), renders.clone());
+        move |_, cx| Placed {
+            card,
+            heavy: cx.new(|_| Heavy { renders }),
+        }
+    });
+    cx.run_until_parked();
+    // Drawn at its offset from the corner: a press there takes it.
+    press(cx, at(20., 20.));
+    assert!(!card.is_held());
+    release(cx, at(20., 20.));
+    let before = renders.get();
+    press(cx, at(250., 150.));
+    assert!(card.is_held());
+    for step in 1..=5u8 {
+        move_to(cx, at(250. + f32::from(step) * 10., 150.), ms(10));
+        next_frame(cx);
+    }
+    release(cx, at(300., 150.));
+    frames_until_still(cx);
+    assert_eq!(
+        renders.get(),
+        before,
+        "the cached view beside it is not drawn again"
+    );
 }

@@ -6,7 +6,9 @@ How `ginga_gpui::Dragged` follows the pointer, and the traps it avoids (#32).
 
 - A `div`'s `on_mouse_move` and `on_mouse_up` fire only while the pointer is over the element. A quick drag leaves the element within one frame, and a release outside it would be lost.
 - So `Dragged` registers window-wide listeners in `paint` with `window.on_mouse_event`: the press checks its own hitbox (inserted in `prepaint`), the move and the release are heard anywhere in the window while the element is held, in the capture phase so that nothing under the pointer can stop them.
-- After each move or release it calls `window.refresh()`: the listener does not know which view draws the element.
+- After a press, a move or a release it notifies the view that drew the element (`window.current_view()` in `paint`), not `window.refresh()`: a refresh draws every view in the window again, cached ones included, which would undo what an island saves.
+- The press stops propagation, so only the topmost draggable under the pointer is taken: `HitboxBehavior::Normal` does not hide the hitboxes beneath.
+- A move with the left button up, while held, is a release that was lost (outside the window): the element is let go there.
 
 ## Where the element is
 
@@ -16,8 +18,8 @@ How `ginga_gpui::Dragged` follows the pointer, and the traps it avoids (#32).
 
 ## The pointer's speed
 
-- The last eight places of the pointer and their times are kept in an array: no allocation while dragging.
-- At the release, the speed is measured from the oldest place in the last 100 ms to the newest. If the pointer was still for more than 50 ms before it let go, the speed is zero: the element is set down, not thrown.
+- The engine's `Trail` measures it: the adapter notes the pointer at each move and asks for the speed at the release. The rules (100 ms, still for 50 ms) live and are tested there.
+- A trail keeps eight places at least 15 ms apart, overwriting the newest until the next is far enough: a 1 kHz mouse would otherwise fill eight places in 8 ms and measure only the very end of the throw.
 - Times come from the state's `Clock`, which on the test platform is the clock the test moves, so a test drags at an exact speed.
 
 ## Under reduced motion

@@ -154,7 +154,7 @@ mod tests {
         let settle = card.settles_at().unwrap();
         // ln(100 / 0.001) / 10 s: where what is left falls under a thousandth.
         assert_eq!(settle.as_millis(), 1_151);
-        let before = card.sample(settle - ms(1));
+        let before = card.sample(settle.checked_sub(ms(1)).unwrap());
         assert!(!before.settled);
         assert!(100.0 - before.value < 0.001 + 1e-4);
         let after = card.sample(settle);
@@ -166,9 +166,17 @@ mod tests {
 
     #[test]
     fn a_skipped_frame_changes_nothing() {
-        let card = thrown(1_000.0);
-        let read_every_frame: Vec<f32> = (0..=20).map(|f| card.sample(ms(f * 16)).value).collect();
-        assert_eq!(card.sample(ms(160)).value, read_every_frame[10]);
+        // One card read every frame, another only at 160 ms, and a third in
+        // reverse: each gives the same values at the same times.
+        let every_frame = thrown(1_000.0);
+        let read: Vec<f32> = (0..=10)
+            .map(|f| every_frame.sample(ms(f * 16)).value)
+            .collect();
+        assert_eq!(thrown(1_000.0).sample(ms(160)).value, read[10]);
+        let backwards = thrown(1_000.0);
+        for f in (0..=10).rev() {
+            assert_eq!(backwards.sample(ms(f * 16)).value, read[f as usize]);
+        }
     }
 
     #[test]
@@ -282,5 +290,82 @@ ms           value
         assert_eq!(card.target(), (100.0, -20.0));
         let end = card.sample(card.settles_at().unwrap());
         assert_eq!(end.value, (100.0, -20.0));
+    }
+
+    #[test]
+    fn limits_may_be_given_in_either_order() {
+        let mut knob = Motion::at(10.0);
+        knob.coast_within(3_000.0, Coast::QUICK, 50.0, 0.0, ms(0));
+        assert_eq!(knob.target(), 50.0);
+        knob.coast_within(-3_000.0, Coast::QUICK, 50.0, 0.0, ms(1_000));
+        assert_eq!(knob.target(), 0.0);
+        // A limit that is not a number leaves the other as both: no panic.
+        knob.coast_within(100.0, Coast::QUICK, f32::NAN, 5.0, ms(2_000));
+        assert_eq!(knob.target(), 5.0);
+    }
+
+    #[test]
+    fn a_speed_that_is_not_finite_is_no_speed() {
+        for speed in [f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            let mut card = Motion::at(5.0);
+            card.coast(speed, Coast::QUICK, ms(0));
+            assert_eq!(
+                card.sample(ms(0)),
+                crate::Sample {
+                    value: 5.0,
+                    settled: true
+                }
+            );
+            card.coast_within(speed, Coast::QUICK, 0.0, 10.0, ms(0));
+            assert_eq!(card.target(), 5.0);
+            card.coast_to_nearest(speed, Coast::QUICK, &[0.0, 6.0], ms(0));
+            assert_eq!(card.target(), 6.0);
+        }
+    }
+
+    #[test]
+    fn a_coast_too_long_for_a_duration_never_panics() {
+        let endless = Coast::new(Duration::from_secs(u64::MAX)).unwrap();
+        let mut card = Motion::at(0.0);
+        card.coast(f32::MAX, endless, ms(0));
+        assert_eq!(card.settles_at(), Some(Duration::MAX));
+        let mut fast = Motion::at(0.0);
+        fast.coast(f32::MAX, Coast::QUICK, ms(0));
+        assert!(fast.sample(ms(16)).value.is_finite());
+        assert!(fast.settles_at().is_some());
+    }
+
+    #[test]
+    fn its_own_spring_takes_a_value_back_from_a_limit() {
+        // A bouncy wall: it passes the limit by more and comes back.
+        let farthest = |coast: Coast| {
+            let mut knob = Motion::at(0.0);
+            knob.coast_within(3_000.0, coast, 0.0, 50.0, ms(0));
+            (0..1_000)
+                .map(|t| knob.sample(ms(t)).value)
+                .fold(f32::MIN, f32::max)
+        };
+        let snappy = farthest(Coast::QUICK);
+        let bouncy = farthest(Coast::QUICK.spring(crate::Spring::BOUNCY));
+        assert!(bouncy > snappy, "{bouncy} > {snappy}");
+    }
+
+    #[test]
+    fn past_a_limit_the_value_springs_as_one() {
+        // Thrown into the right wall: x passes its limit, so y, inside its
+        // own, springs too, to where it would have come to rest.
+        let mut card = Motion::at((0.0, 0.0));
+        card.coast_within(
+            (3_000.0, 300.0),
+            Coast::QUICK,
+            (0.0, 0.0),
+            (50.0, 500.0),
+            ms(0),
+        );
+        assert_eq!(card.target(), (50.0, 30.0));
+        let free = thrown(300.0);
+        assert_ne!(card.sample(ms(50)).value.1, free.sample(ms(50)).value);
+        let end = card.sample(card.settles_at().unwrap());
+        assert_eq!(end.value, (50.0, 30.0));
     }
 }

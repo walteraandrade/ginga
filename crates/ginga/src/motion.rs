@@ -158,7 +158,8 @@ impl<T: Animatable> Motion<T> {
     }
 
     /// Lets the value go at `now` with `velocity`, in units per second: it
-    /// coasts on and slows to a stop where [`Coast::rest`] says.
+    /// coasts on and slows to a stop where [`Coast::rest`] says. A speed that
+    /// is not a number, or not finite, counts as none.
     ///
     /// ```
     /// use std::time::Duration;
@@ -173,7 +174,7 @@ impl<T: Animatable> Motion<T> {
     /// ```
     pub fn coast(&mut self, velocity: T, coast: Coast, now: Duration) {
         let from = self.state(now, Read::Value).value;
-        let velocity = velocity.to_channels();
+        let velocity = finite(velocity.to_channels());
         let mut seconds = 0f32;
         for speed in velocity.as_ref() {
             seconds = seconds.max(coast.settle_secs(*speed, T::PRECISION));
@@ -185,7 +186,8 @@ impl<T: Animatable> Motion<T> {
                 coast,
                 start: now,
                 velocity,
-                settle: now.saturating_add(Duration::from_secs_f32(seconds)),
+                settle: now
+                    .saturating_add(Duration::try_from_secs_f32(seconds).unwrap_or(Duration::MAX)),
             }
         } else {
             Drive::Rest
@@ -195,18 +197,24 @@ impl<T: Animatable> Motion<T> {
     /// As [`coast`](Self::coast), but it comes to rest with every channel
     /// within `min..=max`: a value that would coast past a limit moves with
     /// the coast's spring to that limit instead, keeping its speed, so it
-    /// passes the limit a little and comes back.
+    /// passes the limit a little and comes back. `min` and `max` may be given
+    /// in either order on each channel.
+    ///
+    /// The value moves as one: when any channel would pass a limit, every
+    /// channel moves with the spring, to where it would have come to rest.
+    /// A card thrown into a wall springs off it as a whole.
     pub fn coast_within(&mut self, velocity: T, coast: Coast, min: T, max: T, now: Duration) {
+        let velocity = T::from_channels(finite(velocity.to_channels()));
         let from = T::from_channels(self.state(now, Read::Value).value);
         let mut rest = coast.rest(from, velocity).to_channels();
         let mut past = false;
-        for ((place, low), high) in rest
+        for ((place, one), other) in rest
             .as_mut()
             .iter_mut()
             .zip(min.to_channels().as_ref())
             .zip(max.to_channels().as_ref())
         {
-            let inside = place.clamp(*low, high.max(*low));
+            let inside = place.clamp(one.min(*other), one.max(*other));
             past |= inside != *place;
             *place = inside;
         }
@@ -222,6 +230,7 @@ impl<T: Animatable> Motion<T> {
     /// `points` is nearest to where it would coast to, moving there with the
     /// coast's spring and keeping its speed. With no points it coasts.
     pub fn coast_to_nearest(&mut self, velocity: T, coast: Coast, points: &[T], now: Duration) {
+        let velocity = T::from_channels(finite(velocity.to_channels()));
         let from = T::from_channels(self.state(now, Read::Value).value);
         let rest = coast.rest(from, velocity).to_channels();
         let distance = |point: &T| -> f32 {
@@ -480,6 +489,17 @@ impl<T: Animatable> Motion<T> {
             }
         }
     }
+}
+
+/// `channels` with each that is not finite as zero: a speed that is not a
+/// number is no speed.
+fn finite<C: AsMut<[f32]>>(mut channels: C) -> C {
+    for channel in channels.as_mut() {
+        if !channel.is_finite() {
+            *channel = 0.0;
+        }
+    }
+    channels
 }
 
 #[cfg(test)]

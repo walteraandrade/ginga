@@ -9,7 +9,7 @@ use std::{
 
 use ginga::{
     Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop,
-    Transition, Tween,
+    Trail, Transition, Tween,
 };
 
 struct Counting;
@@ -220,6 +220,7 @@ fn letting_go_and_coasting_allocates_nothing() {
     // thrown past its end.
     let mut card = Motion::at((0.0, 0.0));
     let mut knob = Motion::at(0.0);
+    let mut trail = Trail::default();
     for throw in 0..200u64 {
         let now = ms(throw * 300);
         let speed = (throw % 7) as f32 * 400.0 - 1_200.0;
@@ -227,6 +228,10 @@ fn letting_go_and_coasting_allocates_nothing() {
         card.coast((speed, -speed / 2.0), Coast::QUICK, now);
         checksum += card.sample(now + ms(16)).value.0;
         card.coast_to_nearest((speed, 0.0), Coast::SLOW, &snaps, now + ms(32));
+        for place in 0..20u64 {
+            trail.note(now + ms(place), (place as f32, 0.0));
+        }
+        checksum += trail.speed(now + ms(20)).0;
         knob.coast_within(speed, Coast::QUICK, 0.0, 200.0, now);
         for frame in 0..18 {
             let at = now + ms(frame * 16);

@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use ginga::{Color, Look, LookMotion, Transition, Transitions};
+use ginga::{Color, Look, LookMotion, Transitions};
 use gpui::{
     AnyElement, App, Bounds, DispatchPhase, Element, ElementId, FocusHandle, Global,
     GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
@@ -114,7 +114,8 @@ enum Keep {
 /// not name is left as the element's own style.
 ///
 /// It asks for frames only while the look moves, and takes each new look at
-/// once when the desktop asks for reduced motion.
+/// once when the desktop asks for reduced motion, each value after its
+/// transition's delay. A variant's schedule is not kept then.
 ///
 /// It can take another look for a moment: [`hover`](Self::hover) while the
 /// pointer is over it, [`pressed`](Self::pressed) while it is pressed, and
@@ -296,15 +297,17 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         let reduced = reduced(cx);
         // The transitions are read only when the look changes, so they are
         // laid over the app's only then, not on every frame.
-        let mut transitions = if !changed {
-            Transitions::new()
-        } else if reduced {
-            // Every value at once: a value's own transition would otherwise
-            // win over a single `Instant` for the whole look.
-            Transition::Instant.into()
-        } else {
+        let mut transitions = if changed {
             let app = cx.try_global::<AppTransitions>().map(|app| app.0);
-            self.transitions.or(app.unwrap_or_default())
+            let transitions = self.transitions.or(app.unwrap_or_default());
+            // Every value with no motion, each after its own delay.
+            if reduced {
+                transitions.without_motion()
+            } else {
+                transitions
+            }
+        } else {
+            Transitions::new()
         };
         // Only a change of look that comes with a new name follows the
         // schedule: a hover or a change of the app's own goes at once.

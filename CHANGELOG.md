@@ -5,6 +5,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 ## Unreleased
 
 - Variants: a parent's name that its children follow one after another, before or after the parent (`Variant`, `Order`, `ginga_gpui::Variant`, `.leads(..)`, `.follows(..)`). `Transitions::delay` and `LookMotion::settles_at`.
+- Reduced motion keeps a transition's delay: the value holds still until the delay is over, then is at its target at once. `Transition::without_motion` and `Transitions::without_motion`. Before, the delay was dropped with the motion. A variant's schedule and a shared element's trip are still dropped.
 
 ## 0.1.0
 

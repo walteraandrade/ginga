@@ -7,7 +7,7 @@ use gpui::{
     InteractiveElement, IntoElement, LayoutId, ParentElement, Pixels, Styled, Window, div,
 };
 
-use crate::{Clock, look::styled, reduced};
+use crate::{Clock, look::styled, unless_reduced};
 
 /// Draws `content` while it is there, and keeps drawing it on its way out.
 ///
@@ -93,19 +93,17 @@ impl<T: PartialEq + 'static> Present<T> {
     }
 
     /// The ways to use this frame: none for a look that is not given, and
-    /// none at all when the desktop asks for reduced motion.
+    /// none with motion when the desktop asks for reduced motion, each after
+    /// its delay.
     fn ways(&self, cx: &App) -> InOut {
-        if reduced(cx) {
-            return InOut::INSTANT;
-        }
         InOut {
             enter: if moves(self.arrive_from) {
-                self.ways.enter
+                unless_reduced(self.ways.enter, cx)
             } else {
                 Transition::Instant
             },
             exit: if moves(self.leave_to) {
-                self.ways.exit
+                unless_reduced(self.ways.exit, cx)
             } else {
                 Transition::Instant
             },

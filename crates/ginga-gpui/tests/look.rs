@@ -257,3 +257,25 @@ fn a_motion_kept_with_the_id_ends_when_the_element_is_not_drawn(cx: &mut TestApp
         "it appears again, taking its look at once"
     );
 }
+
+#[gpui::test]
+fn under_reduced_motion_a_delay_is_kept_and_then_the_look_is_taken_at_once(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let (window, drawn) = open(cx, Look::new().width(100.), None, false);
+    change(&window, cx, |cards| {
+        cards.transitions = Tween::new(ms(260), Easing::OutExpo).delay(ms(160)).into();
+        cards.look = Look::new().width(200.);
+    });
+    assert_eq!(last(&drawn).size.width, px(100.), "it holds its start look");
+    after(150, &window, cx);
+    assert_eq!(last(&drawn).size.width, px(100.), "still holding at 150 ms");
+    assert_eq!(after(10, &window, cx), 1, "a frame for the end of the wait");
+    assert_eq!(
+        last(&drawn).size.width,
+        px(200.),
+        "at rest at once at 160 ms"
+    );
+    assert_eq!(after(16, &window, cx), 0, "and settled");
+}

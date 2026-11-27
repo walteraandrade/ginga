@@ -13,7 +13,10 @@ use gpui::{
     Pixels, Position, Rgba, Styled, Window, px,
 };
 
-use crate::{Animate, Clock, reduced};
+use crate::{
+    Animate, Clock, reduced,
+    variant::{Role, Schedule, Variant},
+};
 
 /// Declares on any styled element how it should look now; see [`Looked`].
 pub trait LookExt: Styled + IntoElement + 'static {
@@ -72,6 +75,9 @@ struct Moving {
     /// Whether the pointer is over the element and presses it, as its
     /// listeners last heard. Shared with them, as they live past the frame.
     gestures: Rc<Cell<Gestures>>,
+    /// The variant's count of changes of name when the element was last
+    /// drawn: a change of look follows the schedule only after a new name.
+    heard: u64,
 }
 
 /// What the pointer is doing to an element.
@@ -125,6 +131,21 @@ pub struct Looked<E> {
     hover: Option<Look>,
     pressed: Option<Look>,
     focused: Option<(FocusHandle, Look)>,
+    /// The variant the element leads or follows, and its place in it.
+    variant: Option<(Rc<dyn Schedule>, Role)>,
+    /// A change of course held from layout to prepaint, for a parent that
+    /// goes after its children.
+    held: Option<Held>,
+}
+
+/// A change of course held until the element's children, cached views
+/// included, are laid out and said when they end, for a parent that goes
+/// after them.
+#[derive(Clone, Copy)]
+struct Held {
+    look: Look,
+    transitions: Transitions,
+    now: std::time::Duration,
 }
 
 impl<E: Styled + IntoElement + 'static> Looked<E> {
@@ -142,6 +163,8 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             hover: None,
             pressed: None,
             focused: None,
+            variant: None,
+            held: None,
         }
     }
 
@@ -183,6 +206,34 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         self
     }
 
+    /// The element is the parent of `variant`: when the variant's name
+    /// changes, its look changes at the parent's place in the schedule. Pick
+    /// the look from [`Variant::name`]. With [`Order::ChildrenFirst`](crate::Order::ChildrenFirst)
+    /// it waits for the children laid out inside it, cached views of their
+    /// own included, and not for children drawn beside it.
+    ///
+    /// Only the first change of look after a new name follows the schedule,
+    /// with the schedule's delay added to the transition's own; any other
+    /// change, such as a hover, goes at once.
+    #[must_use]
+    pub fn leads<N: Copy + PartialEq + 'static>(mut self, variant: &Variant<N>) -> Self {
+        self.variant = Some((variant.schedule(), Role::Leads));
+        self
+    }
+
+    /// The element is child `index` of `variant`, counted from 0: when the
+    /// variant's name changes, its look changes one step after child
+    /// `index - 1`'s. Pick the look from [`Variant::name`].
+    #[must_use]
+    pub fn follows<N: Copy + PartialEq + 'static>(
+        mut self,
+        variant: &Variant<N>,
+        index: u32,
+    ) -> Self {
+        self.variant = Some((variant.schedule(), Role::Follows(index)));
+        self
+    }
+
     /// The pointer's looks are wanted: the element listens to the pointer.
     fn hears_the_pointer(&self) -> bool {
         self.hover.is_some() || self.pressed.is_some()
@@ -212,8 +263,14 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
 
     /// This frame's look: moves the motion in `moving` toward the wanted
     /// look, or starts one when there is none, and asks for a frame while it
-    /// moves.
-    fn frame(&self, moving: Option<Moving>, window: &mut Window, cx: &App) -> (Look, Moving) {
+    /// moves. A parent that goes after its children holds its change of
+    /// course, to [`finish`](Self::finish) once they are laid out.
+    fn frame(
+        &self,
+        moving: Option<Moving>,
+        window: &mut Window,
+        cx: &App,
+    ) -> (Look, Moving, Option<Held>) {
         let mut moving = moving.unwrap_or_else(|| Moving {
             // Already focused when it first appears, it takes that look at once.
             motion: LookMotion::at(
@@ -222,6 +279,10 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             ),
             clock: Clock::default(),
             gestures: Rc::default(),
+            heard: self
+                .variant
+                .as_ref()
+                .map_or(0, |(schedule, _)| schedule.changes()),
         });
         // A moment whose look is no longer given is forgotten, so it cannot
         // come back stale when the look is given again.
@@ -231,11 +292,13 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         moving.gestures.set(gestures);
         let look = self.wanted(gestures, window);
         let now = moving.clock.now(cx);
+        let changed = moving.motion.target() != look;
+        let reduced = reduced(cx);
         // The transitions are read only when the look changes, so they are
         // laid over the app's only then, not on every frame.
-        let transitions = if moving.motion.target() == look {
+        let mut transitions = if !changed {
             Transitions::new()
-        } else if reduced(cx) {
+        } else if reduced {
             // Every value at once: a value's own transition would otherwise
             // win over a single `Instant` for the whole look.
             Transition::Instant.into()
@@ -243,11 +306,80 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             let app = cx.try_global::<AppTransitions>().map(|app| app.0);
             self.transitions.or(app.unwrap_or_default())
         };
+        // Only a change of look that comes with a new name follows the
+        // schedule: a hover or a change of the app's own goes at once.
+        let mut new_name = false;
+        if let Some((schedule, _)) = &self.variant {
+            schedule.drawn_by(window.current_view());
+            let count = schedule.changes();
+            new_name = count != moving.heard;
+            moving.heard = count;
+        }
+        let scheduled = self
+            .variant
+            .as_ref()
+            .filter(|_| changed && !reduced && new_name);
+        if let Some((schedule, role)) = scheduled {
+            if schedule.waits_for_children(*role) {
+                window.request_animation_frame();
+                let held = Held {
+                    look,
+                    transitions,
+                    now,
+                };
+                return (moving.motion.sample(now).value, moving, Some(held));
+            }
+            transitions = transitions.delay(schedule.delay(*role, cx));
+        }
         let sample = moving.motion.toward(look, transitions, now);
+        if let Some((schedule, role)) = scheduled {
+            tell_the_end(&moving.motion, schedule.as_ref(), *role, now, cx);
+        }
         if !sample.settled {
             window.request_animation_frame();
         }
-        (sample.value, moving)
+        (sample.value, moving, None)
+    }
+
+    /// Changes course as `held` says, at the parent's place in the
+    /// schedule, now that its children said when they end.
+    fn finish(&self, moving: &mut Moving, held: &Held, cx: &App) {
+        let Some((schedule, role)) = &self.variant else {
+            return;
+        };
+        let transitions = held.transitions.delay(schedule.delay(*role, cx));
+        moving.motion.set_target(held.look, transitions, held.now);
+        tell_the_end(&moving.motion, schedule.as_ref(), *role, held.now, cx);
+    }
+
+    /// Takes this frame's look and lays the element out with it. A held
+    /// change of course waits for prepaint.
+    fn lay_out(
+        &mut self,
+        moving: Option<Moving>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> ((LayoutId, AnyElement, Rc<Cell<Gestures>>), Moving) {
+        let (look, moving, held) = self.frame(moving, window, cx);
+        let element = self.element.take().expect("an element is laid out once");
+        let mut element = styled(element, look).into_any_element();
+        let layout = element.request_layout(window, cx);
+        self.held = held;
+        let gestures = moving.gestures.clone();
+        ((layout, element, gestures), moving)
+    }
+}
+
+/// Tells the schedule when an element that just changed course will be settled.
+fn tell_the_end(
+    motion: &LookMotion,
+    schedule: &dyn Schedule,
+    role: Role,
+    now: std::time::Duration,
+    cx: &App,
+) {
+    if let Some(at) = motion.settles_at() {
+        schedule.ends(role, at.saturating_sub(now), cx);
     }
 }
 
@@ -351,28 +483,29 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let (look, gestures) = match (&self.keep, id) {
+        let ((layout, element, gestures), moving) = match (&self.keep, id) {
             (Keep::Owned(state), _) => {
-                let mut slot = state.0.borrow_mut();
-                let (look, moving) = self.frame(slot.take(), window, cx);
-                let gestures = moving.gestures.clone();
-                *slot = Some(moving);
-                (look, gestures)
+                let state = state.clone();
+                // Not borrowed while the children are laid out.
+                let taken = state.0.borrow_mut().take();
+                let (laid_out, moving) = self.lay_out(taken, window, cx);
+                (laid_out, Some((state, moving)))
             }
-            (Keep::Id(_), Some(id)) => window.with_element_state(id, |moving, window| {
-                let (look, moving) = self.frame(moving, window, cx);
-                ((look, moving.gestures.clone()), moving)
-            }),
+            (Keep::Id(_), Some(id)) => (
+                window.with_element_state(id, |moving, window| self.lay_out(moving, window, cx)),
+                None,
+            ),
             (Keep::Id(_), None) => unreachable!("an element with an id is laid out with one"),
         };
-        let element = self.element.take().expect("an element is laid out once");
-        let mut element = styled(element, look).into_any_element();
-        (element.request_layout(window, cx), (element, gestures))
+        if let Some((state, moving)) = moving {
+            *state.0.borrow_mut() = Some(moving);
+        }
+        (layout, (element, gestures))
     }
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
+        id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         (element, _): &mut Self::RequestLayoutState,
@@ -385,6 +518,25 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
             .hears_the_pointer()
             .then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal));
         element.prepaint(window, cx);
+        // GPUI lays out a cached view in prepaint, so only now have all the
+        // children inside said when they end.
+        if let Some(held) = self.held.take() {
+            match (&self.keep, id) {
+                (Keep::Owned(state), _) => {
+                    if let Some(moving) = state.0.borrow_mut().as_mut() {
+                        self.finish(moving, &held, cx);
+                    }
+                }
+                (Keep::Id(_), Some(id)) => {
+                    window.with_element_state(id, |moving: Option<Moving>, _| {
+                        let mut moving = moving.expect("laid out in this frame");
+                        self.finish(&mut moving, &held, cx);
+                        ((), moving)
+                    });
+                }
+                (Keep::Id(_), None) => {}
+            }
+        }
         hitbox
     }
 

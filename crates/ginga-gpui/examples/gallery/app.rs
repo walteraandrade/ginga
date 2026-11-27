@@ -64,7 +64,7 @@ impl Page {
         use crate::{
             color::Button, compose::Compose, drag::Throw, gestures::Buttons, island::IslandPage,
             list::Rows, look::Card, presence::Toast, pulse::Pulse, shared::Shared, toward::Toward,
-            transitions::Arrive, ways::Ways,
+            transitions::Arrive, variants::Menus, ways::Ways,
         };
         vec![
             Page::new(
@@ -102,6 +102,12 @@ impl Page {
                 "A card declares its look; clicked, it changes size and fades.",
                 cx.new(|_| Card::new()),
                 Card::play,
+            ),
+            Page::new(
+                "variants",
+                "A menu opens and its rows follow one after another, after it or before it.",
+                cx.new(|_| Menus::new()),
+                Menus::play,
             ),
             Page::new(
                 "transitions",

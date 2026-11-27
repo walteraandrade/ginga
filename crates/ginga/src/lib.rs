@@ -60,6 +60,7 @@ mod spring;
 mod trace;
 mod trail;
 mod transition;
+mod variant;
 
 pub use animatable::Animatable;
 pub use coast::{Coast, CoastError};
@@ -77,6 +78,7 @@ pub use spring::{Spring, SpringError};
 pub use trace::{Row, Trace, Traceable};
 pub use trail::Trail;
 pub use transition::{Transition, Tween};
+pub use variant::{Order, Variant};
 
 /// The README's examples, run as tests.
 #[cfg(doctest)]

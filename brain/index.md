@@ -30,6 +30,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[decisions/2026-11-27-a-transition-for-each-value]]: each value of a look has its own transition, over defaults (#27).
 - [[decisions/2026-11-27-a-sequence-is-a-schedule]]: a sequence is a schedule of delays, and an end is reported once by the app (#34).
 - [[decisions/2026-11-27-two-goals-performance-then-agents]]: performance first, then ease of use for AI agents (#51).
+- [[decisions/2026-11-27-variants-are-a-handle-passed-by-hand]]: a parent's name reaches its children through a handle the view passes by hand (#31).
 - [[decisions/2026-11-27-files-for-contributors]]: CONTRIBUTING, code of conduct, security policy and issue forms, pointing at `AGENTS.md` and this folder (#48).
 
 ## Codebase
@@ -43,6 +44,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/a-look-on-an-element]]: where an element's look motion lives, and how each value is applied.
 - [[codebase/a-drag-on-an-element]]: how a dragged element hears the pointer anywhere in the window, and measures its speed.
 - [[codebase/ways-in-and-out-on-an-element]]: how `present` keeps drawing a thing on its way out, and swaps content in a slot.
+- [[codebase/a-variant-on-an-element]]: how `.leads` and `.follows` delay a look, and how a parent waits for its children.
 - [[codebase/a-shared-element]]: how two elements of one key hand a motion over, and why the first frame only measures.
 
 ## Measurements

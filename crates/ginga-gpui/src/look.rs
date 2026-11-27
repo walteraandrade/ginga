@@ -83,6 +83,14 @@ pub struct Gestures {
     inside: bool,
 }
 
+/// Which of the pointer's moments an element has a look for: it keeps track
+/// of those only, so a moment without a look redraws nothing.
+#[derive(Debug, Clone, Copy)]
+struct Hears {
+    hover: bool,
+    press: bool,
+}
+
 /// Where an element's look motion is kept.
 enum Keep {
     /// With the element's id, for as long as it is drawn.
@@ -207,11 +215,21 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
     /// moves.
     fn frame(&self, moving: Option<Moving>, window: &mut Window, cx: &App) -> (Look, Moving) {
         let mut moving = moving.unwrap_or_else(|| Moving {
-            motion: LookMotion::at(self.from.unwrap_or(self.look)),
+            // Already focused when it first appears, it takes that look at once.
+            motion: LookMotion::at(
+                self.from
+                    .unwrap_or_else(|| self.wanted(Gestures::default(), window)),
+            ),
             clock: Clock::default(),
             gestures: Rc::default(),
         });
-        let look = self.wanted(moving.gestures.get(), window);
+        // A moment whose look is no longer given is forgotten, so it cannot
+        // come back stale when the look is given again.
+        let mut gestures = moving.gestures.get();
+        gestures.hovered &= self.hover.is_some();
+        gestures.pressed &= self.pressed.is_some();
+        moving.gestures.set(gestures);
+        let look = self.wanted(gestures, window);
         let now = moving.clock.now(cx);
         // The transitions are read only when the look changes, so they are
         // laid over the app's only then, not on every frame.
@@ -383,16 +401,20 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         // Registered before the children's listeners, so in the bubble phase
         // theirs run first, and a child that takes the press keeps it.
         if let Some(hitbox) = hitbox.take() {
+            let hears = Hears {
+                hover: self.hover.is_some(),
+                press: self.pressed.is_some(),
+            };
             // The element can move under a still pointer, as in a scroll:
             // this frame's hit test says whether the pointer is over it now.
             let mut now = gestures.get();
-            let hovered = now.inside && hitbox.is_hovered(window);
+            let hovered = hears.hover && now.inside && hitbox.is_hovered(window);
             if now.hovered != hovered {
                 now.hovered = hovered;
                 gestures.set(now);
                 window.request_animation_frame();
             }
-            listen(gestures, hitbox, window);
+            listen(gestures, hitbox, hears, window);
         }
         element.paint(window, cx);
     }
@@ -404,7 +426,7 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
 /// child that stops a press keeps it from the element. It does not read
 /// `default_prevented`: GPUI's own focus handling marks every press on a
 /// focusable element so.
-fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, window: &mut Window) {
+fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, hears: Hears, window: &mut Window) {
     let view = window.current_view();
     let change = move |gestures: &Cell<Gestures>, cx: &mut App, f: &dyn Fn(&mut Gestures)| {
         let mut now = gestures.get();
@@ -423,7 +445,7 @@ fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, window: &mut Window) {
             let released = event.pressed_button != Some(MouseButton::Left);
             change(&on_move, cx, &|now| {
                 now.inside = true;
-                now.hovered = hovered;
+                now.hovered = hears.hover && hovered;
                 now.pressed &= !released;
             });
         }
@@ -438,6 +460,9 @@ fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, window: &mut Window) {
             });
         }
     });
+    if !hears.press {
+        return;
+    }
     let on_down = gestures.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
         if phase == DispatchPhase::Bubble
@@ -447,7 +472,7 @@ fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, window: &mut Window) {
             change(&on_down, cx, &|now| {
                 now.inside = true;
                 now.pressed = true;
-                now.hovered = true;
+                now.hovered = hears.hover;
             });
         }
     });

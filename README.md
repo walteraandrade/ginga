@@ -371,7 +371,9 @@ div()
     .id("save")
     .track_focus(&self.focus)
     .on_click(cx.listener(|this, _, _, cx| this.save(cx)))
-    .look("save", Look::new().size(120., 40.).background(fill), Spring::SNAPPY)
+    // A value moves in a moment only when the element's own look names it too:
+    // without the transparent border, the ring would snap on and off.
+    .look("save", Look::new().size(120., 40.).background(fill).border_color(Color::TRANSPARENT), Spring::SNAPPY)
     .hover(Look::new().size(128., 44.))
     .pressed(Look::new().offset(0., 2.))
     .focused(&self.focus, Look::new().border_color(ring))

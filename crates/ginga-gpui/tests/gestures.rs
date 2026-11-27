@@ -21,15 +21,17 @@ fn ms(millis: u64) -> Duration {
 /// The bounds the button was laid out at, one entry per frame drawn.
 type Drawn = Rc<RefCell<Vec<Bounds<Pixels>>>>;
 
-/// A 100 px button, 150 px under the pointer, 200 px pressed and 120 px
-/// with the focus, each on a 100 ms linear tween so the widths are exact.
-/// `shift` moves it down; a 10 px corner inside it stops every press.
+/// A 100 px button, 150 px wide and 50 px high under the pointer, 200 px
+/// pressed and 120 px with the focus, each on a 100 ms linear tween so the
+/// widths are exact. `shift` moves it down and `shown` takes it away; a 10 px
+/// corner inside it stops every press.
 struct Button {
     focus: FocusHandle,
     clicks: Rc<Cell<u32>>,
     drawn: Drawn,
     owned: Option<LookState>,
     shift: Rc<Cell<f32>>,
+    shown: Rc<Cell<bool>>,
 }
 
 impl Render for Button {
@@ -62,12 +64,14 @@ impl Render for Button {
             Some(state) => button.look_with(state, Look::new().width(100.), transition),
             None => button.look("button", Look::new().width(100.), transition),
         };
-        div().size_full().pt(px(self.shift.get())).child(
-            button
-                .hover(Look::new().width(150.))
-                .pressed(Look::new().width(200.))
-                .focused(&self.focus, Look::new().width(120.)),
-        )
+        let button = button
+            .hover(Look::new().width(150.).height(50.))
+            .pressed(Look::new().width(200.))
+            .focused(&self.focus, Look::new().width(120.));
+        div()
+            .size_full()
+            .pt(px(self.shift.get()))
+            .children(self.shown.get().then_some(button))
     }
 }
 
@@ -77,6 +81,7 @@ struct Opened<'a> {
     clicks: Rc<Cell<u32>>,
     drawn: Drawn,
     shift: Rc<Cell<f32>>,
+    shown: Rc<Cell<bool>>,
 }
 
 fn open(cx: &mut TestAppContext) -> Opened<'_> {
@@ -86,16 +91,23 @@ fn open(cx: &mut TestAppContext) -> Opened<'_> {
 fn open_as(cx: &mut TestAppContext, owned: bool) -> Opened<'_> {
     let (drawn, clicks) = (Drawn::default(), Rc::new(Cell::new(0)));
     let shift = Rc::new(Cell::new(0.));
+    let shown = Rc::new(Cell::new(true));
     let focus = cx.update(|cx| cx.focus_handle());
     let (_, cx) = cx.add_window_view({
-        let (drawn, clicks, focus, shift) =
-            (drawn.clone(), clicks.clone(), focus.clone(), shift.clone());
+        let (drawn, clicks, focus, shift, shown) = (
+            drawn.clone(),
+            clicks.clone(),
+            focus.clone(),
+            shift.clone(),
+            shown.clone(),
+        );
         move |_, _| Button {
             focus,
             clicks,
             drawn,
             owned: owned.then(LookState::default),
             shift,
+            shown,
         }
     });
     cx.run_until_parked();
@@ -105,6 +117,7 @@ fn open_as(cx: &mut TestAppContext, owned: bool) -> Opened<'_> {
         clicks,
         drawn,
         shift,
+        shown,
     }
 }
 
@@ -115,6 +128,16 @@ impl Opened<'_> {
         self.cx.update(Window::simulate_next_frame);
         self.cx.run_until_parked();
         self.drawn.borrow().last().unwrap().size.width
+    }
+
+    /// The button's height in the last frame drawn.
+    fn height(&self) -> Pixels {
+        self.drawn.borrow().last().unwrap().size.height
+    }
+
+    /// How many frames the window was asked for since the last one.
+    fn frames_asked(&mut self) -> usize {
+        self.cx.update(Window::simulate_next_frame)
     }
 
     fn move_to(&mut self, (x, y): (f32, f32), button: Option<MouseButton>) {
@@ -149,6 +172,7 @@ fn hover_comes_and_goes(mut button: Opened<'_>) {
         "halfway to the hover look"
     );
     assert_eq!(button.width_after(50), px(150.));
+    assert_eq!(button.frames_asked(), 0, "settled: no frame asked for");
     button
         .cx
         .simulate_mouse_move(point(px(AWAY.0), px(AWAY.1)), None, Modifiers::none());
@@ -179,6 +203,11 @@ fn the_pressed_look_wins_and_a_release_over_the_element_returns_to_hover(cx: &mu
         .cx
         .simulate_mouse_down(over, MouseButton::Left, Modifiers::none());
     assert_eq!(button.width_after(100), px(200.), "pressed wins over hover");
+    assert_eq!(
+        button.height(),
+        px(50.),
+        "laid over hover: what pressed does not name stays"
+    );
     button
         .cx
         .simulate_mouse_up(over, MouseButton::Left, Modifiers::none());
@@ -298,4 +327,17 @@ fn the_focus_look_applies_while_the_element_has_the_keyboard_focus(cx: &mut Test
     assert_eq!(button.width_after(100), px(120.));
     button.cx.update(Window::blur);
     assert_eq!(button.width_after(100), px(100.));
+}
+
+#[gpui::test]
+fn already_focused_when_it_first_appears_it_takes_that_look_at_once(cx: &mut TestAppContext) {
+    let mut button = open(cx);
+    button.shown.set(false);
+    button.cx.update(|window, _| window.refresh());
+    button.cx.run_until_parked();
+    let focus = button.focus.clone();
+    button.cx.update(|window, cx| window.focus(&focus, cx));
+    button.shown.set(true);
+    button.cx.update(|window, _| window.refresh());
+    assert_eq!(button.width_after(0), px(120.));
 }

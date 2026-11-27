@@ -44,3 +44,5 @@ jobs:
         with:
           key: adapter
       - run: cargo clippy -p ginga-gpui --all-targets -- -D warnings
+      # GPUI's test platform: no display needed.
+      - run: cargo test -p ginga-gpui

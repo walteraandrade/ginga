@@ -146,7 +146,7 @@ mod tests {
         let mut motion = Motion::at(0.0);
         motion.set_target(
             1.0,
-            Tween::new(Duration::from_secs(3_600), Easing::Linear),
+            Tween::new(Duration::from_secs(10), Easing::Linear),
             ms(0),
         );
         assert_eq!(

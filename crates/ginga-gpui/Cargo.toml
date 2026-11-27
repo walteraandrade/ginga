@@ -3,15 +3,26 @@ name = "ginga-gpui"
 description = "ginga motion for GPUI views: the frame's clock, frame requests and reduced motion."
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+categories.workspace = true
+keywords = ["animation", "motion", "spring", "gpui", "ui"]
+# gpui-pre =0.3.12 uses library features stabilized in Rust 1.95.
+rust-version = "1.95"
 publish.workspace = true
 
 [dependencies]
-ginga = { path = "../ginga" }
-# The GPUI snapshot that gpui-kit 0.9.1 builds on. An app must use the same one.
-gpui = { package = "gpui-pre", version = "=0.3.12", default-features = false }
+ginga.workspace = true
+# The pin is in the workspace's manifest, once for both uses.
+gpui.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# GPUI's test platform: a clock the test moves and a simulated next frame, no display.
+gpui = { workspace = true, features = ["test-support"] }
 
 # A real window for the island's measurement example: GPUI's platform, on X11.
 # It builds on Linux only, and needs X11, Wayland, fontconfig and freetype's

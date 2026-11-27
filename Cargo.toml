@@ -7,7 +7,18 @@ default-members = ["crates/ginga"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/walteraandrade/ginga"
+categories = ["gui"]
+# The oldest Rust the engine is checked with; CI runs on it.
+rust-version = "1.87"
 publish = false
+
+[workspace.dependencies]
+# Keep `version` in step with [workspace.package] version.
+ginga = { path = "crates/ginga", version = "0.1.0" }
+# The GPUI snapshot that gpui-kit 0.9.1 builds on. An app must use the same one.
+gpui = { package = "gpui-pre", version = "=0.3.12", default-features = false }
 
 [workspace.lints.rust]
 # The library forbids unsafe in its own source; one test needs it to count allocations.

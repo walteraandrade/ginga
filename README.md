@@ -1,5 +1,7 @@
 # ginga
 
+[![CI](https://github.com/walteraandrade/ginga/actions/workflows/ci.yml/badge.svg)](https://github.com/walteraandrade/ginga/actions/workflows/ci.yml)
+
 Motion for Rust UIs, as a pure function of time.
 
 A `Motion` is a value on its way to a target. You own it, you hand it the time, and it answers with the value at that time. Nothing ticks, nothing allocates while it runs, and the same times always give the same values. That makes motion something a test, a log or a coding agent can read as text, without a screen.
@@ -43,6 +45,28 @@ width.toward(180.0, Spring::SNAPPY, ms(100));
 ```
 
 `now` is a `Duration` since any fixed moment you choose. The engine never reads a clock.
+
+### One after another
+
+Any transition can wait before it starts: `.delay(d)` on a spring, a tween or a `Transition`. Until then the value holds still where it is. To let a group arrive in turn, give each item a delay one step longer than the one before, up to a cap:
+
+```rust
+use std::time::Duration;
+use ginga::{Motion, Spring};
+
+let ms = Duration::from_millis;
+let mut bars = [Motion::at(0.0); 5];
+
+for (n, bar) in (0..).zip(&mut bars) {
+    let delay = (ms(40) * n).min(ms(120)); // 40 ms apart, never more than 120 ms late
+    bar.set_target(1.0, Spring::SMOOTH.delay(delay), ms(0));
+}
+
+let started: Vec<bool> = bars.iter().map(|bar| bar.sample(ms(60)).value > 0.0).collect();
+assert_eq!(started, [true, true, false, false, false]);
+```
+
+The same works for things that come and go: `rows[n].show(row, fade.delay(step * n), now)`.
 
 ## Things that come and go
 
@@ -94,6 +118,56 @@ assert_eq!(
 ```
 
 An item on its way out is still drawn, so it can still be clicked or focused unless you say otherwise: check for `Phase::Exiting`.
+
+An item whose place changes can travel there. Tell the list where its items are laid out with `place_all`: a function that gets each item, with its index in the order `frame` gives them, and answers its place; the list answers, in each item's `offset`, how far from its place to draw it this frame, a distance that heads for zero. A reorder in the middle of a move turns around from where the item is, with its speed. Places are told apart to a tenth, so give them in pixels or another unit where a tenth is too small to see.
+
+```rust
+use std::time::Duration;
+use ginga::{InOut, PresenceList, Spring};
+
+let ms = Duration::from_millis;
+let mut rows = PresenceList::new();
+
+rows.sync([("a", ()), ("b", ())], InOut::INSTANT, ms(0));
+rows.place_all(|index, _| index as f32 * 40.0, Spring::SNAPPY, ms(0));
+
+rows.sync([("b", ()), ("a", ())], InOut::INSTANT, ms(1_000)); // "b" goes first
+rows.place_all(|index, _| index as f32 * 40.0, Spring::SNAPPY, ms(1_000));
+
+let b = rows.frame(ms(1_000)).next().unwrap();
+assert_eq!((*b.key, b.offset), ("b", 40.0)); // drawn where it was, 40 below its new place
+assert!(b.moving()); // ask for another frame
+```
+
+In a GPUI list of rows of one height, a row's place is its index times the height, known before layout. Each row is drawn `offset` away from it:
+
+```rust,ignore
+const ROW: f32 = 40.;
+
+let transition = ginga_gpui::unless_reduced(Spring::SNAPPY, cx);
+self.rows.place_all(|index, _| index as f32 * ROW, transition, now);
+
+let mut moving = false;
+let rows: Vec<_> = self
+    .rows
+    .frame(now)
+    .map(|row| {
+        moving |= row.moving();
+        div()
+            .h(px(ROW))
+            .relative()
+            .top(px(row.offset))
+            .opacity(row.progress)
+            .child(row.content.label.clone())
+    })
+    .collect();
+if moving {
+    window.request_animation_frame();
+}
+div().flex().flex_col().children(rows)
+```
+
+Only the place moves: GPUI cannot scale a `div`, so a row whose size changes takes its new size at once.
 
 ## Motion as text
 
@@ -158,14 +232,19 @@ Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops
 
 ## What it costs
 
-`cargo run --release --example bench`, best of nine rounds on the machine this was written on (2026-11-26):
+`cargo run --release --example bench`, best of 31 interleaved rounds, on a shared cloud Xeon at 2.1 GHz (2026-11-27). A frame costs one thing while the value moves and another once it is settled, so the two are timed apart:
 
-| One frame of | Time |
-| --- | --- |
-| a value at rest | 7 ns |
-| a spring, 1 to 4 channels | 12 to 25 ns |
-| a spring with 4 channels and a new target every frame | 165 ns |
-| a tween, 2 channels | 11 to 15 ns |
+| One frame of | Moving | Settled |
+| --- | --- | --- |
+| a value at rest | | 4 ns |
+| a spring, 1 channel | 11 ns | 4 ns |
+| a spring, 4 channels | 13 ns | 6 ns |
+| a bouncy spring, 1 channel | 32 ns | 4 ns |
+| a bouncy spring, 4 channels | 22 ns | 6 ns |
+| a tween, 2 channels | 14 to 39 ns | 5 ns |
+| a spring with 4 channels and a new target every frame | 279 ns | |
+
+Each number includes about 1 ns that the timing loop costs on its own; the bench prints it as its first row. The bouncy spring with one channel reports slower than with four although it runs fewer instructions (valgrind): which case gets the slow code layout changes with unrelated edits, see [the note](brain/codebase/bouncy-spring-bench-and-code-layout.md).
 
 Reading and retargeting a motion never allocates; [`tests/no_alloc.rs`](crates/ginga/tests/no_alloc.rs) fails if it does.
 
@@ -173,9 +252,9 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 
 ## What it does not do yet
 
-- Animate layout: an item of a `PresenceList` that moves to a new place jumps there.
+- Animate a change of size: an item that grows or shrinks takes its new size at once.
 - Shared elements.
-- Sequences, stagger, keyframes.
+- Sequences and keyframes.
 - Gestures and drag.
 
 Limits that come from GPUI and not from this library: a `div` has no transform, so moving a box means changing its position or size and laying out again; and there is no way to redraw one element without rendering its view.
@@ -184,9 +263,16 @@ Limits that come from GPUI and not from this library: a `div` has no transform, 
 
 ```sh
 cargo fmt --all
-cargo clippy --all-targets -- -D warnings   # the engine
-cargo test                                  # the engine, in seconds
-cargo clippy -p ginga-gpui -- -D warnings   # the GPUI adapter; the first build takes minutes
+cargo clippy --all-targets -- -D warnings                 # the engine
+cargo test                                                # the engine, in seconds
+cargo clippy -p ginga-gpui --all-targets -- -D warnings   # the GPUI adapter; the first build takes minutes
+cargo test -p ginga-gpui                                  # the adapter on GPUI's test platform, no display
 ```
 
-Rules for changes are in [AGENTS.md](AGENTS.md). No license has been chosen yet.
+The engine needs Rust 1.87 or newer and the adapter Rust 1.95, the oldest that builds its GPUI. CI checks each on that version, on every pull request.
+
+Rules for changes are in [AGENTS.md](AGENTS.md).
+
+## License
+
+Either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. Unless you say otherwise, a contribution you submit for inclusion, as defined in the Apache-2.0 license, is offered under the same two, with no other terms.

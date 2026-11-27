@@ -33,9 +33,9 @@ impl Render for Button {
                 .border_color(color(rgb(0x003b_6ef5)))
         } else {
             Look::new()
-                .background(Color::hex(0x00e5_484d).with_alpha(0.))
-                .text_color(Color::hex(0x00e5_484d))
-                .border_color(Color::hex(0x00e5_484d))
+                .background(Color::hex(0xe5_484d).with_alpha(0.))
+                .text_color(Color::hex(0xe5_484d))
+                .border_color(Color::hex(0xe5_484d))
         };
         // A row, so the button is as wide as its label.
         div().flex().child(

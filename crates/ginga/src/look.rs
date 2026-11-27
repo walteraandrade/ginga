@@ -536,9 +536,9 @@ ms               x           y     opacity
 
     #[test]
     fn colors_move_between_two_looks_and_settle_exactly_on_theirs() {
-        let red = Color::hex(0x00ff_0000);
-        let blue = Color::hex(0x0000_00ff);
-        let ink = Color::hex(0x0016_181c);
+        let red = Color::hex(0xff_0000);
+        let blue = Color::hex(0x00_00ff);
+        let ink = Color::hex(0x16_181c);
         let mut button = LookMotion::at(
             Look::new()
                 .background(red)
@@ -567,7 +567,7 @@ ms               x           y     opacity
     fn a_trace_names_a_column_for_each_channel_of_a_color() {
         let mut button = LookMotion::at(Look::new().opacity(0.0).background(Color::TRANSPARENT));
         button.set_target(
-            Look::new().opacity(1.0).background(Color::hex(0x00ff_ffff)),
+            Look::new().opacity(1.0).background(Color::hex(0xff_ffff)),
             glide(),
             ms(0),
         );

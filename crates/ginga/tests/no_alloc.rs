@@ -146,13 +146,13 @@ fn running_a_look_allocates_nothing() {
 #[test]
 fn running_a_look_with_colors_allocates_nothing() {
     let rest = Look::new()
-        .background(Color::hex(0x001e_2126))
+        .background(Color::hex(0x1e_2126))
         .text_color(Color::TRANSPARENT)
-        .border_color(Color::hex(0x0030_3540));
+        .border_color(Color::hex(0x30_3540));
     let hover = Look::new()
-        .background(Color::hex(0x003b_6ef5))
-        .text_color(Color::hex(0x00e8_eaed))
-        .border_color(Color::hex_alpha(0x3b6e_f580));
+        .background(Color::hex(0x3b_6ef5))
+        .text_color(Color::hex(0xe8_eaed))
+        .border_color(Color::hex(0x3b_6ef5).with_alpha(0.5));
     let mut button = LookMotion::at(rest);
     let mut checksum = 0.0;
     let before = allocations();

@@ -10,7 +10,7 @@ use gpui::{
     AnyElement, App, Bounds, DispatchPhase, Element, ElementId, FocusHandle, Global,
     GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
     MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    Pixels, Position, Rgba, Styled, Window, px,
+    Pixels, Point, Rgba, Styled, Window, point, px,
 };
 
 use crate::{
@@ -107,11 +107,12 @@ enum Keep {
 
 /// An element with a declared look. Made by [`LookExt::look`].
 ///
-/// A value the look names replaces the element's own style for it. The offset
-/// moves the element by `left` and `top`: from its place in the layout, made
-/// `relative`, or for an `absolute` element, from its parent's corner, so give
-/// an absolutely placed element its place as the offset. A value the look does
-/// not name is left as the element's own style.
+/// A value the look names replaces the element's own style for it, except
+/// the offset: it moves what is painted, and where the pointer finds the
+/// element, from wherever the element is laid out, its own `left` and `top`
+/// or an `absolute` place included. The layout does not see it, so nothing
+/// around the element moves. A value the look does not name is left as the
+/// element's own style.
 ///
 /// It asks for frames only while the look moves, and takes each new look at
 /// once when the desktop asks for reduced motion.
@@ -359,15 +360,28 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         moving: Option<Moving>,
         window: &mut Window,
         cx: &mut App,
-    ) -> ((LayoutId, AnyElement, Rc<Cell<Gestures>>), Moving) {
+    ) -> ((LayoutId, Drawn), Moving) {
         let (look, moving, held) = self.frame(moving, window, cx);
         let element = self.element.take().expect("an element is laid out once");
         let mut element = styled(element, look).into_any_element();
         let layout = element.request_layout(window, cx);
         self.held = held;
-        let gestures = moving.gestures.clone();
-        ((layout, element, gestures), moving)
+        let drawn = Drawn {
+            element,
+            gestures: moving.gestures.clone(),
+            offset: offset_of(look),
+        };
+        ((layout, drawn), moving)
     }
+}
+
+/// An element laid out with its look, waiting to be painted.
+pub struct Drawn {
+    element: AnyElement,
+    /// What the pointer is doing to it.
+    gestures: Rc<Cell<Gestures>>,
+    /// How far from its laid-out place it is painted.
+    offset: Point<Pixels>,
 }
 
 /// Tells the schedule when an element that just changed course will be settled.
@@ -401,14 +415,9 @@ pub fn set_default_look_transitions(transitions: impl Into<Transitions>, cx: &mu
     cx.set_global(AppTransitions(transitions.into()));
 }
 
-/// `element` with each value that `look` names.
+/// `element` with each value that `look` names but the offset, which is
+/// painted: see [`offset_of`].
 pub(crate) fn styled<E: Styled>(mut element: E, look: Look) -> E {
-    if let Some((x, y)) = look.offset {
-        if element.style().position != Some(Position::Absolute) {
-            element = element.relative();
-        }
-        element = element.left(px(x)).top(px(y));
-    }
     if let Some(opacity) = look.opacity {
         element = element.opacity(opacity.clamp(0., 1.));
     }
@@ -431,6 +440,97 @@ pub(crate) fn styled<E: Styled>(mut element: E, look: Look) -> E {
         element = element.border_color(rgba(color));
     }
     element
+}
+
+/// How far from its laid-out place an element with `look` is painted: no
+/// distance when the look names no offset, or one that is not finite.
+pub(crate) fn offset_of(look: Look) -> Point<Pixels> {
+    match look.offset {
+        Some((x, y)) if x.is_finite() && y.is_finite() => point(px(x), px(y)),
+        _ => Point::default(),
+    }
+}
+
+/// Prepaints `element` moved by `offset`, with its children: what is painted
+/// and where the pointer finds it move, and the layout does not.
+pub(crate) fn prepaint_at(
+    element: &mut AnyElement,
+    offset: Point<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    window.with_element_offset(offset, |window| element.prepaint(window, cx));
+}
+
+/// `element` painted `offset` away from where it is laid out.
+pub(crate) fn painted_at(element: impl IntoElement, offset: Point<Pixels>) -> PaintedAt {
+    PaintedAt {
+        element: Some(element.into_any_element()),
+        offset,
+    }
+}
+
+/// An element painted away from where it is laid out: made by [`painted_at`].
+pub(crate) struct PaintedAt {
+    element: Option<AnyElement>,
+    offset: Point<Pixels>,
+}
+
+impl IntoElement for PaintedAt {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for PaintedAt {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, AnyElement) {
+        let mut element = self.element.take().expect("an element is laid out once");
+        (element.request_layout(window, cx), element)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        element: &mut AnyElement,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        prepaint_at(element, self.offset, window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        element: &mut AnyElement,
+        (): &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        element.paint(window, cx);
+    }
 }
 
 /// A color of the engine as GPUI's.
@@ -460,8 +560,7 @@ impl<E: Styled + IntoElement + 'static> IntoElement for Looked<E> {
 }
 
 impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
-    /// The element, and what the pointer is doing to it.
-    type RequestLayoutState = (AnyElement, Rc<Cell<Gestures>>);
+    type RequestLayoutState = Drawn;
     /// Where the pointer is heard, when a look for it is wanted.
     type PrepaintState = Option<Hitbox>;
 
@@ -483,7 +582,7 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let ((layout, element, gestures), moving) = match (&self.keep, id) {
+        let ((layout, drawn), moving) = match (&self.keep, id) {
             (Keep::Owned(state), _) => {
                 let state = state.clone();
                 // Not borrowed while the children are laid out.
@@ -500,7 +599,7 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         if let Some((state, moving)) = moving {
             *state.0.borrow_mut() = Some(moving);
         }
-        (layout, (element, gestures))
+        (layout, drawn)
     }
 
     fn prepaint(
@@ -508,16 +607,16 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        (element, _): &mut Self::RequestLayoutState,
+        drawn: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) -> Option<Hitbox> {
         // Inserted before the children's, so theirs lie over it, as GPUI's
-        // own elements do.
+        // own elements do; where it is painted.
         let hitbox = self
             .hears_the_pointer()
-            .then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal));
-        element.prepaint(window, cx);
+            .then(|| window.insert_hitbox(bounds + drawn.offset, HitboxBehavior::Normal));
+        prepaint_at(&mut drawn.element, drawn.offset, window, cx);
         // GPUI lays out a cached view in prepaint, so only now have all the
         // children inside said when they end.
         if let Some(held) = self.held.take() {
@@ -545,7 +644,9 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
-        (element, gestures): &mut Self::RequestLayoutState,
+        Drawn {
+            element, gestures, ..
+        }: &mut Self::RequestLayoutState,
         hitbox: &mut Option<Hitbox>,
         window: &mut Window,
         cx: &mut App,
@@ -638,7 +739,7 @@ fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, hears: Hears, window: &
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AbsoluteLength, DefiniteLength, Length, div};
+    use gpui::{AbsoluteLength, DefiniteLength, Length, Position, div};
 
     use super::*;
 
@@ -660,9 +761,6 @@ mod tests {
             .radius(6.);
         let mut element = styled(div(), look);
         let style = element.style();
-        assert_eq!(style.position, Some(Position::Relative));
-        assert_eq!(pixels(style.inset.left), Some(px(12.)));
-        assert_eq!(pixels(style.inset.top), Some(px(-4.)));
         assert_eq!(style.opacity, Some(0.25));
         assert_eq!(pixels(style.size.width), Some(px(80.)));
         assert_eq!(pixels(style.size.height), Some(px(40.)));
@@ -670,15 +768,28 @@ mod tests {
             style.corner_radii.top_left,
             Some(AbsoluteLength::Pixels(px(6.)))
         );
+        assert_eq!(offset_of(look), point(px(12.), px(-4.)));
     }
 
     #[test]
-    fn an_absolute_element_stays_absolute_and_the_offset_is_its_place() {
-        let mut element = styled(div().absolute(), Look::new().offset(100., 50.));
+    fn the_offset_leaves_the_elements_own_place_alone() {
+        let look = Look::new().offset(8., 0.);
+        let mut element = styled(div().absolute().left(px(100.)).top(px(40.)), look);
         let style = element.style();
         assert_eq!(style.position, Some(Position::Absolute));
         assert_eq!(pixels(style.inset.left), Some(px(100.)));
-        assert_eq!(pixels(style.inset.top), Some(px(50.)));
+        assert_eq!(pixels(style.inset.top), Some(px(40.)));
+        let mut element = styled(div(), look);
+        assert_eq!(element.style().position, None, "not made relative");
+    }
+
+    #[test]
+    fn an_offset_that_is_not_finite_moves_nothing() {
+        assert_eq!(
+            offset_of(Look::new().offset(f32::NAN, 3.)),
+            Point::default()
+        );
+        assert_eq!(offset_of(Look::new()), Point::default());
     }
 
     #[test]

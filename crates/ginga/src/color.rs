@@ -183,6 +183,25 @@ mod tests {
     }
 
     #[test]
+    fn a_color_at_rest_or_settled_is_exactly_the_color_given() {
+        let ms = Duration::from_millis;
+        let blue = Color::hex(0x003b_6ef5);
+        let clear_red = Color::hex(0x00e5_484d).with_alpha(0.0);
+        assert_eq!(Motion::at(blue).sample(ms(0)).value, blue);
+        assert_eq!(
+            Motion::at(clear_red).sample(ms(0)).value,
+            clear_red,
+            "its hue kept"
+        );
+        let mut motion = Motion::at(clear_red);
+        motion.set_target(blue, Tween::new(ms(100), Easing::Linear), ms(0));
+        assert_eq!(motion.target(), blue);
+        let end = motion.sample(ms(100));
+        assert!(end.settled);
+        assert_eq!(end.value, blue);
+    }
+
+    #[test]
     fn a_channel_past_its_end_is_drawn_at_the_end() {
         let color = Color::from_channels([1.5, -0.2, 0.5, 1.2]);
         assert_eq!(color.red, 1.0);

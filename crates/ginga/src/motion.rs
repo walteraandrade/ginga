@@ -32,6 +32,9 @@ use crate::{Animatable, Easing, Spring, Transition, Tween};
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Motion<T: Animatable> {
+    /// The target as it was given, handed back once settled: a value rebuilt
+    /// from its channels can be off in the last bit, as a color is.
+    goal: T,
     target: T::Channels,
     drive: Drive<T::Channels>,
 }
@@ -87,6 +90,7 @@ impl<T: Animatable> Motion<T> {
     #[must_use]
     pub fn at(value: T) -> Self {
         Self {
+            goal: value,
             target: value.to_channels(),
             drive: Drive::Rest,
         }
@@ -126,6 +130,7 @@ impl<T: Animatable> Motion<T> {
             _ => Read::Value,
         };
         let state = self.state(now, read);
+        self.goal = target;
         self.target = target.to_channels();
         let start = now.saturating_add(delay);
         // Three ways to say "jump": no motion, a zero-length tween, a spring
@@ -156,7 +161,11 @@ impl<T: Animatable> Motion<T> {
     pub fn sample(&self, now: Duration) -> Sample<T> {
         let state = self.state(now, Read::Value);
         Sample {
-            value: T::from_channels(state.value),
+            value: if state.settled {
+                self.goal
+            } else {
+                T::from_channels(state.value)
+            },
             settled: state.settled,
         }
     }
@@ -170,7 +179,7 @@ impl<T: Animatable> Motion<T> {
     /// Where the motion is heading.
     #[must_use]
     pub fn target(&self) -> T {
-        T::from_channels(self.target)
+        self.goal
     }
 
     /// When the value reaches its target, or `None` when it is at rest. For a

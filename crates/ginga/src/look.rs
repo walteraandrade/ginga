@@ -337,11 +337,10 @@ fn read<T: crate::Animatable>(
     now: Duration,
     settled: &mut bool,
 ) -> Option<T> {
-    named.map(|target| {
+    named.map(|_| {
         let sample = motion.sample(now);
         *settled &= sample.settled;
-        // Settled is exactly the value named, not one rebuilt from channels.
-        if sample.settled { target } else { sample.value }
+        sample.value
     })
 }
 

@@ -196,11 +196,12 @@ impl<K, T> PresenceList<K, T> {
     /// does not travel. A place that is not a finite number is ignored.
     ///
     /// When an item's way out is over and it is let go, the items after it
-    /// may move up by the room it took, from its place to the next item's.
-    /// When the next place told for one of them is that, or the place it had,
-    /// the move is the layout's, not travel: it stays drawn at its place, and
-    /// an item on its way somewhere keeps going. A row that folds as it
-    /// leaves takes no room by then, so nothing moves.
+    /// may move up by the room it took, from its place to the next item's as
+    /// last told. For an item at rest, when the next place told for it is
+    /// that, or the place it had, the move is the layout's, not travel: it
+    /// takes its new place at once. An item on its way somewhere, such as one
+    /// that follows a folding row with a spring, goes on from where it is
+    /// drawn to its new place.
     ///
     /// A place can follow the items before it, such as below a row whose
     /// height follows its progress: `place` can keep a running total. A place

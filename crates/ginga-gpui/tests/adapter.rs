@@ -244,14 +244,16 @@ struct Dot {
     renders: Rc<Cell<usize>>,
 }
 
-/// A heavy view, cached, with an island beside it.
+/// A heavy view, cached, with an island beside it. It counts its own renders.
 struct Page {
     heavy: gpui::Entity<Heavy>,
     dot: gpui::Entity<Island<Dot>>,
+    renders: Rc<Cell<usize>>,
 }
 
 impl Render for Page {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        self.renders.set(self.renders.get() + 1);
         div()
             .child(self.heavy.clone().cached(StyleRefinement::default()))
             .child(self.dot.clone())
@@ -264,10 +266,13 @@ fn an_island_is_drawn_on_the_next_frame_and_the_cached_view_beside_it_is_not(
 ) {
     let heavy_renders = Rc::new(Cell::new(0));
     let dot_renders = Rc::new(Cell::new(0));
+    let page_renders = Rc::new(Cell::new(0));
     let window = cx.open_window(size(px(400.), px(300.)), {
         let heavy_renders = heavy_renders.clone();
         let dot_renders = dot_renders.clone();
+        let page_renders = page_renders.clone();
         move |_, cx| Page {
+            renders: page_renders,
             heavy: cx.new(|_| Heavy {
                 renders: heavy_renders,
             }),
@@ -296,11 +301,66 @@ fn an_island_is_drawn_on_the_next_frame_and_the_cached_view_beside_it_is_not(
     });
     cx.run_until_parked();
     assert_eq!(dot_renders.get(), 2);
+    let page_before = page_renders.get();
 
     for _ in 0..3 {
         cx.executor().advance_clock(ms(16));
         assert_eq!(next_frame(&window, cx), 1);
     }
     assert_eq!(dot_renders.get(), 5, "the island is drawn on each frame");
+    assert_eq!(
+        page_renders.get(),
+        page_before + 3,
+        "the view above it is drawn on each frame too"
+    );
     assert_eq!(heavy_renders.get(), 1, "the cached view beside it is not");
+}
+
+/// The same heavy view, drawing the moving dot itself: no island.
+struct HeavyWithDot {
+    renders: Rc<Cell<usize>>,
+    x: Motion<Pixels>,
+    target: Pixels,
+}
+
+impl Render for HeavyWithDot {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.renders.set(self.renders.get() + 1);
+        let x = self.x.toward(self.target, glide(), window, cx);
+        div().child(div().w(x))
+    }
+}
+
+#[gpui::test]
+fn without_an_island_the_heavy_view_is_drawn_on_every_frame_of_its_motion(
+    cx: &mut TestAppContext,
+) {
+    let renders = Rc::new(Cell::new(0));
+    let window = cx.open_window(size(px(400.), px(300.)), {
+        let renders = renders.clone();
+        move |_, _| HeavyWithDot {
+            renders,
+            x: Motion::at(px(0.)),
+            target: px(0.),
+        }
+    });
+    cx.run_until_parked();
+    window
+        .update(cx, |view, _, cx| {
+            view.target = px(100.);
+            cx.notify();
+        })
+        .unwrap();
+    cx.run_until_parked();
+    let before = renders.get();
+
+    for _ in 0..3 {
+        cx.executor().advance_clock(ms(16));
+        assert_eq!(next_frame(&window, cx), 1);
+    }
+    assert_eq!(
+        renders.get(),
+        before + 3,
+        "the heavy view is drawn again on each frame: what the island saves"
+    );
 }

@@ -124,7 +124,17 @@ impl Trace {
 
     /// Adds the rows of `later` after this trace's own, to write down a
     /// motion that changes course.
+    ///
+    /// # Panics
+    ///
+    /// When `later` names other columns than this trace, as a look motion does
+    /// after a change of the values its look names: its rows would print under
+    /// the wrong names. Print such traces one after another instead.
     pub fn extend(&mut self, later: Self) {
+        assert_eq!(
+            self.columns, later.columns,
+            "the later trace names other columns; print the two traces one after another"
+        );
         self.rows.extend(later.rows);
     }
 }
@@ -133,7 +143,12 @@ impl fmt::Display for Trace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:<6}", "ms")?;
         if self.columns.is_empty() {
-            writeln!(f, "  {:>10}", "value")?;
+            // A motion's values have no names; a look that names none has no
+            // values to put a header over.
+            if self.rows.iter().any(|row| !row.values.is_empty()) {
+                write!(f, "  {:>10}", "value")?;
+            }
+            writeln!(f)?;
         } else {
             for column in &self.columns {
                 write!(f, "  {column:>10}")?;
@@ -158,6 +173,24 @@ mod tests {
 
     fn ms(millis: u64) -> Duration {
         Duration::from_millis(millis)
+    }
+
+    #[test]
+    #[should_panic(expected = "the later trace names other columns")]
+    fn a_trace_refuses_to_extend_with_rows_under_other_names() {
+        let width = crate::LookMotion::at(crate::Look::new().width(1.0));
+        let both = crate::LookMotion::at(crate::Look::new().opacity(1.0).width(1.0));
+        let mut trace = Trace::of(&width, ms(0), ms(16));
+        trace.extend(Trace::of(&both, ms(16), ms(16)));
+    }
+
+    #[test]
+    fn a_look_that_names_nothing_prints_no_value_header() {
+        let nothing = crate::LookMotion::at(crate::Look::new());
+        assert_eq!(
+            Trace::of(&nothing, ms(0), ms(16)).to_string(),
+            "ms    \n0       settled\n"
+        );
     }
 
     #[test]

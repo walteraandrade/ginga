@@ -35,6 +35,17 @@ impl Tween {
 
     /// The same tween, starting `delay` after the target is set. Until then
     /// the value holds still where it was.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Easing, Motion, Tween};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let mut motion = Motion::at(0.0);
+    /// motion.set_target(100.0, Tween::new(ms(100), Easing::Linear).delay(ms(50)), ms(0));
+    /// assert_eq!(motion.sample(ms(50)).value, 0.0);
+    /// assert_eq!(motion.sample(ms(100)).value, 50.0);
+    /// ```
     #[must_use]
     pub const fn delay(self, delay: Duration) -> Self {
         Self { delay, ..self }

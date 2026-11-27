@@ -99,10 +99,13 @@ impl Spring {
     ///
     /// ```
     /// use std::time::Duration;
-    /// use ginga::Spring;
+    /// use ginga::{Motion, Spring};
     ///
-    /// let late = Spring::SNAPPY.delay(Duration::from_millis(80));
-    /// # let _ = late;
+    /// let ms = Duration::from_millis;
+    /// let mut motion = Motion::at(0.0);
+    /// motion.set_target(100.0, Spring::SNAPPY.delay(ms(80)), ms(0));
+    /// assert_eq!(motion.sample(ms(79)).value, 0.0);
+    /// assert!(motion.sample(ms(100)).value > 0.0);
     /// ```
     #[must_use]
     pub const fn delay(self, delay: Duration) -> Self {

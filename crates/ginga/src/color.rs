@@ -127,7 +127,7 @@ impl Animatable for Color {
         // A spring can carry a channel past its ends on the way. The colors
         // are divided by the alpha as it is, so they keep their hue when the
         // alpha passes 1; only then is each held to its range.
-        if alpha <= 0.0 {
+        if alpha.is_nan() || alpha <= 0.0 {
             return Self::TRANSPARENT;
         }
         let straight = |channel: f32| srgb((channel / alpha).clamp(0.0, 1.0));
@@ -259,6 +259,10 @@ mod tests {
         assert_eq!(color.alpha, 1.0);
         assert_eq!(
             Color::from_channels([0.3, 0.3, 0.3, -0.1]),
+            Color::TRANSPARENT
+        );
+        assert_eq!(
+            Color::from_channels([0.3, 0.3, 0.3, f32::NAN]),
             Color::TRANSPARENT
         );
     }

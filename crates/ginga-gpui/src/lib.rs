@@ -36,7 +36,7 @@ pub use ginga::{
     Spring, SpringError, Step, Stop, Swap, Trace, Transition, Transitions, Tween,
 };
 pub use keyframes::Keyframes;
-pub use look::{LookExt, LookState, Looked, color, set_default_look_transitions};
+pub use look::{LookExt, LookState, Looked, WithLook, color, set_default_look_transitions};
 pub use present::{Present, present};
 pub use shared::{Shared, SharedExt};
 pub use variant::Variant;

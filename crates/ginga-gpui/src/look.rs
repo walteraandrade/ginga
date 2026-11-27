@@ -46,6 +46,24 @@ pub trait LookExt: Styled + IntoElement + 'static {
         Looked::new(self, Keep::Id(id.into()), look, transitions.into())
     }
 
+    /// The element styled with `look` as it is, with no motion and no
+    /// element state: for a look the caller already has, such as one mixed
+    /// by a presence's progress. Each value maps to the style as with
+    /// [`LookExt::look`], the offset painted from the element's own place.
+    ///
+    /// ```ignore
+    /// let from = Look::new().offset(0., 24.).opacity(0.);
+    /// if let Some(shown) = self.toast.frame(window, cx) {
+    ///     div().child(*shown.content).with_look(from.mix(Look::new(), shown.progress))
+    /// }
+    /// ```
+    fn with_look(self, look: Look) -> WithLook<Self> {
+        WithLook {
+            element: Some(self),
+            look,
+        }
+    }
+
     /// The same as [`LookExt::look`], with the motion kept in `state`, which
     /// the view owns.
     fn look_with(
@@ -476,21 +494,21 @@ pub(crate) fn prepaint_at<R>(
     })
 }
 
-/// `element` painted `offset` away from where it is laid out.
-pub(crate) fn painted_at(element: impl IntoElement, offset: Point<Pixels>) -> PaintedAt {
-    PaintedAt {
-        element: Some(element.into_any_element()),
-        offset,
+/// An element styled with a look as it is. Made by [`LookExt::with_look`].
+pub struct WithLook<E> {
+    element: Option<E>,
+    look: Look,
+}
+
+impl<E: ParentElement> ParentElement for WithLook<E> {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        if let Some(element) = &mut self.element {
+            element.extend(elements);
+        }
     }
 }
 
-/// An element painted away from where it is laid out: made by [`painted_at`].
-pub(crate) struct PaintedAt {
-    element: Option<AnyElement>,
-    offset: Point<Pixels>,
-}
-
-impl IntoElement for PaintedAt {
+impl<E: Styled + IntoElement + 'static> IntoElement for WithLook<E> {
     type Element = Self;
 
     fn into_element(self) -> Self {
@@ -498,7 +516,7 @@ impl IntoElement for PaintedAt {
     }
 }
 
-impl Element for PaintedAt {
+impl<E: Styled + IntoElement + 'static> Element for WithLook<E> {
     type RequestLayoutState = (AnyElement, LayoutId);
     type PrepaintState = ();
 
@@ -517,7 +535,8 @@ impl Element for PaintedAt {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, (AnyElement, LayoutId)) {
-        let mut element = self.element.take().expect("an element is laid out once");
+        let element = self.element.take().expect("an element is laid out once");
+        let mut element = styled(element, self.look).into_any_element();
         let layout = element.request_layout(window, cx);
         (layout, (element, layout))
     }
@@ -531,7 +550,8 @@ impl Element for PaintedAt {
         window: &mut Window,
         cx: &mut App,
     ) {
-        prepaint_at(element, *layout, self.offset, |_, _| (), window, cx);
+        let offset = offset_of(self.look);
+        prepaint_at(element, *layout, offset, |_, _| (), window, cx);
     }
 
     fn paint(

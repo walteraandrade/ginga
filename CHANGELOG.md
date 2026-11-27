@@ -5,6 +5,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 ## Unreleased
 
 - Variants: a parent's name that its children follow one after another, before or after the parent (`Variant`, `Order`, `ginga_gpui::Variant`, `.leads(..)`, `.follows(..)`). `Transitions::delay` and `LookMotion::settles_at`.
+- `LookExt::with_look`: a look applied as it is, with no motion and no element state, such as one mixed by a presence's progress.
 - A look's offset, and a dragged element's, is painted instead of laid out: it adds to the element's own place, `absolute` ones included, and the pointer finds the element where it is painted. Before, it replaced the element's `left` and `top`: an `absolute` element that gave its place as the offset, as 0.1.0's docs said, now gives it with `left` and `top`.
 
 ## 0.1.0

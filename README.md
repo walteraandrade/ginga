@@ -398,7 +398,7 @@ let half = fill.sample(ms(50)).value.background.unwrap();
 assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);
 ```
 
-When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and moves at once under reduced motion.
+When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and moves at once under reduced motion. A look the view already has, such as one mixed by a presence's progress (`from.mix(Look::new(), shown.progress)`), is applied as it is with `.with_look(look)`: the same mapping, with no motion and no element state.
 
 In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
 

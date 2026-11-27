@@ -48,21 +48,24 @@ impl Look {
         self
     }
 
-    /// Names the opacity.
+    /// Names the opacity: 0 is unseen, 1 is fully seen. A spring can carry
+    /// it past either end on the way; whoever draws it holds it to 0..=1.
     #[must_use]
     pub const fn opacity(mut self, opacity: f32) -> Self {
         self.opacity = Some(opacity);
         self
     }
 
-    /// Names the width.
+    /// Names the width, in pixels. A spring can carry it below 0 on the way;
+    /// whoever draws it holds it at 0 or more.
     #[must_use]
     pub const fn width(mut self, width: f32) -> Self {
         self.width = Some(width);
         self
     }
 
-    /// Names the height.
+    /// Names the height, in pixels. A spring can carry it below 0 on the way;
+    /// whoever draws it holds it at 0 or more.
     #[must_use]
     pub const fn height(mut self, height: f32) -> Self {
         self.height = Some(height);
@@ -75,7 +78,8 @@ impl Look {
         self.width(width).height(height)
     }
 
-    /// Names the radius of the corners.
+    /// Names the radius of the corners, in pixels. A spring can carry it
+    /// below 0 on the way; whoever draws it holds it at 0 or more.
     #[must_use]
     pub const fn radius(mut self, radius: f32) -> Self {
         self.radius = Some(radius);

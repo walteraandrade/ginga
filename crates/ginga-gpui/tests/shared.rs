@@ -43,6 +43,8 @@ enum Mark {
     Margin,
     /// Out of the flow, pinned to the tab's bottom.
     Absolute,
+    /// In the flow, at the bottom, travelling 100 ms after it is set off.
+    Delayed,
 }
 
 /// Three tabs, 100 px wide, side by side; the selected one draws a 4 px mark
@@ -71,12 +73,16 @@ impl Render for Tabs {
                 .child(div().h(px(10.)).w_full().child(marker(&self.beside)))
                 .children((tab == selected).then(|| {
                     let mark = div().h(px(4.)).w_full();
+                    let transition = match self.mark {
+                        Mark::Delayed => glide().delay(ms(100)),
+                        _ => glide(),
+                    };
                     let mark = match self.mark {
-                        Mark::Plain => mark,
+                        Mark::Plain | Mark::Delayed => mark,
                         Mark::Margin => mark.mt(px(10.)),
                         Mark::Absolute => mark.absolute().bottom_0().left_0(),
                     };
-                    mark.child(marker(&self.painted)).shared("mark", glide())
+                    mark.child(marker(&self.painted)).shared("mark", transition)
                 }))
         }))
     }
@@ -346,6 +352,15 @@ fn under_reduced_motion_it_is_in_its_new_place_at_once(cx: &mut TestAppContext) 
     stage.cx.update(|_, cx| cx.set_reduce_motion(true));
     selected.set(2);
     assert_eq!(stage.redraw(), "200 26 100 4");
+    assert_eq!(stage.after(16), "-", "and asks for no frame");
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_delayed_trip_does_not_wait_either(cx: &mut TestAppContext) {
+    let (mut stage, selected, _) = tabs_with(cx, Mark::Delayed);
+    stage.cx.update(|_, cx| cx.set_reduce_motion(true));
+    selected.set(2);
+    assert_eq!(stage.redraw(), "200 26 100 4", "in its place, with no wait");
     assert_eq!(stage.after(16), "-", "and asks for no frame");
 }
 

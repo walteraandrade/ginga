@@ -55,7 +55,8 @@ impl Tween {
 /// How a [`Motion`](crate::Motion) gets to its target.
 #[derive(Debug, Clone, Copy)]
 pub enum Transition {
-    /// No motion: the value is at its target at once. Use it for reduced motion.
+    /// No motion: the value is at its target at once. For reduced motion,
+    /// [`without_motion`](Self::without_motion) keeps a transition's delay.
     Instant,
     /// A spring. Keeps the value's speed across a change of target.
     Spring(Spring),

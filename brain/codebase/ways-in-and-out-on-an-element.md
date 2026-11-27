@@ -12,7 +12,7 @@ How `ginga_gpui::present` draws a thing until its way out is over, and the traps
 ## How it is drawn
 
 - The look is `arrive_from.mix(Look::new(), progress)` while entering, and `leave_to.mix(..)` while exiting. Mixed into an empty look, only an offset and an opacity move (to none and to opaque). Other values in an arriving look are left out (see `Look::mix`).
-- What a swap sends away is drawn `absolute` at the top left of a `relative` box, under the arriving one, and takes no room. It is made absolute *before* the look is applied: `styled` keeps an absolute element absolute and puts the offset in `left` and `top`, and a later `top_0()` would undo it. A test caught that.
+- What a swap sends away is drawn `absolute` at the top left of a `relative` box, under the arriving one, and takes no room. The look's offset is painted from there (see [[codebase/a-look-on-an-element]]), so it adds to the top left instead of replacing it.
 - While leaving, an `occlude()` div covers the content, so it takes no clicks. The wrapper of each leaving content tracks a focus handle of its own, and while the focus is inside it (`contains_focused`) the window is blurred, deferred out of the draw. It is checked on the rendered frame, so the focus goes one frame after the way out starts, and a Tab into leaving content is undone a frame later. The handle is tracked only while leaving: tracked always, a click on plain content would focus the wrapper.
 - Under reduced motion both ways have no motion, each after its own delay (`unless_reduced`). Without `arrive_from` the way in is `Instant`, and without `leave_to` the way out is.
 

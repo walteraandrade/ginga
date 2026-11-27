@@ -431,16 +431,7 @@ macro_rules! values {
             /// ```
             #[must_use]
             pub fn delay(self, delay: Duration) -> Self {
-                Self {
-                    own: Layer {
-                        $($field: Some({
-                            let transition = self.named(|layer| layer.$field).unwrap_or($default);
-                            transition.delay(transition.start_delay().saturating_add(delay))
-                        }),)*
-                    },
-                    all: None,
-                    under: Layer::EMPTY,
-                }
+                self.each(|transition| transition.delay(transition.start_delay().saturating_add(delay)))
             }
 
             /// The same timings with no motion: each value, defaults
@@ -460,11 +451,15 @@ macro_rules! values {
             /// ```
             #[must_use]
             pub fn without_motion(self) -> Self {
+                self.each(Transition::without_motion)
+            }
+
+            /// Every value resolved, defaults included, then changed by `f`:
+            /// the one place that resolves them all.
+            fn each(self, f: impl Fn(Transition) -> Transition) -> Self {
                 Self {
                     own: Layer {
-                        $($field: Some(
-                            self.named(|layer| layer.$field).unwrap_or($default).without_motion()
-                        ),)*
+                        $($field: Some(f(self.named(|layer| layer.$field).unwrap_or($default))),)*
                     },
                     all: None,
                     under: Layer::EMPTY,

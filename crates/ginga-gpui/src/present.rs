@@ -7,7 +7,11 @@ use gpui::{
     InteractiveElement, IntoElement, LayoutId, ParentElement, Pixels, Styled, Window, div,
 };
 
-use crate::{Clock, look::styled, unless_reduced};
+use crate::{
+    Clock,
+    look::{PaintedAt, offset_of, painted_at, styled},
+    unless_reduced,
+};
 
 /// Draws `content` while it is there, and keeps drawing it on its way out.
 ///
@@ -113,13 +117,15 @@ impl<T: PartialEq + 'static> Present<T> {
     /// One content as it is drawn this frame: in a box of its own, kept by
     /// the content's number so what it holds lasts while it swaps, with the
     /// look of where it is, and covered while it leaves. What a swap sends
-    /// away lies at the top left, out of the layout.
+    /// away lies at the top left, out of the layout. `focus` is tracked on
+    /// content that leaves.
     fn drawn(
         &self,
         shown: &Shown<'_, Numbered<T>>,
         swapped_out: bool,
         came_back: Option<u64>,
-    ) -> gpui::Stateful<gpui::Div> {
+        focus: Option<FocusHandle>,
+    ) -> PaintedAt {
         let coming_back = came_back == Some(shown.content.number);
         let look = match shown.phase {
             Phase::Present => Look::new(),
@@ -137,7 +143,6 @@ impl<T: PartialEq + 'static> Present<T> {
             .id(ElementId::Integer(shown.content.number))
             .child((self.draw)(&shown.content.content));
         if swapped_out {
-            // The look's offset, when it names one, is its place from there.
             drawn = drawn.absolute().top_0().left_0();
         }
         if shown.phase == Phase::Exiting {
@@ -148,7 +153,10 @@ impl<T: PartialEq + 'static> Present<T> {
             }
             drawn = drawn.child(div().absolute().inset_0().occlude());
         }
-        styled(drawn, look)
+        if let Some(focus) = focus {
+            drawn = drawn.track_focus(&focus);
+        }
+        painted_at(styled(drawn, look), offset_of(look))
     }
 }
 
@@ -290,11 +298,7 @@ impl<T: PartialEq + 'static> Element for Present<T> {
                     .map(|(_, focus)| focus.clone())
             };
             let drawn = |shown: &Shown<'_, Numbered<T>>, swapped_out: bool| {
-                let drawn = self.drawn(shown, swapped_out, came_back);
-                match focus(shown.content.number) {
-                    Some(focus) => drawn.track_focus(&focus),
-                    None => drawn,
-                }
+                self.drawn(shown, swapped_out, came_back, focus(shown.content.number))
             };
             let leaving = [first, second]
                 .into_iter()

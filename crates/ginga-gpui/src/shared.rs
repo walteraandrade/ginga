@@ -14,7 +14,7 @@ use gpui::{
     div, px,
 };
 
-use crate::{Animate, Clock, reduced, unless_reduced};
+use crate::{Animate, Clock, reduced};
 
 /// Declares on any styled element that it is one thing with every other
 /// element of the same key; see [`Shared`].
@@ -242,7 +242,12 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
             frame.element.prepaint(window, cx);
         }
         let now = frame.now;
-        let transition = unless_reduced(self.transition, cx);
+        // Under reduced motion a trip under way goes at once, with no wait.
+        let transition = if reduced(cx) {
+            Transition::Instant
+        } else {
+            self.transition
+        };
         let (kept, changed) = window.with_element_state(id, |kept: Option<Kept>, _| {
             let mut kept = kept.expect("laid out before it is prepainted");
             let target = bounds.to_repr();

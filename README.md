@@ -156,7 +156,7 @@ assert_eq!(knob.sample(knob.settles_at().unwrap()).value, 200.0);
 
 A `Map` derives a value from a number: `Map::new(from_start, from_end, to_start, to_end)?` maps one range onto a range of anything that moves, such as a progress into a width, or a width into a color. Past an end it goes on in the same line, as a spring's overshoot should; `.clamped()` holds it to the ends. `map.at(number)` maps one number, and `map.of(&motion)` reads it from a motion each frame: it samples and writes down as a `Trace` like a motion, and reading it allocates nothing. A value that *follows* another with a spring needs nothing new: hand the leader's value to `follower.toward(..)` on every frame.
 
-A `Sequence` starts several motions as one: `then` starts a step when the one before ends, `with` together with it, and `at(time, ..)` at a set time, such as 120 ms before the one before ends. Each step sets its motion's target once, with a delay; nothing runs between frames. Each call returns the `Step`'s start and end, and `settles_at()` says when the last one ends. Add every step when the sequence starts, and give each motion one step. `SettledOnce` says `true` once, on the first frame at or after a motion's or a sequence's end: for code that runs once at the end. A motion's end moves with a new target, so the old end never comes and the new one is reported instead; a target taken at once, as under reduced motion, ends when it is set. A sequence's end is the time it was given and does not move: to wait for a new end, start another sequence. In a GPUI view, a sequence moves engine motions (`ginga::Motion`, also reachable as `ginga_gpui::ginga::Motion`) read with the view's `ginga_gpui::Clock`, as any motion the view's own logic keeps. Use one `SettledOnce` for each thing you wait for: two ends at the same time are one end to it.
+A `Sequence` starts several motions as one: `then` starts a step when the one before ends, `with` together with it, and `at(time, ..)` at a set time, such as 120 ms before the one before ends. Each step sets its motion's target once, with a delay; nothing runs between frames. Each call returns the `Step`'s start and end, and `settles_at()` says when the last one ends. Add every step when the sequence starts, and give each motion one step. `SettledOnce` says `true` once, on the first frame at or after a motion's or a sequence's end: for code that runs once at the end. A motion's end moves with a new target, so the old end never comes and the new one is reported instead; a target taken at once, as under reduced motion, ends when it is set, or when its delay ends. A sequence's end is the time it was given and does not move: to wait for a new end, start another sequence. In a GPUI view, a sequence moves engine motions (`ginga::Motion`, also reachable as `ginga_gpui::ginga::Motion`) read with the view's `ginga_gpui::Clock`, as any motion the view's own logic keeps. Use one `SettledOnce` for each thing you wait for: two ends at the same time are one end to it.
 
 ```rust
 use std::time::Duration;
@@ -198,6 +198,8 @@ A `Presence` is something you show and hide. Hiding does not drop it: the presen
 | `presence.show(content, enter, now)` | Show it, or change what is shown. |
 | `presence.hide(exit, now)` | Start the way out. |
 | `presence.frame(now)` | Each frame: what to draw, with its phase and progress. |
+| `Presence::leaving(content, exit, now)` | Something only seen leaving: on its way out from fully here. |
+| `presence.wanted()` | The content that should be on screen; `None` from `hide` on, while it still leaves. |
 
 ```rust
 use std::time::Duration;
@@ -359,13 +361,13 @@ impl Render for Panel {
 }
 ```
 
-`toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once when the desktop asks for reduced motion. A delay is timing, not motion, so it is kept: under reduced motion a delayed value holds still until its delay is over, then is at its target at once (`Transition::without_motion`, and `Transitions::without_motion` for a look). A `ginga_gpui::Motion` moves `f32` and GPUI's `Pixels`, `Point<Pixels>`, `Size<Pixels>`, `Bounds<Pixels>`, `Rgba` and `Hsla`; another GPUI type gets an `Animate` impl. `motion.inspect(cx)` hands back the engine's motion and this frame's time, to write it down with `Trace::of`. `ginga_gpui::Presence` is a `Presence` read on the frame's clock: `show(content, enter, cx)`, `hide(exit, cx)` and `frame(window, cx)`.
+`toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once when the desktop asks for reduced motion. A delay is timing, not motion, so it is kept: under reduced motion a delayed value holds still until its delay is over, then is at its target at once (`Transition::without_motion`, and `Transitions::without_motion` for a look). A `ginga_gpui::Motion` moves `f32` and GPUI's `Pixels`, `Point<Pixels>`, `Size<Pixels>`, `Bounds<Pixels>`, `Rgba` and `Hsla`; another GPUI type gets an `Animate` impl. `motion.inspect(cx)` hands back the engine's motion and this frame's time, to write it down with `Trace::of`. `ginga_gpui::Presence` is a `Presence` read on the frame's clock: `show(content, enter, cx)`, `hide(exit, cx)` and `frame(window, cx)`. An event handler with no window reads `wanted()`, the content that should be on screen, and `sample(cx)`, what `frame` would hand back; `Presence::leaving(content, exit, cx)` makes a thing that is only seen leaving.
 
 When the logic of a motion lives in a crate that knows nothing about GPUI, that crate keeps a `ginga::Motion` and takes the time as an argument; the view supplies it with `ginga_gpui::Clock`.
 
 ## A look on an element
 
-Or declare on the element how it should look, and it gets there by itself. A `Look` names any of an offset from the element's own place, an opacity, a width and height, a corner radius and colors; a value it does not name stays the element's own style.
+Or declare on the element how it should look, and it gets there by itself. A `Look` names any of an offset from the element's own place, an opacity, a width and height, a corner radius and colors; a value it does not name stays the element's own style. The offset moves only what is painted and where the pointer finds the element: the layout does not see it, so an `absolute` element keeps its own place and slides from there.
 
 ```rust,ignore
 let look = if self.open {
@@ -398,7 +400,7 @@ let half = fill.sample(ms(50)).value.background.unwrap();
 assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);
 ```
 
-When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and moves at once under reduced motion.
+When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and, under reduced motion, takes each value at once after that value's delay.
 
 In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
 
@@ -504,7 +506,7 @@ div()
 self.menu.set(Menu::Open, cx);
 ```
 
-Only a change of look that comes with a new name follows the schedule: a hover, or a change of the app's own, goes at once. The schedule's delay is added to any a transition has of its own. A parent that goes after its children waits for the ones laid out inside it, cached views of their own included; children drawn beside it do not hold it. Times count from the change of name, so a child drawn a frame late keeps its place. Under reduced motion, everything changes at once.
+Only a change of look that comes with a new name follows the schedule: a hover, or a change of the app's own, goes at once. The schedule's delay is added to any a transition has of its own. A parent that goes after its children waits for the ones laid out inside it, cached views of their own included; children drawn beside it do not hold it. Times count from the change of name, so a child drawn a frame late keeps its place. Under reduced motion the schedule is dropped: every element changes at once, after only its own transition's delay.
 
 In the engine, a `Variant` is the schedule alone. Each element asks for its delay and says when it will be settled, so the side that waits knows how long:
 
@@ -537,7 +539,7 @@ let stops = (0..5).map(|stop| point(px(93. * stop as f32), px(0.)));
 div().size(px(28.)).draggable(&self.knob, Drag::new().along(Axis::Horizontal).snap_to(stops))
 ```
 
-Like a look, the offset moves the element by `left` and `top` from its place in the layout. With snap points, the limits are left out: put the points inside them. Only the topmost element under the pointer is taken, and a move with the button up lets it go, as when a release was lost outside the window. Under reduced motion a thrown element is at once where it comes to rest.
+Like a look's, the offset moves what is painted and where the pointer finds the element, from wherever it is laid out. With snap points, the limits are left out: put the points inside them. Only the topmost element under the pointer is taken, and a move with the button up lets it go, as when a release was lost outside the window. Under reduced motion a thrown element is at once where it comes to rest.
 
 ## A loop in a view
 

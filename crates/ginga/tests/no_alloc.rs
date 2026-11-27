@@ -8,8 +8,8 @@ use std::{
 };
 
 use ginga::{
-    Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Map, Motion, PresenceList, Sequence,
-    SettledOnce, Slot, Spring, Stop, Swap, Trail, Transition, Transitions, Tween,
+    Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Map, Motion, Presence, PresenceList,
+    Sequence, SettledOnce, Slot, Spring, Stop, Swap, Trail, Transition, Transitions, Tween,
 };
 use ginga::{Order, Variant};
 
@@ -86,6 +86,25 @@ fn reading_and_retargeting_a_motion_allocates_nothing() {
         let transition = transitions[(frame / 500) as usize % transitions.len()].delay(delay);
         let sample = motion.toward((side, 120.0, side / 2.0, 1.0), transition, now);
         checksum += sample.value.0;
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn a_presence_that_only_leaves_allocates_nothing() {
+    let fade = Tween::new(Duration::from_millis(500), Easing::Linear);
+    let mut checksum = 0.0;
+    let before = allocations();
+    for round in 0..100u64 {
+        let start = Duration::from_millis(round * 1_000);
+        let mut ghost = Presence::leaving(round, fade, start);
+        for frame in 0..40u64 {
+            let now = start + Duration::from_millis(frame * 16);
+            checksum += ghost.wanted().map_or(0.0, |_| 1.0);
+            checksum += ghost.frame(now).map_or(0.0, |shown| shown.progress);
+        }
     }
     let after = allocations();
     assert!(checksum > 0.0);

@@ -2,9 +2,9 @@
 
 use std::time::Duration;
 
-use ginga_gpui::{Clock, Easing, InOut, Phase, PresenceList, Tween, unless_reduced};
+use ginga_gpui::{Easing, InOut, Phase, PresenceList, Tween};
 use gpui::{
-    Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px, rgb,
+    App, Context, IntoElement, ParentElement, Render, SharedString, Styled, Window, div, px, rgb,
 };
 
 /// A row's full height.
@@ -14,19 +14,17 @@ pub struct Rows {
     wanted: Vec<(u32, SharedString)>,
     next: u32,
     list: PresenceList<u32, SharedString>,
-    clock: Clock,
 }
 
 impl Rows {
-    pub fn new() -> Self {
+    pub fn new(cx: &App) -> Self {
         let wanted: Vec<_> = (1..=4).map(|n| (n, format!("Row {n}").into())).collect();
         let mut rows = PresenceList::new();
-        rows.sync(wanted.iter().cloned(), InOut::INSTANT, Duration::ZERO);
+        rows.sync(wanted.iter().cloned(), InOut::INSTANT, cx);
         Self {
             wanted,
             next: 5,
             list: rows,
-            clock: Clock::default(),
         }
     }
 
@@ -38,28 +36,21 @@ impl Rows {
         self.wanted
             .push((self.next, format!("Row {}", self.next).into()));
         self.next += 1;
-        // A list presence is the engine's own, so it does not know the
-        // desktop's setting: `unless_reduced` makes the fade instant under
-        // reduced motion, as the adapter's `Motion` and `Presence` do.
-        let fade = unless_reduced(Tween::new(Duration::from_millis(300), Easing::InOut), cx);
-        let now = self.clock.now(cx);
+        let fade = Tween::new(Duration::from_millis(300), Easing::InOut);
         self.list
-            .sync(self.wanted.iter().cloned(), InOut::new(fade, fade), now);
+            .sync(self.wanted.iter().cloned(), InOut::new(fade, fade), cx);
         cx.notify();
     }
 }
 
 impl Render for Rows {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // The lines to copy: draw each row as far in as its progress says,
-        // and ask for a frame while any of them moves.
-        let now = self.clock.now(cx);
-        let mut moving = false;
+        // The lines to copy: draw each row as far in as its progress says.
+        // `frame` asks for the next frame while any of them moves.
         let rows: Vec<_> = self
             .list
-            .frame(now)
+            .frame(window, cx)
             .map(|row| {
-                moving |= row.moving();
                 let color = if row.phase == Phase::Exiting {
                     0x0055_3333
                 } else {
@@ -81,9 +72,6 @@ impl Render for Rows {
                     )
             })
             .collect();
-        if moving {
-            window.request_animation_frame();
-        }
         div().w(px(320.)).flex().flex_col().children(rows)
     }
 }

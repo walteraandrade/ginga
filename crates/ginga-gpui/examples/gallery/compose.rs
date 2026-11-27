@@ -15,7 +15,8 @@ pub struct Compose {
     progress: ginga::Motion<f32>,
     /// The three steps of the entrance, each from 0 (away) to 1 (here).
     steps: [ginga::Motion<f32>; 3],
-    entrance: Sequence,
+    /// The last entrance, once Play is pressed.
+    entrance: Option<Sequence>,
     ended: SettledOnce,
     /// How many times the entrance has settled, to show that it is said once.
     endings: u32,
@@ -28,7 +29,7 @@ impl Compose {
             clock: Clock::default(),
             progress: ginga::Motion::at(0.0),
             steps: [ginga::Motion::at(0.0); 3],
-            entrance: Sequence::starting_at(Duration::ZERO),
+            entrance: None,
             ended: SettledOnce::default(),
             endings: 0,
         }
@@ -44,15 +45,16 @@ impl Compose {
         // the second ends.
         let fade = unless_reduced(Tween::new(Duration::from_millis(300), Easing::Out), cx);
         let [title, body, button] = &mut self.steps;
-        self.entrance = Sequence::starting_at(now);
-        self.entrance.then(title, to, fade);
-        let second = self.entrance.then(body, to, fade);
-        self.entrance.at(
+        let mut entrance = Sequence::starting_at(now);
+        entrance.then(title, to, fade);
+        let second = entrance.then(body, to, fade);
+        entrance.at(
             second.ends.saturating_sub(Duration::from_millis(120)),
             button,
             to,
-            unless_reduced(Spring::BOUNCY, cx),
+            unless_reduced(Spring::SNAPPY, cx),
         );
+        self.entrance = Some(entrance);
         cx.notify();
     }
 }
@@ -69,7 +71,8 @@ impl Render for Compose {
         let bar = width.of(&self.progress).sample(now);
         let color = fill.at(bar.value);
         let steps = self.steps.map(|step| step.sample(now));
-        if self.ended.check(Some(self.entrance.settles_at()), now) {
+        let ends = self.entrance.map(|entrance| entrance.settles_at());
+        if self.ended.check(ends, now) {
             self.endings += 1;
         }
         if !bar.settled || steps.iter().any(|step| !step.settled) {
@@ -113,6 +116,6 @@ impl Render for Compose {
                     .child(line("2. A body, after it", steps[1]))
                     .child(line("3. A button, 120 ms early", steps[2])),
             )
-            .child(format!("The entrance has settled {} times", self.endings))
+            .child(format!("The steps have ended {} times", self.endings))
     }
 }

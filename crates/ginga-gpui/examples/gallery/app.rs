@@ -1,6 +1,12 @@
 //! The gallery's window and its recording, on Linux.
 
-use std::{env, fs, path::PathBuf, process::Command, rc::Rc, time::Duration};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+    rc::Rc,
+    time::Duration,
+};
 
 use gpui::{
     AnyView, App, AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement,
@@ -259,7 +265,12 @@ pub fn main() {
         Some("--record") => {
             let name = args.next().expect("--record takes a page's name");
             let folder = args.next().map_or_else(
-                || PathBuf::from("target/gallery").join(&name),
+                // The workspace's target/, wherever the command is run from.
+                || {
+                    Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../target/gallery")
+                        .join(&name)
+                },
                 PathBuf::from,
             );
             record(name, folder);

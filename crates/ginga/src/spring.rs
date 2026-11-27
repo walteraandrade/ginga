@@ -177,49 +177,47 @@ pub(crate) enum Phase {
 }
 
 impl Phase {
-    /// The channel's own constant: what its offset and velocity at release
-    /// make of the curve. [`Phase::left`] and [`Phase::apply`] both start here.
-    #[inline]
-    fn coefficient(&self, offset: f32, velocity: f32) -> f32 {
-        match *self {
-            Self::Critical { w, .. } => velocity + w * offset,
-            Self::Under { zw, wd, .. } => (velocity + zw * offset) / wd,
-            Self::Over { slow, fast, .. } => (velocity - fast * offset) / (slow - fast),
-        }
-    }
-
-    /// The distance to the target, from the offset and the coefficient.
-    #[inline]
-    fn distance(&self, offset: f32, coefficient: f32) -> f32 {
-        match *self {
-            Self::Critical { t, decay, .. } => (offset + coefficient * t) * decay,
-            Self::Under {
-                decay, sin, cos, ..
-            } => decay * (offset * cos + coefficient * sin),
-            Self::Over {
-                slow_decay,
-                fast_decay,
-                ..
-            } => coefficient * slow_decay + (offset - coefficient) * fast_decay,
-        }
-    }
-
     /// The distance to the target of a channel released `offset` away from
     /// its target at `velocity`. The first half of [`Phase::apply`], for a
     /// frame that only draws: the velocity costs as much again.
+    ///
+    /// It repeats `apply`'s arithmetic, operation for operation, so the two
+    /// agree to the bit; a test checks it. Sharing the code through a helper
+    /// cost a four-channel frame 252 instructions against 165 (valgrind), so
+    /// the copy stays: change both together.
     pub(crate) fn left(&self, offset: f32, velocity: f32) -> f32 {
-        self.distance(offset, self.coefficient(offset, velocity))
+        match *self {
+            Self::Critical { w, t, decay } => (offset + (velocity + w * offset) * t) * decay,
+            Self::Under {
+                zw,
+                wd,
+                decay,
+                sin,
+                cos,
+            } => {
+                let b = (velocity + zw * offset) / wd;
+                decay * (offset * cos + b * sin)
+            }
+            Self::Over {
+                slow,
+                fast,
+                slow_decay,
+                fast_decay,
+            } => {
+                let c1 = (velocity - fast * offset) / (slow - fast);
+                c1 * slow_decay + (offset - c1) * fast_decay
+            }
+        }
     }
 
     /// The distance to the target and the velocity of a channel released
     /// `offset` away from its target at `velocity`.
     pub(crate) fn apply(&self, offset: f32, velocity: f32) -> (f32, f32) {
-        let coefficient = self.coefficient(offset, velocity);
-        let distance = self.distance(offset, coefficient);
-        let speed = match *self {
+        match *self {
             Self::Critical { w, t, decay } => {
-                let reach = offset + coefficient * t;
-                (coefficient - w * reach) * decay
+                let b = velocity + w * offset;
+                let reach = offset + b * t;
+                (reach * decay, (b - w * reach) * decay)
             }
             Self::Under {
                 zw,
@@ -228,8 +226,11 @@ impl Phase {
                 sin,
                 cos,
             } => {
-                let b = coefficient;
-                decay * ((b * wd - zw * offset) * cos - (offset * wd + zw * b) * sin)
+                let b = (velocity + zw * offset) / wd;
+                (
+                    decay * (offset * cos + b * sin),
+                    decay * ((b * wd - zw * offset) * cos - (offset * wd + zw * b) * sin),
+                )
             }
             Self::Over {
                 slow,
@@ -237,11 +238,14 @@ impl Phase {
                 slow_decay,
                 fast_decay,
             } => {
-                let (c1, c2) = (coefficient, offset - coefficient);
-                c1 * slow * slow_decay + c2 * fast * fast_decay
+                let c1 = (velocity - fast * offset) / (slow - fast);
+                let c2 = offset - c1;
+                (
+                    c1 * slow_decay + c2 * fast_decay,
+                    c1 * slow * slow_decay + c2 * fast * fast_decay,
+                )
             }
-        };
-        (distance, speed)
+        }
     }
 }
 

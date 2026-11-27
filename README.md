@@ -68,6 +68,32 @@ assert_eq!(started, [true, true, false, false, false]);
 
 The same works for things that come and go: `rows[n].show(row, fade.delay(step * n), now)`.
 
+### Through stops, and again
+
+`Keyframes` go through several stops, each at its time with its own easing, and can repeat: `.times(n)` or `.forever()`, `.mirrored()` to go back and forth, `.pause(d)` between rounds, `.starting_at(t)` to start later. Like a motion, they are read at any time with `sample(now)`; `rest()` is where they rest once played.
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Keyframes, Stop};
+
+let ms = Duration::from_millis;
+let breath = Keyframes::new([
+    Stop::new(ms(0), 0.4, Easing::Linear),
+    Stop::new(ms(450), 1.0, Easing::InOutSine), // in
+    Stop::new(ms(600), 1.0, Easing::Linear),    // and hold
+])?
+.times(4)
+.mirrored()
+.pause(ms(100));
+
+assert_eq!(breath.sample(ms(600)).value, 1.0); // the first round's end
+assert_eq!(breath.sample(ms(1_300)).value, 0.4); // back out, the second round
+assert_eq!(breath.settles_at(), Some(ms(2_700)));
+# Ok::<(), ginga::KeyframesError>(())
+```
+
+Keyframes that repeat forever are never settled, and their `settles_at` is `None`: whoever draws them asks for frames as long as they are drawn. Stops that are not in order, or a first stop not at zero, do not build. The stops are an array, so keyframes are plain data and reading them never allocates.
+
 ## Things that come and go
 
 A `Presence` is something you show and hide. Hiding does not drop it: the presence keeps the content, as it was, until its way out is over, so there is always something to draw the exit with.
@@ -233,6 +259,25 @@ When the look changes, the element moves from where it is, and a spring keeps it
 
 In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
 
+## A loop in a view
+
+`ginga_gpui::Keyframes` are keyframes a view owns. They start on the first frame that draws them, `restart(cx)` plays them again, and they rest where they end under reduced motion (`rest()`: a loop on its first stop). A slow loop need not be drawn at the display's rate: `.at_most_every(d)` asks for the next frame no sooner than `d` after this one. It holds back only its own requests, so draw the loop in a view of its own, such as an `Island`, or another motion in the view draws it on every frame anyway.
+
+```rust,ignore
+// Built once:
+let breath = Keyframes::new([
+    Stop::new(ms(0), 0.4, Easing::Linear),
+    Stop::new(ms(600), 1.0, Easing::InOutSine),
+])?
+.forever()
+.mirrored()
+.at_most_every(ms(30)); // about 30 frames a second at 60 Hz
+
+// While rendering:
+let opacity = self.breath.frame(window, cx);
+mark().opacity(opacity)
+```
+
 ## Motion that redraws little
 
 GPUI renders again the view that asks for an animation frame, and every view above it, on each frame of a motion. A view beside them is reused only when it is embedded with `.cached(style)`. So a motion is cheap when what moves is drawn by a small view of its own, the heavy views sit beside it and are cached, and the views above it are cheap.
@@ -258,7 +303,7 @@ Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops
 
 ## Watch it move
 
-The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list presence and an island. Each page is driven by a few lines that can be copied.
+The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list presence, a look, keyframes and an island. Each page is driven by a few lines that can be copied.
 
 ```sh
 cargo run -p ginga-gpui --example gallery                  # open it
@@ -291,7 +336,7 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 
 - Animate a change of size that layout makes: an item whose content grows takes its new size at once. A size that a look names does move.
 - Shared elements.
-- Sequences and keyframes.
+- Sequences.
 - Gestures and drag.
 
 Limits that come from GPUI and not from this library: a `div` has no transform, so moving a box means changing its position or size and laying out again; and there is no way to redraw one element without rendering its view.

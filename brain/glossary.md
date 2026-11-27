@@ -34,6 +34,14 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Stagger.** Items that arrive one after another: each gets a delay one step longer than the one before, usually up to a cap. ginga has no stagger call; it is a delay per item ([the decision](decisions/2026-11-27-stagger-is-a-delay-on-the-transition.md)).
 
+**Keyframes** (`Keyframes`). A motion through several stops instead of to one target, which can repeat. Built from an array of stops, so it is plain data and never allocates; see [the decision](decisions/2026-11-27-keyframes-are-an-array-of-stops.md). `ginga_gpui::Keyframes` is the same for a GPUI view.
+
+**Stop** (`Stop`). One point of keyframes: a value, the time in a round it is reached, and the easing that gets there from the stop before. The first stop is at zero; two stops at one time are a jump.
+
+**Round.** One pass of keyframes from the first stop to the last. `times(n)` plays `n`, `forever()` never stops; *mirrored* rounds go back and forth, and a *pause* holds still between them. Keyframes that repeat forever are never settled, and their *settles at* is `None`.
+
+**Frame cap** (`ginga_gpui::Keyframes::at_most_every`). Asking for the next frame no sooner than a set time after this one, with a timer instead of a frame request, so a slow loop is drawn at a lower rate than the display's.
+
 **Easing** (`Easing`). The shape of a tween: how progress in time becomes progress in value. `Linear`, `Out`, `OutExpo`, a CSS `Bezier`, your own `Custom` curve and others.
 
 **Sample** (`Sample`, `Motion::sample`). The value of a motion at one instant, and whether it is settled. Taking a sample reads the motion and changes nothing, so it can be done at any time, in any order. *Not a frame*: a frame is when something is drawn, and it takes one sample of each motion it draws, but a test or a trace takes samples with no frame at all.
@@ -58,7 +66,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Row** (`Row`). One line of a trace: a time, the value of each channel, and whether it is settled.
 
-**Traceable** (`Traceable`). What a trace can write down: a motion, or a look motion with a named column for each value.
+**Traceable** (`Traceable`). What a trace can write down: a motion, keyframes, or a look motion with a named column for each value.
 
 ## Things that come and go
 
@@ -114,7 +122,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Stale pane.** A cached view that shows old state because it changed without being notified. The risk an island brings.
 
-**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the pulse page with keyframes (#30), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
 
 ## Looks
 

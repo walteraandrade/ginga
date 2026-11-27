@@ -37,8 +37,9 @@ pub struct Trace {
     rows: Vec<Row>,
 }
 
-/// What a [`Trace`] can write down: a [`Motion`] or a
-/// [`LookMotion`](crate::LookMotion). It is sealed: those are the only two.
+/// What a [`Trace`] can write down: a [`Motion`], a
+/// [`LookMotion`](crate::LookMotion) or [`Keyframes`](crate::Keyframes). It is
+/// sealed: those are the only ones.
 ///
 /// ```compile_fail
 /// use std::time::Duration;

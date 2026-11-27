@@ -21,7 +21,7 @@ The rules are short and live in one place, [AGENTS.md](AGENTS.md). It is written
 
 ## Setting up
 
-You need Rust through [rustup](https://rustup.rs). The engine builds with Rust 1.87 or newer and the GPUI adapter with Rust 1.95 or newer; CI checks each on exactly that version.
+You need Rust through [rustup](https://rustup.rs), at least the `rust-version` each crate's manifest names; CI checks each crate on exactly that version.
 
 ```sh
 git clone https://github.com/walteraandrade/ginga
@@ -29,47 +29,19 @@ cd ginga
 cargo test        # the engine only, in seconds
 ```
 
-The adapter, `crates/ginga-gpui`, takes minutes to build the first time. On Linux, GPUI links against a few system libraries:
-
-```sh
-sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libfreetype-dev
-```
+The adapter, `crates/ginga-gpui`, takes minutes to build the first time. On Linux, GPUI links against a few system libraries: the `apt-get install` line in [the CI workflow](.github/workflows/ci.yml) lists them.
 
 ## Making a change
 
-1. Branch from `main` as `feat/`, `fix/`, `chore/`, `refactor/`, `docs/` or `test/` plus a short kebab-case name, for example `fix/spring-overshoot`.
-2. Keep one change to one pull request: one thin slice that can be shown working on its own.
-3. Write a test that asserts on behavior: values at given times, or a trace.
-4. Document every public item. Every doc example runs as a test.
-5. A new feature of the adapter adds a page to the gallery, `crates/ginga-gpui/examples/gallery`.
-6. When the change teaches something a later task would need (a decision, its reasons, a trap in the code), write it to `brain/`, following the rules in [`brain/index.md`](brain/index.md#how-to-write-here).
-
-Before you push, run what CI runs:
-
-```sh
-cargo fmt --all
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo clippy -p ginga-gpui --all-targets -- -D warnings   # when crates/ginga-gpui changed
-cargo test -p ginga-gpui                                  # the same; no display needed
-```
-
-Lints include clippy's pedantic set. Fix the code; when a lint is wrong for one item, use `#[expect(lint, reason = "...")]`.
-
-## Checking motion
-
-Don't check a motion by looking at a screen. Write it down:
-
-```rust
-println!("{}", Trace::of(&motion, start, Duration::from_millis(16)));
-```
-
-Use a `Tween` with `Easing::Linear` when the numbers should be exact. A pull request that changes motion shows a `Trace` before and after.
+1. Branch from `main` and keep one change to one pull request: one thin slice that can be shown working on its own. Branch names, tests, docs and the gallery follow [AGENTS.md](AGENTS.md).
+2. Check a motion by writing it down with a `Trace`, not by looking at a screen; [AGENTS.md](AGENTS.md#checking-motion) shows how.
+3. When the change teaches something a later task would need (a decision, its reasons, a trap in the code), write it to `brain/`, following the rules in [`brain/index.md`](brain/index.md#how-to-write-here).
+4. Before you push, run the checks in [AGENTS.md, "Before you finish"](AGENTS.md#before-you-finish). CI runs the same ones with `--locked`, on each crate's minimum Rust, and always runs the adapter's; a change to the engine can break the adapter, so run those too when in doubt.
 
 ## Commits and pull requests
 
 - Commit messages are short and imperative, with a conventional prefix: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
-- A pull request fills in the [template](.github/PULL_REQUEST_TEMPLATE.md): a short summary, the evidence, how far a mistake would reach, and the issue it closes.
+- A pull request fills in the [template](.github/PULL_REQUEST_TEMPLATE.md): a short summary, the evidence (a `Trace` before and after, for a change in motion), how far a mistake would reach, and the issue it closes.
 - CI must be green. A maintainer reviews, and a pull request merges once every review comment is resolved.
 
 ## License

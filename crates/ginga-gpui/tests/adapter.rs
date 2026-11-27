@@ -71,11 +71,6 @@ fn set_target(window: &WindowHandle<Panel>, target: Pixels, cx: &mut TestAppCont
     cx.run_until_parked();
 }
 
-/// Within a hundredth of a pixel: the test clock may creep forward a little on each poll.
-fn close(drawn: Pixels, expected: f32) -> bool {
-    (f32::from(drawn) - expected).abs() < 0.01
-}
-
 #[gpui::test]
 fn toward_draws_the_engines_value_for_the_frames_time(cx: &mut TestAppContext) {
     let (window, drawn) = open_panel(cx);
@@ -88,16 +83,11 @@ fn toward_draws_the_engines_value_for_the_frames_time(cx: &mut TestAppContext) {
         1,
         "a moving value asks for a frame"
     );
-    let quarter = *drawn.borrow().last().unwrap();
-    assert!(close(quarter, 25.0), "drew {quarter:?} at 50 ms");
+    assert_eq!(*drawn.borrow().last().unwrap(), px(25.), "at 50 ms");
 
     cx.executor().advance_clock(ms(100));
     assert_eq!(next_frame(&window, cx), 1);
-    let three_quarters = *drawn.borrow().last().unwrap();
-    assert!(
-        close(three_quarters, 75.0),
-        "drew {three_quarters:?} at 150 ms"
-    );
+    assert_eq!(*drawn.borrow().last().unwrap(), px(75.), "at 150 ms");
 
     cx.executor().advance_clock(ms(60));
     assert_eq!(next_frame(&window, cx), 1);
@@ -193,9 +183,7 @@ fn a_presence_lets_go_of_its_content_once_the_way_out_is_over(cx: &mut TestAppCo
     cx.run_until_parked();
     cx.executor().advance_clock(ms(100));
     assert_eq!(next_frame(&window, cx), 1);
-    let (phase, progress) = last(&drawn).unwrap();
-    assert_eq!(phase, Phase::Exiting);
-    assert!((progress - 0.5).abs() < 1e-3, "progress {progress}");
+    assert_eq!(last(&drawn), Some((Phase::Exiting, 0.5)));
     assert_eq!(Rc::strong_count(&alive), 2, "kept while it leaves");
 
     cx.executor().advance_clock(ms(100));

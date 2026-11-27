@@ -61,7 +61,10 @@ impl Page {
     /// Every page, in the order of the list on the left. A new page is one
     /// more line here, and a module in `main.rs`.
     pub fn all(cx: &mut App) -> Vec<Page> {
-        use crate::{island::IslandPage, list::Rows, look::Card, presence::Toast, toward::Toward};
+        use crate::{
+            island::IslandPage, list::Rows, look::Card, presence::Toast, pulse::Pulse,
+            toward::Toward,
+        };
         vec![
             Page::new(
                 "toward",
@@ -86,6 +89,12 @@ impl Page {
                 "A card declares its look; clicked, it changes size and fades.",
                 cx.new(|_| Card::new()),
                 Card::play,
+            ),
+            Page::new(
+                "pulse",
+                "A mark breathes and three dots pulse, through keyframes that repeat.",
+                cx.new(|_| Pulse::new()),
+                Pulse::play,
             ),
             Page::new(
                 "island",

@@ -9,6 +9,6 @@
 - The engine needs 1.87: edition 2024 needs 1.85, and the tests and the bench use `u64::is_multiple_of`, which needs 1.87.
 - `gpui-pre =0.3.12` needs 1.95. Each toolchain was tried in turn: 1.87 and 1.88 fail on dependencies that declare newer Rust, through 1.92 `gpui-pre-util` fails on `slice_as_array`, 1.93 and 1.94 fail on `cold_path`.
 
-**To change it.** For one version, set the workspace to 1.95 and remove the adapter's line. Moving the GPUI pin moves the adapter's minimum: try the toolchains again.
+**To change it.** For one version, set the workspace to 1.95 and remove the adapter's line. Moving the GPUI pin moves the adapter's minimum: try the toolchains again. CI reads both versions from the manifests, so the manifests are the only place to change; the README's sentence says them too.
 
 Related: [[codebase/gpui-pin-and-the-orphan-rule]].

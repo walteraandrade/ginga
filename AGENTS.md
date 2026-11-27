@@ -50,7 +50,7 @@ A test of a new behavior asserts on values at given times, or on a trace. Use a 
 - It pins one GPUI: `gpui-pre =0.3.12`. An app must use the same one or the types will not match.
 - It adds only what needs GPUI: the frame's clock, the frame request, reduced motion, and stand-ins for GPUI's own types. Motion logic goes in the engine.
 - The orphan rule keeps it from implementing `ginga::Animatable` for GPUI's types. A new GPUI type gets an `Animate` impl with a stand-in.
-- A new feature adds a page to the gallery (`examples/gallery`), and its pull request can show the page recorded with `examples/gallery/record <page>`.
+- A new feature adds a page to the gallery (`examples/gallery`), and its pull request can show the page recorded with `crates/ginga-gpui/examples/gallery/record <page>`.
 
 ## Rust
 

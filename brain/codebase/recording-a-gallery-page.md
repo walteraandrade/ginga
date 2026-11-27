@@ -1,6 +1,6 @@
 # Recording a gallery page
 
-`examples/gallery/record <page> [folder]` runs `gallery --record` under `xvfb-run`. The app opens the page, waits 1.5 s for the window, starts `ffmpeg -f x11grab` for 2 s, presses Play, presses it again 1 s later so the way back is in the frames too, and then makes a contact sheet of every third frame with ImageMagick's `montage`.
+`crates/ginga-gpui/examples/gallery/record <page> [folder]`, run from anywhere, runs `gallery --record` under `xvfb-run`. The app opens the page, waits 1.5 s for the window, starts `ffmpeg -f x11grab` for 2 s, presses Play, presses it again 1 s later so the way back is in the frames too, and then makes a contact sheet of every third frame with ImageMagick's `montage`.
 
 ## The trap: waiting blocks drawing
 

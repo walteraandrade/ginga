@@ -429,22 +429,21 @@ ms        3       1       2
     }
 
     #[test]
-    fn an_offset_that_passes_zero_is_still_travelling() {
+    fn an_item_at_its_place_before_its_motion_ends_is_still_travelling() {
+        // Reaches its place halfway through, and stays there until the end.
+        let early = Tween::new(ms(100), Easing::Custom(|t| (2.0 * t).min(1.0)));
         let mut rows = PresenceList::new();
         list(&[1, 2], 0, &mut rows);
-        lay_out(&mut rows, Spring::BOUNCY, 0);
+        lay_out(&mut rows, early, 0);
         list(&[2, 1], 1_000, &mut rows);
-        lay_out(&mut rows, Spring::BOUNCY, 1_000);
-        // Item 2 starts 40 below its place and overshoots it: find where its offset changes sign.
-        let crossing = (1_000..3_000)
-            .find(|now| {
-                let row = rows.sample(ms(*now)).next().unwrap();
-                row.offset <= 0.0
-            })
-            .unwrap();
-        let row = rows.sample(ms(crossing)).next().unwrap();
-        assert!(row.offset.abs() < 2.0, "{} at {crossing} ms", row.offset);
-        assert!(row.travelling && row.moving());
+        lay_out(&mut rows, early, 1_000);
+        let row = rows.sample(ms(1_050)).next().unwrap();
+        assert_eq!(row.offset, 0.0);
+        assert!(
+            row.travelling && row.moving(),
+            "an offset of zero is not the end"
+        );
+        assert!(rows.sample(ms(1_100)).all(|row| !row.moving()));
     }
 
     #[test]

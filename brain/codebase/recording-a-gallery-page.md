@@ -6,7 +6,7 @@
 
 The recording runs in a task on GPUI's main thread (`cx.spawn`). A blocking call there, such as `Child::wait()` on `ffmpeg`, stops GPUI from drawing: every frame then shows the page as it was before Play, and the recording looks like a motion that never started. Wait for the child on the background executor (`background_executor().spawn(async move { grab.wait() })`) and await that.
 
-A recording that shows no motion is this bug before it is a bug in the page: check that the counter on the page ("Shown N times") moved.
+A recording in which no frame changed fails with that question. When it does, suspect this before the page.
 
 ## Why a second press
 

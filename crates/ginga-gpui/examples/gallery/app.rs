@@ -269,6 +269,14 @@ fn record(name: String, folder: PathBuf) {
                 })
                 .collect();
             frames.sort();
+            // A recording is evidence only if something moved in it.
+            let first = fs::read(&frames[0]).expect("a frame can be read");
+            assert!(
+                frames[1..]
+                    .iter()
+                    .any(|frame| fs::read(frame).is_ok_and(|bytes| bytes != first)),
+                "no frame changed: is the page's motion running, and is nothing blocking the main thread?"
+            );
             let made = Command::new("montage")
                 .args(frames.iter().step_by(3))
                 .args([

@@ -41,7 +41,7 @@ Stop here if the PR is closed, the diff is empty, or the head SHA cannot be fetc
 
 Every member gets the same packet. Collect it once:
 
-- **Principles and standards**: `AGENTS.md` (the repo's rules, including the checks under "Before you finish") and `README.md` (the public API). `CLAUDE.md` only points to `AGENTS.md`.
+- **Principles and standards**: `AGENTS.md` (the repo's rules, including the checks under "Before you finish"), `brain/principles.md` and the files it links (the reasons behind those rules), `brain/decisions/` (choices already made, which a finding should not reopen without new evidence), `brain/glossary.md` (the repo's words) and `README.md` (the public API). `CLAUDE.md` only points to `AGENTS.md`.
 - **Spec**: the issue the PR closes (`Closes #N` in the body, or `#N` in the commits). Read it with its three sections: What to build, Acceptance criteria, Blocked by. If there is none, say "no spec" in the packet.
 - **Evidence the author gave**: the PR's Summary, Evidence (a `Trace` before and after for a change in motion) and Merge Danger sections.
 - **Size**: lines changed and files touched. Poteto uses it to pick BIG or SMALL mode.

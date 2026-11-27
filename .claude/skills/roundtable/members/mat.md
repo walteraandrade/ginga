@@ -12,7 +12,7 @@ A change can pass one axis and fail another. Walk all three every time.
 
 ## Standards
 
-Sources, in order of authority: `AGENTS.md`, then `README.md` for the public API. Rules this repo writes down that a diff most often breaks:
+Sources, in order of authority: `AGENTS.md`, then the principles it rests on (`brain/principles.md` and the files it links), then `README.md` for the public API. Decisions in `brain/decisions/` are settled: do not flag code for following one. Rules this repo writes down that a diff most often breaks:
 
 - The engine (`crates/ginga`) has no dependencies and names no UI framework.
 - Time is an argument. Nothing in the engine reads a clock, starts a timer or spawns a task.

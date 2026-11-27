@@ -9,7 +9,7 @@ use gpui::{
 
 use crate::{
     Clock,
-    look::{PaintedAt, offset_of, painted_at, styled},
+    look::{LookExt, WithLook},
     unless_reduced,
 };
 
@@ -125,7 +125,7 @@ impl<T: PartialEq + 'static> Present<T> {
         swapped_out: bool,
         came_back: Option<u64>,
         focus: Option<FocusHandle>,
-    ) -> PaintedAt {
+    ) -> WithLook<gpui::Stateful<gpui::Div>> {
         let coming_back = came_back == Some(shown.content.number);
         let look = match shown.phase {
             Phase::Present => Look::new(),
@@ -156,7 +156,7 @@ impl<T: PartialEq + 'static> Present<T> {
         if let Some(focus) = focus {
             drawn = drawn.track_focus(&focus);
         }
-        painted_at(styled(drawn, look), offset_of(look))
+        drawn.with_look(look)
     }
 }
 

@@ -123,7 +123,7 @@ impl<T: Animatable> Motion<T> {
             // A delayed motion waits still, so it starts from rest.
             state.velocity = T::Channels::default();
         }
-        let start = now + delay;
+        let start = now.saturating_add(delay);
         // Three ways to say "jump": no motion, a zero-length tween, a spring
         // with no response. Without a delay a jump rests on the target at once;
         // with one, it is a zero-length tween at the end of the delay.
@@ -176,7 +176,7 @@ impl<T: Animatable> Motion<T> {
         match self.drive {
             Drive::Rest => None,
             Drive::Spring { settle, .. } => Some(settle),
-            Drive::Tween { tween, start, .. } => Some(start + tween.duration),
+            Drive::Tween { tween, start, .. } => Some(start.saturating_add(tween.duration)),
         }
     }
 
@@ -205,7 +205,7 @@ impl<T: Animatable> Motion<T> {
             start: now,
             offset,
             velocity: state.velocity,
-            settle: now + Duration::from_secs_f32(seconds),
+            settle: now.saturating_add(Duration::from_secs_f32(seconds)),
         }
     }
 
@@ -229,7 +229,9 @@ impl<T: Animatable> Motion<T> {
         match self.drive {
             Drive::Rest => resting,
             Drive::Spring { settle, .. } if now >= settle => resting,
-            Drive::Tween { tween, start, .. } if now >= start + tween.duration => resting,
+            Drive::Tween { tween, start, .. } if now >= start.saturating_add(tween.duration) => {
+                resting
+            }
             Drive::Spring {
                 start,
                 offset,
@@ -467,6 +469,17 @@ mod tests {
             );
             assert_eq!(motion.settles_at(), None, "{transition:?} rests at once");
         }
+    }
+
+    #[test]
+    fn a_delay_too_long_to_add_holds_the_value_and_does_not_panic() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, Spring::SMOOTH.delay(Duration::MAX), ms(10));
+        let sample = motion.sample(ms(1_000));
+        assert_eq!(sample.value, 0.0);
+        assert!(!sample.settled);
+        motion.set_target(100.0, linear(200).delay(Duration::MAX), ms(10));
+        assert_eq!(motion.sample(ms(1_000)).value, 0.0);
     }
 
     #[test]

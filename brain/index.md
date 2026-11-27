@@ -51,6 +51,7 @@ They stay in `docs/measurements/`, with their scripts and patches:
 - [The AI caret of Desafinado](../docs/measurements/2026-11-26-ai-caret/README.md): the engine costs nothing next to a frame.
 - [The AI caret in an island](../docs/measurements/2026-11-26-ai-caret-island/README.md): an island keeps the heavy pane from rendering.
 - [The island on its own](../docs/measurements/2026-11-27-island-alone/README.md): a synthetic heavy view, measured in a virtual display: the island more than halves the main thread's frame.
+- [The tray's marks in an island](../docs/measurements/2026-11-27-tray-marks/README.md): most frames of a Review skip the pane; a Refine still renders it, and two loops on their own beats draw more frames. The workspace above the islands renders on every frame.
 
 ## How to write here
 

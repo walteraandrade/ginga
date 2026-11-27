@@ -1,0 +1,418 @@
+diff --git a/crates/ai/src/editor/jobs.rs b/crates/ai/src/editor/jobs.rs
+index 69e93dd..c15ad12 100644
+--- a/crates/ai/src/editor/jobs.rs
++++ b/crates/ai/src/editor/jobs.rs
+@@ -154,6 +154,55 @@ pub fn ready_job(state: &SuggestionsState, id: &str, left_out: bool) -> Option<J
+     })
+ }
+ 
++/// Where the tray lays out the mark of each working request, by request, so
++/// the marks can breathe in a view of their own over the tray. `B` is the
++/// place a mark takes, such as its bounds in the window.
++#[derive(Debug, Clone, PartialEq)]
++pub struct MarkSpots<B> {
++    spots: Vec<(String, B)>,
++}
++
++impl<B> Default for MarkSpots<B> {
++    fn default() -> Self {
++        Self { spots: Vec::new() }
++    }
++}
++
++impl<B: PartialEq> MarkSpots<B> {
++    /// Notes that the mark of request `id` is laid out `at`. Whether that is
++    /// news: a new mark, or one that moved. The same place again is not, so a
++    /// still tray asks for nothing.
++    pub fn place(&mut self, id: &str, at: B) -> bool {
++        match self.spots.iter_mut().find(|(known, _)| known == id) {
++            Some((_, known)) if *known == at => false,
++            Some((_, known)) => {
++                *known = at;
++                true
++            }
++            None => {
++                self.spots.push((id.to_string(), at));
++                true
++            }
++        }
++    }
++
++    /// Lets go of the marks of requests that `jobs` no longer shows working.
++    /// Whether any went.
++    pub fn keep_working(&mut self, jobs: &[Job]) -> bool {
++        let before = self.spots.len();
++        self.spots.retain(|(id, _)| {
++            jobs.iter()
++                .any(|job| &job.id == id && job.phase == JobPhase::Working)
++        });
++        self.spots.len() != before
++    }
++
++    /// Each mark's request and place, in the order they were first laid out.
++    pub fn iter(&self) -> impl Iterator<Item = (&str, &B)> {
++        self.spots.iter().map(|(id, at)| (id.as_str(), at))
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -269,3 +318,51 @@ mod tests {
+         assert_eq!(ready_job(&refining, "a", false), None);
+     }
+ }
++
++#[cfg(test)]
++mod mark_spot_tests {
++    use super::*;
++
++    fn job(id: &str, phase: JobPhase) -> Job {
++        Job {
++            id: id.into(),
++            kind: JobKind::Ask,
++            phase,
++            label: String::new(),
++            detail: String::new(),
++        }
++    }
++
++    #[test]
++    fn a_new_mark_and_a_moved_one_are_news_and_a_still_one_is_not() {
++        let mut spots = MarkSpots::default();
++        assert!(spots.place("a", (37.5, 212.)));
++        assert!(!spots.place("a", (37.5, 212.)));
++        assert!(spots.place("a", (37.5, 240.)));
++        assert_eq!(spots.iter().collect::<Vec<_>>(), [("a", &(37.5, 240.))]);
++    }
++
++    #[test]
++    fn each_request_keeps_one_mark() {
++        let mut spots = MarkSpots::default();
++        spots.place("a", 1);
++        spots.place("b", 2);
++        spots.place("a", 3);
++        assert_eq!(spots.iter().collect::<Vec<_>>(), [("a", &3), ("b", &2)]);
++    }
++
++    #[test]
++    fn a_request_that_answers_or_goes_loses_its_mark() {
++        let mut spots = MarkSpots::default();
++        spots.place("ready", 1);
++        spots.place("gone", 2);
++        spots.place("working", 3);
++        let jobs = [
++            job("ready", JobPhase::Ready),
++            job("working", JobPhase::Working),
++        ];
++        assert!(spots.keep_working(&jobs));
++        assert_eq!(spots.iter().collect::<Vec<_>>(), [("working", &3)]);
++        assert!(!spots.keep_working(&jobs));
++    }
++}
+diff --git a/crates/app/src/ai_caret_view.rs b/crates/app/src/ai_caret_view.rs
+index f4f9007..6f49776 100644
+--- a/crates/app/src/ai_caret_view.rs
++++ b/crates/app/src/ai_caret_view.rs
+@@ -83,13 +83,7 @@ fn caret_over_pane(at: &AiCaretAt, spot: Spot, cx: &App) -> AnyElement {
+         "ai-caret-bar",
+         div().absolute().top_0().left_0().size_full().bg(roles.ai),
+     );
+-    div()
+-        .absolute()
+-        .top_0()
+-        .left_0()
+-        .w(at.area.width)
+-        .h(at.area.height)
+-        .overflow_hidden()
++    ui::over_pane(at.area)
+         .child(
+             div()
+                 .absolute()
+diff --git a/crates/app/src/editor_pane.rs b/crates/app/src/editor_pane.rs
+index ec6a409..f825387 100644
+--- a/crates/app/src/editor_pane.rs
++++ b/crates/app/src/editor_pane.rs
+@@ -3044,7 +3044,7 @@ impl Render for EditorPane {
+         let note_card = self.render_note_card(roles, cx);
+         let panel = self.render_notes_panel(roles, cx);
+         let map = self.render_map_and_chips(roles, cx);
+-        let tray = self.render_jobs_tray(roles, cx);
++        let tray = self.render_jobs_tray(roles, window, cx);
+         let (spell_layer, spell_menu) = self.render_spelling(window, roles, cx);
+         let text = div()
+             .id("editor-pane")
+diff --git a/crates/app/src/jobs_tray.rs b/crates/app/src/jobs_tray.rs
+index 80f3927..9c2efa0 100644
+--- a/crates/app/src/jobs_tray.rs
++++ b/crates/app/src/jobs_tray.rs
+@@ -3,12 +3,14 @@
+ //! its Suggestion. The text, the caret and the selection stay free while requests run.
+ 
+ use std::{
++    cell::RefCell,
+     collections::HashMap,
++    rc::Rc,
+     time::{Duration, Instant},
+ };
+ 
+ use desafinado_ai::editor::jobs::{
+-    Job, JobKind, JobPhase, READY_ROW_TIME, Started, ready_job, review_job, scope_label,
++    Job, JobKind, JobPhase, MarkSpots, READY_ROW_TIME, Started, ready_job, review_job, scope_label,
+     working_jobs,
+ };
+ use desafinado_core::{
+@@ -20,6 +22,7 @@ use gpui_kit::*;
+ use crate::{
+     editor_pane::EditorPane,
+     theme::Roles,
++    tray_marks_view::TrayMarksView,
+     ui::{self, ButtonKind},
+ };
+ 
+@@ -37,6 +40,22 @@ pub struct JobsState {
+     answered: Vec<Answered>,
+     pub(crate) review_started: Option<Instant>,
+     tick: Option<Task<()>>,
++    /// Where the tray's working marks are laid out, by request: their island
++    /// draws them there.
++    spots: Rc<RefCell<MarkSpots<Bounds<Pixels>>>>,
++    /// The view that draws the marks, told when they move.
++    pub(crate) marks_view: Option<WeakEntity<TrayMarksView>>,
++}
++
++/// Has the marks' view drawn again on the next frame, from the spots the pane
++/// has just laid out. Only that view: the pane is not drawn again for it.
++fn redraw_marks(view: Option<WeakEntity<TrayMarksView>>, window: &Window) {
++    let Some(view) = view else {
++        return;
++    };
++    window.on_next_frame(move |_, cx| {
++        view.update(cx, |_, cx| cx.notify()).log_warn();
++    });
+ }
+ 
+ struct Answered {
+@@ -164,12 +183,46 @@ impl EditorPane {
+         self.show(&job.id, window, cx);
+     }
+ 
++    /// The tray's working marks, by request, from the pane's top left corner,
++    /// for the view that draws them.
++    pub(crate) fn tray_mark_spots(&self) -> Vec<(String, Point<Pixels>)> {
++        let origin = self.pane_bounds().origin;
++        self.jobs
++            .spots
++            .borrow()
++            .iter()
++            .map(|(id, bounds)| (id.to_string(), bounds.origin - origin))
++            .collect()
++    }
++
++    /// Lets go of the marks of requests no longer working. When one goes, the
++    /// next frame draws the marks' island again without it.
++    fn keep_spots_of(&mut self, jobs: &[Job], window: &Window) {
++        if self.jobs.spots.borrow_mut().keep_working(jobs) {
++            redraw_marks(self.jobs.marks_view.clone(), window);
++        }
++    }
++
++    /// The place of the working mark of request `id`, kept for its island. When
++    /// it moves, the next frame draws the island again with it.
++    fn mark_spot(&self, id: String) -> Div {
++        let spots = Rc::clone(&self.jobs.spots);
++        let view = self.jobs.marks_view.clone();
++        ui::job_mark_spot(move |bounds, window, _| {
++            if spots.borrow_mut().place(&id, bounds) {
++                redraw_marks(view.clone(), window);
++            }
++        })
++    }
++
+     pub(crate) fn render_jobs_tray(
+         &mut self,
+         roles: Roles,
++        window: &mut Window,
+         cx: &mut Context<Self>,
+     ) -> Option<AnyElement> {
+         let jobs = self.jobs();
++        self.keep_spots_of(&jobs, window);
+         if jobs.is_empty() {
+             return None;
+         }
+@@ -221,11 +274,15 @@ impl EditorPane {
+             this.open_job(&opened, window, cx);
+             cx.notify();
+         }))
+-        .child(ui::job_mark(
+-            SharedString::from(format!("job-mark-{}", job.id)),
+-            working,
+-            roles,
+-        ))
++        .child(if working {
++            self.mark_spot(job.id.clone()).into_any_element()
++        } else {
++            ui::job_mark(
++                SharedString::from(format!("job-mark-{}", job.id)),
++                false,
++                roles,
++            )
++        })
+         .child(ui::job_text(job.label, job.detail, roles))
+         .child(button)
+         .into_any_element()
+diff --git a/crates/app/src/main.rs b/crates/app/src/main.rs
+index 1cd0bbc..f6be6db 100644
+--- a/crates/app/src/main.rs
++++ b/crates/app/src/main.rs
+@@ -42,6 +42,7 @@ mod spend_view;
+ mod start_error;
+ mod text_map_view;
+ mod theme;
++mod tray_marks_view;
+ mod ui;
+ mod workspace;
+ 
+diff --git a/crates/app/src/tray_marks_view.rs b/crates/app/src/tray_marks_view.rs
+new file mode 100644
+index 0000000..8c8c58f
+--- /dev/null
++++ b/crates/app/src/tray_marks_view.rs
+@@ -0,0 +1,63 @@
++//! The breathing marks of the requests the tray shows as working, drawn by a
++//! view of their own over the editor pane, as the AI caret is. A mark breathes
++//! for as long as its request runs; drawn inside the pane, each of its frames
++//! would render the pane again too. The tray leaves an empty spot for each
++//! mark and records where it is laid out (`EditorPane::tray_mark_spots`).
++//!
++//! The pane is cached and lays out after this view has drawn, so the marks
++//! follow their spots one frame late: when a spot appears, moves or goes, the
++//! pane has this view, and only this view, drawn again on the next frame. For
++//! that frame a mark can sit where its row was, or over the pass mark of a
++//! request that has just answered.
++//!
++//! Like the AI caret, the marks are painted above everything the pane draws
++//! over its text: a Suggestion Card, the bubble or the spelling menu that
++//! overlaps the tray's corner, which happens in a narrow window, no longer
++//! covers them.
++
++use ginga_gpui::Island;
++use gpui_kit::*;
++
++use crate::{editor_pane::EditorPane, theme, ui};
++
++pub struct TrayMarks {
++    pane: WeakEntity<EditorPane>,
++}
++
++pub type TrayMarksView = Island<TrayMarks>;
++
++pub fn new(pane: &Entity<EditorPane>, cx: &mut App) -> Entity<TrayMarksView> {
++    let marks = TrayMarks {
++        pane: pane.downgrade(),
++    };
++    let view = cx.new(|_| Island::new(marks, draw));
++    let weak = view.downgrade();
++    pane.update(cx, |pane, _| pane.jobs.marks_view = Some(weak));
++    view
++}
++
++fn draw(marks: &mut TrayMarks, _: &mut Window, cx: &mut Context<TrayMarksView>) -> AnyElement {
++    let Some(pane) = marks.pane.upgrade() else {
++        return Empty.into_any_element();
++    };
++    let pane = pane.read(cx);
++    let spots = pane.tray_mark_spots();
++    if spots.is_empty() {
++        return Empty.into_any_element();
++    }
++    let area = pane.pane_bounds().size;
++    let roles = theme::roles(cx);
++    ui::over_pane(area)
++        .children(spots.into_iter().map(|(id, spot)| {
++            div()
++                .absolute()
++                .left(spot.x)
++                .top(spot.y)
++                .child(ui::job_mark(
++                    SharedString::from(format!("job-mark-{id}")),
++                    true,
++                    roles,
++                ))
++        }))
++        .into_any_element()
++}
+diff --git a/crates/app/src/ui.rs b/crates/app/src/ui.rs
+index 9a068ea..c62bcb8 100644
+--- a/crates/app/src/ui.rs
++++ b/crates/app/src/ui.rs
+@@ -583,6 +583,33 @@ pub fn job_mark(id: impl Into<ElementId>, working: bool, roles: Roles) -> AnyEle
+     }
+ }
+ 
++/// A layer the size of the editor pane, which clips what it holds, for a view
++/// that draws over the cached pane: the AI caret and the tray's marks.
++pub fn over_pane(area: Size<Pixels>) -> Div {
++    div()
++        .absolute()
++        .top_0()
++        .left_0()
++        .w(area.width)
++        .h(area.height)
++        .overflow_hidden()
++}
++
++/// The place of a working request's mark in the tray, left empty: the mark
++/// itself breathes in a view of its own over the pane (`tray_marks_view`), so
++/// its frames do not render the pane. `place` is told where the spot is laid
++/// out on each frame that draws the pane; a frame that reuses the cached pane
++/// does not call it.
++pub fn job_mark_spot(place: impl Fn(Bounds<Pixels>, &mut Window, &mut App) + 'static) -> Div {
++    div().flex_none().size(px(8.)).child(
++        canvas(
++            move |bounds, window, cx| place(bounds, window, cx),
++            |_, (), _, _| {},
++        )
++        .size_full(),
++    )
++}
++
+ /// What a request asked for over where it is and how long it has run; the mark beside it
+ /// carries the AI color, so the words stay readable on the row's hover fill.
+ pub fn job_text(
+diff --git a/crates/app/src/workspace.rs b/crates/app/src/workspace.rs
+index 70805bf..491e78d 100644
+--- a/crates/app/src/workspace.rs
++++ b/crates/app/src/workspace.rs
+@@ -80,6 +80,7 @@ use crate::{
+     single_instance::LaunchMessage,
+     spend_view::{SpendEvent, SpendView},
+     theme::{self, Roles},
++    tray_marks_view::TrayMarksView,
+     ui::{self, ButtonKind, ToastTone, Type as _},
+ };
+ use desafinado_ai::editor::place::{SavedPlace, place_from_json, place_to_json, restore_place};
+@@ -467,6 +468,7 @@ enum Watching {
+ pub struct Workspace {
+     pane: Entity<EditorPane>,
+     ai_caret: Entity<AiCaretView>,
++    tray_marks: Entity<TrayMarksView>,
+     services: Arc<Services>,
+     db: Option<Arc<HistoryDb>>,
+     session: Option<FileSession>,
+@@ -565,6 +567,7 @@ impl Workspace {
+         let (session, conflict) = session_of(start.as_ref(), &initial);
+         let mut workspace = Self {
+             ai_caret: crate::ai_caret_view::new(&pane, cx),
++            tray_marks: crate::tray_marks_view::new(&pane, cx),
+             pane,
+             services,
+             db,
+@@ -3619,6 +3622,7 @@ impl Workspace {
+                             .clone()
+                             .cached(StyleRefinement::default().size_full()),
+                     )
++                    .child(self.tray_marks.clone())
+                     .child(self.ai_caret.clone()),
+             )
+             .child(

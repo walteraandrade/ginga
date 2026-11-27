@@ -528,7 +528,7 @@ div()
     .child(dot.clone())
 ```
 
-Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops, a frame cost the main thread about 19 to 22 ms with the island and 48 to 50 ms without it, and the heavy view did not render again while the dot moved: [the measurement](docs/measurements/2026-11-27-island-alone/README.md) (software rendering, no GPU). In an app it depends on what else asks for frames: in Desafinado a frame that skipped the heavy view cost about 40 % less, but only one frame in four skipped it: [that measurement](docs/measurements/2026-11-26-ai-caret-island/README.md).
+Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops, a frame cost the main thread about 19 to 22 ms with the island and 48 to 50 ms without it, and the heavy view did not render again while the dot moved: [the measurement](docs/measurements/2026-11-27-island-alone/README.md) (software rendering, no GPU). In an app it depends on what else asks for frames: in Desafinado a frame that skipped the heavy view cost about 40 % less, but only one frame in four skipped it: [that measurement](docs/measurements/2026-11-26-ai-caret-island/README.md). With the requests tray's marks in an island too, most frames of a Review skip it, and the Review draws about 17 % less: [the next one](docs/measurements/2026-11-27-tray-marks/README.md). Two loops in two views draw on their own beats, so the window can draw more frames than either asks for.
 
 ## Watch it move
 

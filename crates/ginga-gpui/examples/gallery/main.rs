@@ -28,6 +28,8 @@ mod island;
 #[cfg(target_os = "linux")]
 mod list;
 #[cfg(target_os = "linux")]
+mod look;
+#[cfg(target_os = "linux")]
 mod presence;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;

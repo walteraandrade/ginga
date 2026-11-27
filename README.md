@@ -289,7 +289,7 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 
 ## What it does not do yet
 
-- Animate a change of size: an item that grows or shrinks takes its new size at once.
+- Animate a change of size that layout makes: an item whose content grows takes its new size at once. A size that a look names does move.
 - Shared elements.
 - Sequences and keyframes.
 - Gestures and drag.

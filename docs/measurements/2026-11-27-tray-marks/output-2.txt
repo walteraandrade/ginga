@@ -1,0 +1,25 @@
+$ python3 -I tray_stats.py 3200 review-*
+run          draws  draw ms with pane  med ms no pane  med ms ws calls  ws ms
+review-pane-1   104    164.7        47    1.90      57    1.13      104   15.5
+review-pane-2   109    160.6        57    1.80      52    1.04      109   13.4
+review-pane-3   123    151.0        57    1.57      66    0.85      123   12.8
+review-pane-4   108    151.4        57    1.78      51    0.93      108   12.9
+review-pane-5    94    139.3        57    1.81      37    0.93       94   11.1
+review-island-1   104    133.2        16    2.37      88    1.04      104   15.3
+review-island-2    92    119.8        17    2.24      75    1.08       92   11.8
+review-island-3   111    123.5        17    2.25      94    0.89      111   12.7
+review-island-4   133    123.7        20    1.48     113    0.77      133   11.9
+review-island-5   112    136.4        17    1.95      95    0.94      112   13.0
+
+$ python3 -I tray_stats.py 4000 refine-*
+run          draws  draw ms with pane  med ms no pane  med ms ws calls  ws ms
+refine-pane-1   141    182.0        68    1.63      73    0.84      141   14.8
+refine-pane-2    80    144.4        70    1.86      10    0.86       80   10.1
+refine-pane-3    84    151.3        70    1.90      14    0.81       84   10.3
+refine-pane-4    81    131.5        68    1.66      13    0.74       81    8.8
+refine-pane-5    77    151.1        68    1.94       9    1.21       77   10.1
+refine-island-1   129    187.7        68    1.73      61    0.94      129   15.0
+refine-island-2   134    176.8        69    1.60      65    0.84      134   13.8
+refine-island-3   103    152.5        76    1.71      27    0.75      103   10.9
+refine-island-4   110    148.9        80    1.60      30    0.69      110   10.1
+refine-island-5    79    144.2        69    1.81      10    1.00       79   12.2

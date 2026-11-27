@@ -14,4 +14,6 @@ Seen in [the island measurement](../../docs/measurements/2026-11-27-island-alone
 
 Caching is skipped while GPUI's inspector is picking an element, and a view whose opacity changed is redrawn on the next frame.
 
-Order within a frame, seen in the gallery's island page under Xvfb: the island renders *before* the cached view beside it, and the cached view renders twice while the window opens. A count a view shows of another view's renders is therefore one frame old; the page counts renders since Play instead.
+Order within a frame, seen in the gallery's island page under Xvfb: the island renders *before* the cached view beside it, and the cached view renders twice while the window opens. A count a view shows of another view's renders is therefore one frame old; the page counts renders since Play instead. The same holds for anything the cached view records while it lays out, such as the places Desafinado's tray leaves for its marks: the island draws them one frame late, and is notified (not the cached view) when they change.
+
+Two loops in two views, each throttled to 30 fps, do not share frames: GPUI draws a frame for each request, so the window can draw up to twice as many. Seen in [the tray's marks](../../docs/measurements/2026-11-27-tray-marks/README.md), where a Refine drew more with the marks in an island than without.

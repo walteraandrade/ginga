@@ -202,7 +202,15 @@ fn record(name: String, folder: PathBuf) {
             }
             let display = env::var("DISPLAY").expect("a display: run under xvfb-run");
             let mut grab = Command::new("ffmpeg")
-                .args(["-loglevel", "error", "-f", "x11grab", "-framerate"])
+                .args([
+                    "-loglevel",
+                    "error",
+                    "-f",
+                    "x11grab",
+                    "-draw_mouse",
+                    "0",
+                    "-framerate",
+                ])
                 .arg(FPS.to_string())
                 .args(["-video_size", &format!("{WIDTH}x{HEIGHT}")])
                 .args(["-i", &display, "-t"])

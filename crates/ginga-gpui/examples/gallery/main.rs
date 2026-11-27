@@ -26,6 +26,8 @@ mod app;
 #[cfg(target_os = "linux")]
 mod color;
 #[cfg(target_os = "linux")]
+mod compose;
+#[cfg(target_os = "linux")]
 mod drag;
 #[cfg(target_os = "linux")]
 mod gestures;

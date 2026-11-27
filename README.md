@@ -113,6 +113,42 @@ knob.coast_within(3_000.0, Coast::QUICK, 0.0, 200.0, ms(0)); // it would pass 20
 assert_eq!(knob.sample(knob.settles_at().unwrap()).value, 200.0);
 ```
 
+### Values from values, and steps in order
+
+A `Map` derives a value from a number: `Map::new(from_start, from_end, to_start, to_end)?` maps one range onto a range of anything that moves, such as a progress into a width, or a width into a color. Past an end it goes on in the same line, as a spring's overshoot should; `.clamped()` holds it to the ends. `map.at(number)` maps one number, and `map.of(&motion)` reads it from a motion each frame: it samples and writes down as a `Trace` like a motion, and reading it allocates nothing. A value that *follows* another with a spring needs nothing new: hand the leader's value to `follower.toward(..)` on every frame.
+
+A `Sequence` starts several motions as one: `then` starts a step when the one before ends, `with` together with it, and `at(time, ..)` at a set time, such as 120 ms before the one before ends. Each step sets its motion's target once, with a delay; nothing runs between frames. Each call returns the `Step`'s start and end, and `settles_at()` says when the last one ends. Add every step when the sequence starts, and give each motion one step. `SettledOnce` says `true` once, on the first frame at or after a motion's or a sequence's end: for code that runs once at the end. A motion's end moves with a new target, so the old end never comes and the new one is reported instead; a target taken at once, as under reduced motion, ends when it is set. A sequence's end is the time it was given and does not move: to wait for a new end, start another sequence. In a GPUI view, a sequence moves engine motions (`ginga::Motion`, also reachable as `ginga_gpui::ginga::Motion`) read with the view's `ginga_gpui::Clock`, as any motion the view's own logic keeps. Use one `SettledOnce` for each thing you wait for: two ends at the same time are one end to it.
+
+```rust
+use std::time::Duration;
+use ginga::{Color, Easing, Map, Motion, Sequence, SettledOnce, Tween};
+
+let ms = Duration::from_millis;
+let fade = Tween::new(ms(100), Easing::Linear);
+
+// A width from a progress, and a color from the width, held to its ends.
+let mut progress = Motion::at(0.0);
+progress.set_target(1.0, fade, ms(0));
+let width = Map::new(0.0, 1.0, 40.0, 240.0)?;
+let fill = Map::new(40.0, 240.0, Color::hex(0xe5484d), Color::hex(0x30a46c))?.clamped();
+let now = width.of(&progress).sample(ms(50)).value;
+assert_eq!(now, 140.0);
+assert_eq!(fill.at(300.0), Color::hex(0x30a46c));
+
+// Three steps: one after another, the last overlapping by 40 ms.
+let (mut title, mut body, mut button) = (Motion::at(0.0), Motion::at(0.0), Motion::at(0.0));
+let mut entrance = Sequence::starting_at(ms(0));
+entrance.then(&mut title, 1.0, fade);
+let second = entrance.then(&mut body, 1.0, fade);
+let third = entrance.at(second.ends.saturating_sub(ms(40)), &mut button, 1.0, fade);
+assert_eq!(third.to_string(), "160 ms to 260 ms");
+
+let mut done = SettledOnce::default();
+assert!(!done.check(Some(entrance.settles_at()), ms(250)));
+assert!(done.check(Some(entrance.settles_at()), ms(266)));
+# Ok::<(), ginga::MapError>(())
+```
+
 ## Things that come and go
 
 A `Presence` is something you show and hide. Hiding does not drop it: the presence keeps the content, as it was, until its way out is over, so there is always something to draw the exit with.
@@ -439,7 +475,6 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 
 - Animate a change of size that layout makes: an item whose content grows takes its new size at once. A size that a look names does move.
 - Shared elements.
-- Sequences.
 - Gestures beyond a drag with one pointer: pinch, rotate, a drag on a touchpad's scroll.
 
 Limits that come from GPUI and not from this library: a `div` has no transform, so moving a box means changing its position or size and laying out again; and there is no way to redraw one element without rendering its view.

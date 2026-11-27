@@ -7,10 +7,10 @@ use std::{
     time::Duration,
 };
 
-use ginga_gpui::{Easing, Island, Motion, Phase, Presence, Tween};
+use ginga_gpui::{Animate, Easing, Island, Motion, Phase, Presence, Spring, Tween};
 use gpui::{
     AnyElement, AppContext, Context, IntoElement, ParentElement, Pixels, Render, StyleRefinement,
-    Styled, TestAppContext, Window, WindowHandle, div, px, size,
+    Styled, TestAppContext, Window, WindowHandle, div, point, px, size,
 };
 
 fn ms(millis: u64) -> Duration {
@@ -363,4 +363,22 @@ fn without_an_island_the_heavy_view_is_drawn_on_every_frame_of_its_motion(cx: &m
         before + 3,
         "the heavy view is drawn again on each frame: what the island saves"
     );
+}
+
+#[test]
+fn stand_ins_keep_each_axis_and_stop_a_tenth_of_a_pixel_away() {
+    let at = point(px(3.), px(7.));
+    assert_eq!(gpui::Point::from_repr(at.to_repr()), at);
+    let area = size(px(30.), px(70.));
+    assert_eq!(gpui::Size::from_repr(area.to_repr()), area);
+
+    // The same spring over the same distance: in pixels it is done when it is
+    // a tenth of a pixel away, sooner than a plain number that counts thousandths.
+    let mut pixels = ginga::Motion::at(px(0.).to_repr());
+    pixels.set_target(px(100.).to_repr(), Spring::SMOOTH, ms(0));
+    let mut number = ginga::Motion::at(0.0_f32);
+    number.set_target(100.0, Spring::SMOOTH, ms(0));
+    let (in_pixels, as_number) = (pixels.settles_at().unwrap(), number.settles_at().unwrap());
+    assert!(in_pixels < as_number, "{in_pixels:?} against {as_number:?}");
+    assert_eq!(Pixels::from_repr(pixels.sample(in_pixels).value), px(100.));
 }

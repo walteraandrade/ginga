@@ -109,7 +109,7 @@ The same works for things that come and go: `rows[n].show(row, fade.delay(step *
 
 ### Through stops, and again
 
-`Keyframes` go through several stops, each at its time with its own easing, and can repeat: `.times(n)` or `.forever()`, `.mirrored()` to go back and forth, `.pause(d)` between rounds, `.starting_at(t)` to start later. Like a motion, they are read at any time with `sample(now)`; `rest()` is where they rest once played.
+`Keyframes` go through several stops, each at its time with its own easing, and can repeat: `.times(n)` or `.forever()`, `.mirrored()` to go back and forth, `.pause(d)` between rounds, `.starting_at(t)` to start later, `.behind(lag)` to play a lag behind copies of the same loop, partway through a round from the start. Like a motion, they are read at any time with `sample(now)`; `rest()` is where they rest once played.
 
 ```rust
 use std::time::Duration;
@@ -543,7 +543,7 @@ Like a look's, the offset moves what is painted and where the pointer finds the 
 
 ## A loop in a view
 
-`ginga_gpui::Keyframes` are keyframes a view owns. They start on the first frame that draws them, `restart(cx)` plays them again, and they rest where they end under reduced motion (`rest()`: a loop on its first stop). A slow loop need not be drawn at the display's rate: `.at_most_every(d)` asks for the next frame no sooner than `d` after this one. It holds back only its own requests, so draw the loop in a view of its own, such as an `Island`, or another motion in the view draws it on every frame anyway.
+`ginga_gpui::Keyframes` are keyframes a view owns. They start on the first frame that draws them, or `starting_at(d)` after it, `restart(cx)` plays them again, `behind(lag)` plays them `lag` behind copies without it, partway through a round from the first frame, so staggered dots share one loop, and they rest where they end under reduced motion (`rest()`: a loop on its first stop). A slow loop need not be drawn at the display's rate: `.at_most_every(d)` asks for the next frame no sooner than `d` after this one. It holds back only its own requests, so draw the loop in a view of its own, such as an `Island`, or another motion in the view draws it on every frame anyway.
 
 ```rust,ignore
 // Built once:

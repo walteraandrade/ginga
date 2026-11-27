@@ -90,6 +90,24 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
         self
     }
 
+    /// Starts `start` after the first frame that draws them instead of on
+    /// it; before then they rest on the first stop. See
+    /// [`ginga::Keyframes::starting_at`].
+    #[must_use]
+    pub fn starting_at(mut self, start: Duration) -> Self {
+        self.stops = self.stops.starting_at(start);
+        self
+    }
+
+    /// Plays `lag` behind the same keyframes without it, partway through a
+    /// round from the first frame: copies of one loop, each a step further
+    /// behind, play it one after another. See [`ginga::Keyframes::behind`].
+    #[must_use]
+    pub fn behind(mut self, lag: Duration) -> Self {
+        self.stops = self.stops.behind(lag);
+        self
+    }
+
     /// Asks for a frame no sooner than `every` after the one being drawn, to
     /// draw a slow loop at a lower rate than the display's. The values stay
     /// those of each frame's time.

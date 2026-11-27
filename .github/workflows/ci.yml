@@ -43,6 +43,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: adapter
+      # What GPUI's Linux platform links; the adapter's examples open a real window.
+      - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libfreetype-dev
       - run: cargo clippy -p ginga-gpui --all-targets -- -D warnings
       # GPUI's test platform: no display needed.
       - run: cargo test -p ginga-gpui

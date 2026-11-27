@@ -11,10 +11,11 @@ use gpui::{
 /// Cells in the grid.
 const CELLS: u32 = 600;
 
-/// The dot: a place and where it heads.
+/// The dot: a place and where it heads, and the grid's count of renders.
 pub struct Dot {
     x: Motion<Pixels>,
     target: Pixels,
+    grid_renders: Rc<Cell<u32>>,
 }
 
 /// A view heavy enough to notice: many boxes with numbers. It counts its renders.
@@ -44,7 +45,6 @@ impl Render for Grid {
 pub struct IslandPage {
     grid: Entity<Grid>,
     dot: Entity<Island<Dot>>,
-    renders: Rc<Cell<u32>>,
 }
 
 impl IslandPage {
@@ -59,21 +59,33 @@ impl IslandPage {
                 Dot {
                     x: Motion::at(px(0.)),
                     target: px(0.),
+                    grid_renders: renders,
                 },
                 |dot, window, cx| {
                     let x = dot.x.toward(dot.target, Spring::SMOOTH, window, cx);
+                    // The island renders after the grid beside it, so the
+                    // count includes this frame's render, if there was one.
+                    let renders = dot.grid_renders.get();
                     div()
                         .absolute()
-                        .top(px(-28.))
-                        .left(x)
-                        .size(px(20.))
-                        .rounded_full()
-                        .bg(rgb(0x00ff_5c8a))
+                        .top(px(-56.))
+                        .left_0()
+                        .right_0()
+                        .child(format!("The grid has rendered {renders} times"))
+                        .child(
+                            div()
+                                .absolute()
+                                .top(px(28.))
+                                .left(x)
+                                .size(px(20.))
+                                .rounded_full()
+                                .bg(rgb(0x00ff_5c8a)),
+                        )
                         .into_any_element()
                 },
             )
         });
-        Self { grid, dot, renders }
+        Self { grid, dot }
     }
 
     pub fn play(&mut self, cx: &mut Context<Self>) {
@@ -86,7 +98,6 @@ impl IslandPage {
             };
             cx.notify();
         });
-        cx.notify();
     }
 }
 
@@ -97,22 +108,13 @@ impl Render for IslandPage {
             .clone()
             .cached(StyleRefinement::default().size_full())
             .into_any_element();
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .gap(px(8.))
-            .child(format!(
-                "The grid has rendered {} times",
-                self.renders.get()
-            ))
-            .child(
-                div()
-                    .relative()
-                    .mt(px(32.))
-                    .flex_1()
-                    .child(grid)
-                    .child(self.dot.clone()),
-            )
+        div().size_full().flex().flex_col().child(
+            div()
+                .relative()
+                .mt(px(56.))
+                .flex_1()
+                .child(grid)
+                .child(self.dot.clone()),
+        )
     }
 }

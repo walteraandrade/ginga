@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-ginga has not had a release yet. Until it does, only the `main` branch gets fixes. After the first release, the latest published version of each crate will.
+The latest published version of each crate gets fixes, and so does the `main` branch.
 
 ## Reporting a vulnerability
 

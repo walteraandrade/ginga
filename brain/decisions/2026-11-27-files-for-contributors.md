@@ -9,4 +9,4 @@ Chosen: the files GitHub's community profile and [opensource.guide](https://open
 - `SECURITY.md` sends reports to GitHub's private vulnerability reporting, so no address is written in the repo. It only works while that setting is on: the maintainer turned it on in the repository's Security tab on 2026-11-27.
 - Issue forms (`.github/ISSUE_TEMPLATE/`): a bug asks for a `Trace` and the values expected; a feature asks for the three sections an issue has (What to build, with why the calls in the README can't do it; Acceptance criteria, required; Blocked by). Blank issues are off.
 
-Options passed over: a CODEOWNERS file (one maintainer, nothing to route), a SUPPORT file (the issue forms cover it), a CHANGELOG (nothing released yet; it comes with the first release).
+Options passed over: a CODEOWNERS file (one maintainer, nothing to route), a SUPPORT file (the issue forms cover it), a CHANGELOG (nothing released yet; it came with the first release, 0.1.0, in #53).

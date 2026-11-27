@@ -12,6 +12,10 @@ repository = "https://github.com/walteraandrade/ginga"
 categories = ["gui"]
 publish = false
 
+[workspace.dependencies]
+# Keep `version` in step with [workspace.package] version.
+ginga = { path = "crates/ginga", version = "0.1.0" }
+
 [workspace.lints.rust]
 # The library forbids unsafe in its own source; one test needs it to count allocations.
 unsafe_code = "deny"

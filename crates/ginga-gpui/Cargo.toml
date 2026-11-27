@@ -11,7 +11,7 @@ keywords = ["animation", "motion", "spring", "gpui", "ui"]
 publish.workspace = true
 
 [dependencies]
-ginga = { path = "../ginga", version = "0.1.0" }
+ginga.workspace = true
 # The GPUI snapshot that gpui-kit 0.9.1 builds on. An app must use the same one.
 gpui = { package = "gpui-pre", version = "=0.3.12", default-features = false }
 

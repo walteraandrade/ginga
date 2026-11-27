@@ -41,6 +41,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/a-look-on-an-element]]: where an element's look motion lives, and how each value is applied.
 - [[codebase/a-drag-on-an-element]]: how a dragged element hears the pointer anywhere in the window, and measures its speed.
 - [[codebase/ways-in-and-out-on-an-element]]: how `present` keeps drawing a thing on its way out, and swaps content in a slot.
+- [[codebase/a-shared-element]]: how two elements of one key hand a motion over, and why the first frame only measures.
 
 ## Measurements
 

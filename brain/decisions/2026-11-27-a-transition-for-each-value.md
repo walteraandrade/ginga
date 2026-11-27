@@ -8,7 +8,7 @@
 - A closure from the value's name to its transition.
 - A trait for "a transition source" with impls for each layer.
 
-**Why.** A struct is `Copy`, allocates nothing, and reads in one line at the call. It is not built as a constant: its setters take `impl Into<Transition>` so that `.offset(Spring::BOUNCY)` reads plainly, and a `const fn` cannot call `into`. A view keeps its defaults in a field or a function. The layers are three and fixed (value, look, defaults), so `or` covers them without a trait. A closure would be neither `Copy` nor comparable.
+**Why.** A struct is `Copy`, allocates nothing, and reads in one line at the call. It is not built as a constant: its setters take `impl Into<Transition>` so that `.offset(Spring::BOUNCY)` reads plainly, and a `const fn` cannot call `into`. A view keeps its defaults in a field or a function. The layers are three and fixed (value, look, defaults), so `or` covers them without a trait. A closure would not be `Copy`.
 
 **What follows from it.**
 

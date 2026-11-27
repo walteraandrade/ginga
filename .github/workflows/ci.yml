@@ -27,6 +27,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: engine
+          # Pull requests restore main's cache and save none, so they don't push it out.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
@@ -44,6 +46,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: adapter
+          # Pull requests restore main's cache and save none, so they don't push it out.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # What GPUI's Linux platform links; the adapter's examples open a real window.
       - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libfreetype-dev
       - run: cargo clippy -p ginga-gpui --all-targets -- -D warnings

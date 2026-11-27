@@ -305,10 +305,14 @@ impl<T: Animatable, const N: usize> crate::trace::Traceable for Keyframes<T, N> 
 
 /// How many whole `period`s fit in `since`, and what is left.
 fn split(since: Duration, period: Duration) -> (u128, Duration) {
+    const NANOS: u128 = 1_000_000_000;
     let period = period.as_nanos();
     let since = since.as_nanos();
-    let left = u64::try_from(since % period).unwrap_or(u64::MAX);
-    (since / period, Duration::from_nanos(left))
+    let left = since % period;
+    // What is left is less than a period, so its seconds fit a `Duration`.
+    let seconds = u64::try_from(left / NANOS).unwrap_or(u64::MAX);
+    let nanos = u32::try_from(left % NANOS).unwrap_or(0);
+    (since / period, Duration::new(seconds, nanos))
 }
 
 #[cfg(test)]

@@ -1,0 +1,15 @@
+focus
+move 800 420
+sleep 300
+click 800 420
+sleep 700
+key ctrl+k
+sleep 700
+type 40 shorter
+key enter
+sleep 2000
+key ctrl+k
+sleep 700
+type 40 formal fake:slow
+key enter
+sleep 5000

@@ -9,7 +9,7 @@ use std::{
 
 use ginga::{
     Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Motion, PresenceList, Spring, Stop,
-    Trail, Transition, Tween,
+    Trail, Transition, Transitions, Tween,
 };
 
 struct Counting;
@@ -136,7 +136,11 @@ fn running_a_look_allocates_nothing() {
                 .opacity(1.0)
                 .size(320.0, 200.0)
         };
-        let sample = card.toward(look, Spring::BOUNCY, now);
+        // A transition for each value, over defaults, as an app gives them.
+        let transitions = Transitions::new()
+            .opacity(Tween::new(Duration::from_millis(150), Easing::Linear))
+            .or(Transitions::new().all(Spring::BOUNCY));
+        let sample = card.toward(look, transitions, now);
         checksum += sample.value.opacity.unwrap_or_default();
     }
     let after = allocations();

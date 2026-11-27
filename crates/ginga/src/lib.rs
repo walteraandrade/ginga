@@ -63,7 +63,7 @@ pub use coast::{Coast, CoastError};
 pub use color::Color;
 pub use easing::Easing;
 pub use keyframes::{Keyframes, KeyframesError, Stop};
-pub use look::{Look, LookMotion};
+pub use look::{Look, LookMotion, Transitions};
 pub use motion::{Motion, Sample};
 pub use presence::{InOut, Phase, Presence, Shown};
 pub use presence_list::{PresenceList, ShownItem};

@@ -63,7 +63,7 @@ impl Page {
     pub fn all(cx: &mut App) -> Vec<Page> {
         use crate::{
             color::Button, drag::Throw, island::IslandPage, list::Rows, look::Card,
-            presence::Toast, pulse::Pulse, toward::Toward,
+            presence::Toast, pulse::Pulse, toward::Toward, transitions::Arrive,
         };
         vec![
             Page::new(
@@ -89,6 +89,12 @@ impl Page {
                 "A card declares its look; clicked, it changes size and fades.",
                 cx.new(|_| Card::new()),
                 Card::play,
+            ),
+            Page::new(
+                "transitions",
+                "A card springs to its place while it fades with a tween.",
+                cx.new(|_| Arrive::new()),
+                Arrive::play,
             ),
             Page::new(
                 "color",

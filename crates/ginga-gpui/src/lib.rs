@@ -29,10 +29,10 @@ pub use drag::{Drag, DragExt, DragState, Dragged};
 use ginga::Animatable;
 pub use ginga::{
     Coast, CoastError, Color, Easing, InOut, KeyframesError, Look, LookMotion, Phase, PresenceList,
-    Sample, Shown, ShownItem, Spring, SpringError, Stop, Trace, Transition, Tween,
+    Sample, Shown, ShownItem, Spring, SpringError, Stop, Trace, Transition, Transitions, Tween,
 };
 pub use keyframes::Keyframes;
-pub use look::{LookExt, LookState, Looked, color};
+pub use look::{LookExt, LookState, Looked, color, set_default_transitions};
 
 mod drag;
 mod keyframes;

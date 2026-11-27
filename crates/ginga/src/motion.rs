@@ -115,14 +115,18 @@ impl<T: Animatable> Motion<T> {
     /// A transition with a [delay](Transition::delay) holds the value still
     /// where it is until the delay is over, then moves from rest.
     pub fn set_target(&mut self, target: T, transition: impl Into<Transition>, now: Duration) {
-        let mut state = self.state(now, Read::ValueAndSpeed);
-        self.target = target.to_channels();
         let transition = transition.into();
         let delay = transition.start_delay();
-        if !delay.is_zero() {
-            // A delayed motion waits still, so it starts from rest.
-            state.velocity = T::Channels::default();
-        }
+        // Only a spring that starts now carries the speed on. A delayed motion
+        // waits still, so it starts from rest, and `Read::Value` reads no speed.
+        let read = match transition {
+            Transition::Spring(spring) if delay.is_zero() && !spring.is_instant() => {
+                Read::ValueAndSpeed
+            }
+            _ => Read::Value,
+        };
+        let state = self.state(now, read);
+        self.target = target.to_channels();
         let start = now.saturating_add(delay);
         // Three ways to say "jump": no motion, a zero-length tween, a spring
         // with no response. Without a delay a jump rests on the target at once;

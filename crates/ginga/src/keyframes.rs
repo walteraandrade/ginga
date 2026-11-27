@@ -138,7 +138,8 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
         })
     }
 
-    /// Plays `rounds` rounds in all. Zero rounds rest on the first stop.
+    /// Plays `rounds` rounds in all. Zero rounds rest on the first stop, settled
+    /// from the start.
     #[must_use]
     pub const fn times(mut self, rounds: u32) -> Self {
         self.rounds = Rounds::Times(rounds);
@@ -178,17 +179,22 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
     /// The value at `now`. It never changes the keyframes.
     #[must_use]
     pub fn sample(&self, now: Duration) -> Sample<T> {
-        let round = self.round_length();
-        let since = now.saturating_sub(self.start);
-        let done = self.settles_at().is_some_and(|end| now >= end);
-        if done || round.is_zero() {
+        if now < self.start {
             return Sample {
-                value: self.last_value(),
-                settled: self.rounds != Rounds::Forever || round.is_zero(),
+                value: self.stops[0].value,
+                settled: false,
             };
         }
-        let period = round + self.pause;
-        let (index, within) = split(since, period);
+        if self.settles_at().is_some_and(|end| now >= end) {
+            return Sample {
+                value: self.rest(),
+                settled: true,
+            };
+        }
+        // Past `settles_at`, so the round has a length: see there.
+        let round = self.round_length();
+        let period = round.saturating_add(self.pause);
+        let (index, within) = split(now.saturating_sub(self.start), period);
         // In the pause, the value holds where the round ended.
         let within = within.min(round);
         let backward = self.mirrored && index % 2 == 1;
@@ -204,17 +210,42 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
     }
 
     /// When the keyframes have played all their rounds, or `None` when they
-    /// repeat forever.
+    /// repeat forever. Keyframes whose stops are all at zero have nothing to
+    /// play, so they settle at their start, even forever.
     #[must_use]
     pub fn settles_at(&self) -> Option<Duration> {
+        if self.round_length().is_zero() {
+            return Some(self.start);
+        }
         let Rounds::Times(rounds) = self.rounds else {
             return None;
         };
-        if rounds == 0 {
-            return Some(self.start);
+        let pauses = self.pause.checked_mul(rounds.saturating_sub(1));
+        let played = self
+            .round_length()
+            .checked_mul(rounds)
+            .zip(pauses)
+            .and_then(|(rounds, pauses)| rounds.checked_add(pauses));
+        Some(played.map_or(Duration::MAX, |played| self.start.saturating_add(played)))
+    }
+
+    /// Where the keyframes rest once they have played: the last stop, or the
+    /// first when the last round played backward or there was none. Keyframes
+    /// that repeat forever never rest; for them it is the first stop, where
+    /// they start. Keyframes whose stops are all at zero rest on the last.
+    /// Whoever draws can show it when motion should be reduced.
+    #[must_use]
+    pub fn rest(&self) -> T {
+        let first = self.stops[0].value;
+        let last = self.stops[N - 1].value;
+        if self.round_length().is_zero() {
+            return last;
         }
-        let played = self.round_length() * rounds + self.pause * (rounds - 1);
-        Some(self.start.saturating_add(played))
+        match self.rounds {
+            Rounds::Forever | Rounds::Times(0) => first,
+            Rounds::Times(rounds) if self.mirrored && rounds % 2 == 0 => first,
+            Rounds::Times(_) => last,
+        }
     }
 
     /// How long one round takes: the time of the last stop.
@@ -222,20 +253,13 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
         self.stops.last().map_or(Duration::ZERO, |stop| stop.at)
     }
 
-    /// Where the keyframes rest once played: the last stop, or the first when
-    /// the last round played backward or there was none.
-    fn last_value(&self) -> T {
-        let first = self.stops[0].value;
-        let last = self.stops[N - 1].value;
-        match self.rounds {
-            Rounds::Times(0) => first,
-            Rounds::Times(rounds) if self.mirrored && rounds % 2 == 0 => first,
-            _ => last,
-        }
-    }
-
     /// The value `at` into a round played forward.
     fn value_at(&self, at: Duration) -> T {
+        // At the end of a round the value is on the last stop, also when the
+        // stop before it is at the same time: a jump at the end.
+        if at >= self.round_length() {
+            return self.stops[N - 1].value;
+        }
         // The first stop at or after `at`; the one before it is where the
         // segment starts.
         let to = self
@@ -303,6 +327,16 @@ mod tests {
             Stop::new(ms(200), 50.0, Easing::Linear),
         ])
         .unwrap()
+    }
+
+    fn values2(keyframes: &Keyframes<f32, 2>, times: &[u64]) -> Vec<(f32, bool)> {
+        times
+            .iter()
+            .map(|&t| {
+                let sample = keyframes.sample(ms(t));
+                (sample.value, sample.settled)
+            })
+            .collect()
     }
 
     fn values(keyframes: &Keyframes<f32, 3>, times: &[u64]) -> Vec<(f32, bool)> {
@@ -430,6 +464,131 @@ ms           value
         .unwrap();
         assert_eq!(keyframes.sample(ms(99)).value, 0.0);
         assert_eq!(keyframes.sample(ms(101)).value, 100.0);
+    }
+
+    #[test]
+    fn samples_out_of_order_or_far_apart_give_the_same_values() {
+        let keyframes = up_and_half_back().times(3).mirrored().pause(ms(30));
+        let times = [470, 10, 330, 90, 700, 250, 0, 499];
+        let mut in_order = times;
+        in_order.sort_unstable();
+        let mut scattered: Vec<_> = times
+            .iter()
+            .map(|&t| (t, keyframes.sample(ms(t))))
+            .collect();
+        scattered.sort_unstable_by_key(|(t, _)| *t);
+        for ((t, sample), u) in scattered.into_iter().zip(in_order) {
+            assert_eq!(t, u);
+            assert_eq!(sample.value, keyframes.sample(ms(u)).value);
+        }
+    }
+
+    #[test]
+    fn a_mirrored_round_after_a_pause_holds_on_the_first_stop_and_an_odd_count_ends_on_the_last() {
+        let keyframes = up_and_half_back().times(3).mirrored().pause(ms(100));
+        assert_eq!(keyframes.settles_at(), Some(ms(800)));
+        assert_eq!(
+            values(&keyframes, &[350, 450, 500, 550, 650, 800]),
+            [
+                (75.0, false),
+                (50.0, false),
+                (0.0, false),
+                (0.0, false),
+                (50.0, false),
+                (50.0, true)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_backward_round_plays_its_easing_reversed_in_time() {
+        let keyframes = Keyframes::new([
+            Stop::new(ms(0), 0.0, Easing::Linear),
+            Stop::new(ms(100), 100.0, Easing::Custom(|t| t * t)),
+        ])
+        .unwrap()
+        .times(2)
+        .mirrored();
+        assert_eq!(keyframes.sample(ms(50)).value, 25.0);
+        assert_eq!(
+            keyframes.sample(ms(150)).value,
+            25.0,
+            "the same place, met backward"
+        );
+        assert_eq!(keyframes.sample(ms(175)).value, 6.25);
+    }
+
+    #[test]
+    fn zero_rounds_rest_on_the_first_stop_settled_from_the_start() {
+        let keyframes = up_and_half_back().times(0).starting_at(ms(100));
+        assert_eq!(keyframes.settles_at(), Some(ms(100)));
+        assert_eq!(
+            values(&keyframes, &[50, 100, 150]),
+            [(0.0, false), (0.0, true), (0.0, true)]
+        );
+        assert_eq!(keyframes.rest(), 0.0);
+    }
+
+    #[test]
+    fn a_jump_at_the_end_of_a_round_shows_through_the_pause_and_the_next_round_starts_from_it() {
+        let keyframes = Keyframes::new([
+            Stop::new(ms(0), 0.0, Easing::Linear),
+            Stop::new(ms(100), 0.0, Easing::Linear),
+            Stop::new(ms(100), 100.0, Easing::Linear),
+        ])
+        .unwrap()
+        .times(2)
+        .mirrored()
+        .pause(ms(50));
+        assert_eq!(
+            values(&keyframes, &[99, 100, 120, 150, 151]),
+            [
+                (0.0, false),
+                (100.0, false),
+                (100.0, false),
+                (100.0, false),
+                (0.0, false)
+            ]
+        );
+    }
+
+    #[test]
+    fn stops_all_at_zero_settle_at_their_start() {
+        let keyframes = Keyframes::new([
+            Stop::new(ms(0), 0.0, Easing::Linear),
+            Stop::new(ms(0), 1.0, Easing::Linear),
+        ])
+        .unwrap()
+        .forever()
+        .starting_at(ms(1_000));
+        assert_eq!(keyframes.settles_at(), Some(ms(1_000)));
+        assert_eq!(
+            values2(&keyframes, &[0, 1_000]),
+            [(0.0, false), (1.0, true)]
+        );
+        assert_eq!(keyframes.rest(), 1.0);
+    }
+
+    #[test]
+    fn a_pause_or_a_count_too_long_for_a_duration_saturates_and_never_panics() {
+        let long = up_and_half_back().times(u32::MAX).pause(Duration::MAX);
+        assert_eq!(long.settles_at(), Some(Duration::MAX));
+        assert_eq!(long.sample(ms(50)).value, 50.0);
+        let forever = up_and_half_back().forever().pause(Duration::MAX);
+        assert_eq!(forever.sample(ms(50)).value, 50.0);
+        assert_eq!(
+            forever.sample(ms(500)).value,
+            50.0,
+            "held in the long pause"
+        );
+    }
+
+    #[test]
+    fn rest_is_where_the_keyframes_end_or_the_first_stop_for_a_loop() {
+        assert_eq!(up_and_half_back().rest(), 50.0);
+        assert_eq!(up_and_half_back().times(2).mirrored().rest(), 0.0);
+        assert_eq!(up_and_half_back().times(3).mirrored().rest(), 50.0);
+        assert_eq!(up_and_half_back().forever().rest(), 0.0);
     }
 
     #[test]

@@ -9,7 +9,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 - A look's offset, and a dragged element's, is painted instead of laid out: it adds to the element's own place, `absolute` ones included, and the pointer finds the element where it is painted. Before, it replaced the element's `left` and `top`: an `absolute` element that gave its place as the offset, as 0.1.0's docs said, now gives it with `left` and `top`.
 - `Presence::wanted` and `Presence::leaving`, in the engine and the adapter, and `ginga_gpui::Presence::sample(cx)`, read with no window.
 - Reduced motion keeps a transition's delay: the value holds still until the delay is over, then is at its target at once. `Transition::without_motion` and `Transitions::without_motion`. Before, the delay was dropped with the motion. A variant's schedule and a shared element's trip are still dropped.
-- `ginga_gpui::PresenceList`: a list presence on the view's clock. `frame(window, cx)` asks for the next frame while any item moves, and `sync`, `place_all` and `sample` take `cx`; under reduced motion every way and glide moves at once after its delay. Breaking: `ginga_gpui::PresenceList` was the engine's, re-exported; that one is now `ginga_gpui::ginga::PresenceList`.
+- `ginga_gpui::PresenceList`: a list presence on the view's clock. `frame(window, cx)` asks for the next frame while any item moves, and `sync`, `place_all` and `sample` take `cx`; under reduced motion every way, and every travel to a new place, is over at once after its delay. Breaking: `ginga_gpui::PresenceList` was the engine's, re-exported; that one is now `ginga_gpui::ginga::PresenceList`.
 
 ## 0.1.0
 

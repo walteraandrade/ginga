@@ -21,7 +21,11 @@ use crate::{Clock, InOut, ShownItem, Transition, unless_reduced};
 ///
 /// [`frame`](Self::frame) asks GPUI for another frame while any item arrives,
 /// leaves or travels to its place. Under reduced motion each way, and each
-/// glide, moves at once after its delay (see [`unless_reduced`]).
+/// travel to a new place, is over at once after its delay (see
+/// [`unless_reduced`]).
+///
+/// In a render, tell the places first and then take the frame: both read the
+/// clock, and the frame's read is the later one, so it is what is drawn.
 #[derive(Debug, Clone)]
 pub struct PresenceList<K, T> {
     list: ginga::PresenceList<K, T>,
@@ -65,7 +69,10 @@ impl<K, T> PresenceList<K, T> {
 
     /// What [`frame`](Self::frame) would hand back now, read from `&self`
     /// with no window: for an event handler, between frames. It asks for no
-    /// frame and lets go of nothing.
+    /// frame and lets go of nothing. While rendering, call `frame` once and
+    /// hand on the [`ShownItem`]s it returns: a second read of the time in
+    /// one render can disagree with the first.
+    #[must_use = "the items are only read"]
     pub fn sample(&self, cx: &App) -> impl Iterator<Item = ShownItem<'_, K, T>> {
         self.list.sample(self.clock.peek(cx))
     }

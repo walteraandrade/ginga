@@ -104,6 +104,16 @@ fn a_leaving_row_asks_for_frames_until_it_is_gone(cx: &mut TestAppContext) {
     assert_eq!(next_frame(&window, cx), 1);
     let keys: Vec<u32> = last(&drawn).iter().map(|row| row.0).collect();
     assert_eq!(keys, [2], "a row whose way out is over is let go");
+
+    // Row 2 then takes 1's place; once it is there, nothing asks for a frame.
+    cx.executor().advance_clock(ms(200));
+    next_frame(&window, cx);
+    assert_eq!(last(&drawn), [(2, Phase::Present, 1.0, 0.0)]);
+    assert_eq!(
+        next_frame(&window, cx),
+        0,
+        "a settled list asks for no frame"
+    );
 }
 
 #[gpui::test]
@@ -144,6 +154,29 @@ fn under_reduced_motion_rows_come_go_and_change_place_at_once(cx: &mut TestAppCo
         [(2, Phase::Present, 1.0, 0.0), (3, Phase::Present, 1.0, 0.0)],
         "1 is gone, 3 is here and 2 is in its new place, all at once"
     );
+    assert_eq!(next_frame(&window, cx), 0);
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_row_keeps_the_delay_of_its_way_in(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let (window, drawn) = open(&[1], cx);
+    window
+        .update(cx, |view, _, cx| {
+            let enter = glide().delay(ms(100));
+            view.rows
+                .sync([(1, ()), (2, ())], InOut::new(enter, glide()), cx);
+            cx.notify();
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(last(&drawn)[1], (2, Phase::Entering, 0.0, 0.0));
+    cx.executor().advance_clock(ms(50));
+    assert_eq!(next_frame(&window, cx), 1, "a waiting row asks for a frame");
+    assert_eq!(last(&drawn)[1], (2, Phase::Entering, 0.0, 0.0));
+    cx.executor().advance_clock(ms(50));
+    next_frame(&window, cx);
+    assert_eq!(last(&drawn)[1], (2, Phase::Present, 1.0, 0.0));
     assert_eq!(next_frame(&window, cx), 0);
 }
 

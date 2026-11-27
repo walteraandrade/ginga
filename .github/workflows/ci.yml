@@ -14,15 +14,32 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  versions:
+    name: minimum Rust versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      engine: ${{ steps.read.outputs.engine }}
+      adapter: ${{ steps.read.outputs.adapter }}
+    steps:
+      - uses: actions/checkout@v4
+      # The minimum versions live in the manifests only; each job runs on the one it reads here.
+      - id: read
+        run: |
+          read_version() { sed -n 's/^rust-version = "\(.*\)"$/\1/p' "$1"; }
+          echo "engine=$(read_version Cargo.toml)" >> "$GITHUB_OUTPUT"
+          echo "adapter=$(read_version crates/ginga-gpui/Cargo.toml)" >> "$GITHUB_OUTPUT"
+
   engine:
-    name: engine (Rust 1.87)
+    name: engine (Rust ${{ needs.versions.outputs.engine }})
+    needs: versions
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      # The engine's rust-version, from [workspace.package] in Cargo.toml.
-      - uses: dtolnay/rust-toolchain@1.87
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ needs.versions.outputs.engine }}
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
@@ -34,14 +51,15 @@ jobs:
       - run: cargo test
 
   adapter:
-    name: gpui adapter (Rust 1.95)
+    name: gpui adapter (Rust ${{ needs.versions.outputs.adapter }})
+    needs: versions
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      # ginga-gpui's rust-version: the oldest Rust that builds gpui-pre =0.3.12.
-      - uses: dtolnay/rust-toolchain@1.95
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ needs.versions.outputs.adapter }}
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:

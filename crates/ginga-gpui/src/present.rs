@@ -110,8 +110,13 @@ impl<T: PartialEq + 'static> Present<T> {
 
     /// One content as it is drawn this frame: in a box of its own, kept by
     /// the content's number so what it holds lasts while it swaps, with the
-    /// look of where it is, and covered while it leaves.
-    fn drawn(&self, shown: &Shown<'_, Numbered<T>>) -> gpui::Stateful<gpui::Div> {
+    /// look of where it is, and covered while it leaves. What a swap sends
+    /// away lies at the top left, out of the layout.
+    fn drawn(
+        &self,
+        shown: &Shown<'_, Numbered<T>>,
+        swapped_out: bool,
+    ) -> gpui::Stateful<gpui::Div> {
         let look = match shown.phase {
             Phase::Present => Look::new(),
             Phase::Entering => self
@@ -124,10 +129,17 @@ impl<T: PartialEq + 'static> Present<T> {
         let mut drawn = div()
             .id(ElementId::Integer(shown.content.number))
             .child((self.draw)(&shown.content.content));
+        if swapped_out {
+            // The look's offset, when it names one, is its place from there.
+            drawn = drawn.absolute().top_0().left_0();
+        }
         if shown.phase == Phase::Exiting {
             // Over the content, it takes the pointer, so what leaves takes
             // no clicks and gets no focus from one.
-            drawn = drawn.relative().child(div().absolute().inset_0().occlude());
+            if !swapped_out {
+                drawn = drawn.relative();
+            }
+            drawn = drawn.child(div().absolute().inset_0().occlude());
         }
         styled(drawn, look)
     }
@@ -205,8 +217,8 @@ impl<T: PartialEq + 'static> Element for Present<T> {
             {
                 window.request_animation_frame();
             }
-            let leaving = leaving.map(|shown| self.drawn(&shown).absolute().top_0().left_0());
-            let here = here.map(|shown| self.drawn(&shown));
+            let leaving = leaving.map(|shown| self.drawn(&shown, true));
+            let here = here.map(|shown| self.drawn(&shown, false));
             // What arrives lies over what leaves; what leaves takes no room.
             let element = div()
                 .relative()

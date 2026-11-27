@@ -39,6 +39,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/recording-a-gallery-page]]: how a recording drives the gallery, and why it must never block the main thread.
 - [[codebase/a-look-on-an-element]]: where an element's look motion lives, and how each value is applied.
 - [[codebase/a-drag-on-an-element]]: how a dragged element hears the pointer anywhere in the window, and measures its speed.
+- [[codebase/ways-in-and-out-on-an-element]]: how `present` keeps drawing a thing on its way out, and swaps content in a slot.
 
 ## Measurements
 

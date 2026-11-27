@@ -9,7 +9,7 @@ use std::{
 
 use ginga::{
     Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Map, Motion, PresenceList, Sequence,
-    SettledOnce, Spring, Stop, Trail, Transition, Transitions, Tween,
+    SettledOnce, Slot, Spring, Stop, Swap, Trail, Transition, Transitions, Tween,
 };
 
 struct Counting;
@@ -284,6 +284,32 @@ fn reading_derived_values_and_running_a_sequence_allocates_nothing() {
         checksum += px + fill.at(px).green + c.sample(now).value;
         if ended.check(c.settles_at(), now) {
             checksum += 1.0;
+        }
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn swapping_a_slot_and_mixing_its_looks_allocates_nothing() {
+    let fade = Tween::new(Duration::from_millis(120), Easing::Linear);
+    let ways = InOut::new(fade, Spring::SNAPPY);
+    let from = Look::new().offset(0.0, 24.0).opacity(0.0);
+    let mut slot = Slot::new(Swap::Wait);
+    let mut checksum = 0.0;
+    let before = allocations();
+    for frame in 0..10_000u64 {
+        let now = Duration::from_micros(frame * 8_333);
+        // Every 29 frames the title changes; every 61 it is hidden.
+        if frame % 61 == 0 {
+            slot.hide(ways.exit, now);
+        } else {
+            slot.show(frame / 29 % 3, ways, now);
+        }
+        for shown in slot.frame(now).into_iter().flatten() {
+            let look = from.mix(Look::new(), shown.progress);
+            checksum += look.opacity.unwrap_or_default();
         }
     }
     let after = allocations();

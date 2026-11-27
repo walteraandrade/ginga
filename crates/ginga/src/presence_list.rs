@@ -10,9 +10,9 @@ use crate::{Animatable, InOut, Motion, Phase, Transition};
 ///
 /// The first `sync` only fills the list: nothing arrives.
 ///
-/// An item whose place changes can travel there instead of jumping: after
-/// laying out, tell the list where each item is with [`PresenceList::place`],
-/// and draw each one [`ShownItem::offset`] away from that place.
+/// An item whose place changes can travel there instead of jumping: tell the
+/// list where its items are laid out with [`PresenceList::place_all`], and
+/// draw each one [`ShownItem::offset`] away from its place.
 ///
 /// ```
 /// use std::time::Duration;
@@ -89,15 +89,18 @@ pub struct ShownItem<'a, K, T> {
     pub progress: f32,
     /// How far from its place to draw it, along the list: where it is drawn
     /// minus where it is laid out. `0.0` unless its place changed with
-    /// [`PresenceList::place`]; after that it heads for `0.0`.
+    /// [`PresenceList::place_all`]; after that it heads for `0.0`.
     pub offset: f32,
+    /// It is on its way to its place: its offset is not settled yet. The
+    /// offset can pass `0.0` while it travels, so check this, not the offset.
+    pub travelling: bool,
 }
 
 impl<K, T> ShownItem<'_, K, T> {
     /// It is still arriving, leaving or travelling to its place: draw another frame.
     #[must_use]
     pub fn moving(&self) -> bool {
-        self.phase != Phase::Present || self.offset != 0.0
+        self.phase != Phase::Present || self.travelling
     }
 }
 
@@ -127,8 +130,9 @@ impl<K, T> PresenceList<K, T> {
                 (false, false) => Phase::Exiting,
                 (false, true) => return None,
             };
-            let offset = entry.position.as_ref().map_or(0.0, |position| {
-                position.sample(now).value.0 - position.target().0
+            let (offset, travelling) = entry.position.as_ref().map_or((0.0, false), |position| {
+                let drawn = position.sample(now);
+                (drawn.value.0 - position.target().0, !drawn.settled)
             });
             Some(ShownItem {
                 key: &entry.key,
@@ -136,6 +140,7 @@ impl<K, T> PresenceList<K, T> {
                 phase,
                 progress: amount.value,
                 offset,
+                travelling,
             })
         })
     }
@@ -145,6 +150,60 @@ impl<K, T> PresenceList<K, T> {
     pub fn frame(&mut self, now: Duration) -> impl Iterator<Item = ShownItem<'_, K, T>> {
         self.sweep(now);
         self.sample(now)
+    }
+
+    /// Tells the list where its items are laid out now: `places` are places
+    /// along the list, such as each item's top in pixels, in the order
+    /// [`PresenceList::frame`] gives the items at `now`, leaving ones included.
+    ///
+    /// When an item's place changes, it travels there with `transition` from
+    /// where it is drawn, keeping its speed, and [`ShownItem::offset`] says how
+    /// far it still is. The first place told for an item is where it is: it
+    /// does not travel. A place that is not a finite number is ignored, and so
+    /// are places beyond the last item; items beyond the last place keep the
+    /// one they had.
+    ///
+    /// A place that changes on every frame, such as below a row whose height
+    /// follows its progress, makes the item chase it: a tween starts over at
+    /// each change. A spring follows it smoothly, keeping its speed.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Easing, InOut, PresenceList, Tween};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let glide = Tween::new(ms(100), Easing::Linear);
+    /// let mut rows = PresenceList::new();
+    ///
+    /// rows.sync([("a", ()), ("b", ())], InOut::INSTANT, ms(0));
+    /// rows.place_all([0.0, 40.0], glide, ms(0));
+    ///
+    /// // "b" moves to the top.
+    /// rows.sync([("b", ()), ("a", ())], InOut::INSTANT, ms(1_000));
+    /// rows.place_all([0.0, 40.0], glide, ms(1_000));
+    ///
+    /// let offsets: Vec<_> = rows.frame(ms(1_050)).map(|row| (*row.key, row.offset)).collect();
+    /// assert_eq!(offsets, [("b", 20.0), ("a", -20.0)]);
+    /// ```
+    pub fn place_all(
+        &mut self,
+        places: impl IntoIterator<Item = f32>,
+        transition: impl Into<Transition>,
+        now: Duration,
+    ) {
+        let transition = transition.into();
+        self.sweep(now);
+        for (entry, at) in self.entries.iter_mut().zip(places) {
+            if !at.is_finite() {
+                continue;
+            }
+            match &mut entry.position {
+                Some(position) => {
+                    position.toward(Place(at), transition, now);
+                }
+                None => entry.position = Some(Motion::at(Place(at))),
+            }
+        }
     }
 
     fn sweep(&mut self, now: Duration) {
@@ -216,47 +275,6 @@ impl<K: PartialEq, T> PresenceList<K, T> {
         }
         self.release(&mut old, &stays, in_out, now);
         self.filled = true;
-    }
-
-    /// Tells the list where the item with `key` is laid out now, `at` a place
-    /// along the list: its top in pixels, for one. When the place changes, the
-    /// item travels there with `transition` from where it is drawn, keeping
-    /// its speed, and [`ShownItem::offset`] says how far it still is. The
-    /// first place told for an item is where it is: it does not travel.
-    ///
-    /// Call it after each layout, for each item drawn, leaving ones included.
-    /// A key the list does not hold is ignored.
-    ///
-    /// ```
-    /// use std::time::Duration;
-    /// use ginga::{Easing, InOut, PresenceList, Tween};
-    ///
-    /// let ms = Duration::from_millis;
-    /// let glide = Tween::new(ms(100), Easing::Linear);
-    /// let mut rows = PresenceList::new();
-    ///
-    /// rows.sync([("a", ()), ("b", ())], InOut::INSTANT, ms(0));
-    /// rows.place(&"a", 0.0, glide, ms(0));
-    /// rows.place(&"b", 40.0, glide, ms(0));
-    ///
-    /// // "b" moves to the top.
-    /// rows.sync([("b", ()), ("a", ())], InOut::INSTANT, ms(1_000));
-    /// rows.place(&"b", 0.0, glide, ms(1_000));
-    /// rows.place(&"a", 40.0, glide, ms(1_000));
-    ///
-    /// let offsets: Vec<_> = rows.frame(ms(1_050)).map(|row| (*row.key, row.offset)).collect();
-    /// assert_eq!(offsets, [("b", 20.0), ("a", -20.0)]);
-    /// ```
-    pub fn place(&mut self, key: &K, at: f32, transition: impl Into<Transition>, now: Duration) {
-        let Some(entry) = self.entries.iter_mut().find(|entry| entry.key == *key) else {
-            return;
-        };
-        match &mut entry.position {
-            Some(position) => {
-                position.toward(Place(at), transition, now);
-            }
-            None => entry.position = Some(Motion::at(Place(at))),
-        }
     }
 
     /// Moves the entries of `old` that are not in the new list into the list,
@@ -331,30 +349,30 @@ mod tests {
     }
 
     /// Tells `rows` that its items are laid out 40 apart, in their order now.
-    fn lay_out(
-        rows: &mut PresenceList<u32, String>,
-        transition: impl Into<Transition> + Copy,
-        now: u64,
-    ) {
-        let keys: Vec<u32> = rows.sample(ms(now)).map(|row| *row.key).collect();
-        for (index, key) in (0u8..).zip(keys) {
-            rows.place(&key, f32::from(index) * 40.0, transition, ms(now));
-        }
+    fn lay_out(rows: &mut PresenceList<u32, String>, transition: impl Into<Transition>, now: u64) {
+        let count = rows.sample(ms(now)).count();
+        let places = (0..count).map(|index| index as f32 * 40.0);
+        rows.place_all(places, transition, ms(now));
     }
 
-    /// Where each item is drawn at `now`: its place plus its offset.
+    /// Where each item is drawn at `now`, by key: its place, 40 times its index
+    /// as [`lay_out`] told it, plus its offset.
     fn drawn_at(rows: &PresenceList<u32, String>, now: u64) -> Vec<(u32, f32)> {
-        let mut places = Vec::new();
-        for row in rows.sample(ms(now)) {
-            let position = rows
-                .entries
-                .iter()
-                .find(|entry| entry.key == *row.key)
-                .and_then(|entry| entry.position)
-                .map_or(0.0, |position| position.target().0);
-            places.push((*row.key, position + row.offset));
-        }
-        places
+        let mut drawn: Vec<(u32, f32)> = rows
+            .sample(ms(now))
+            .enumerate()
+            .map(|(index, row)| (*row.key, index as f32 * 40.0 + row.offset))
+            .collect();
+        drawn.sort_by_key(|(key, _)| *key);
+        drawn
+    }
+
+    /// The offsets at `now`, as text: each key and how far from its place it is drawn.
+    fn offsets(rows: &mut PresenceList<u32, String>, now: u64) -> String {
+        rows.frame(ms(now))
+            .map(|row| format!("{}:{}", row.key, row.offset))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     #[test]
@@ -387,6 +405,38 @@ ms        3       1       2
     }
 
     #[test]
+    fn an_item_on_its_way_to_its_place_is_moving_though_present() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2, 1], 1_000, &mut rows);
+        lay_out(&mut rows, glide(), 1_000);
+        assert!(
+            rows.frame(ms(1_050))
+                .all(|row| row.phase == Phase::Present && row.travelling && row.moving())
+        );
+    }
+
+    #[test]
+    fn an_offset_that_passes_zero_is_still_travelling() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2], 0, &mut rows);
+        lay_out(&mut rows, Spring::BOUNCY, 0);
+        list(&[2, 1], 1_000, &mut rows);
+        lay_out(&mut rows, Spring::BOUNCY, 1_000);
+        // Item 2 starts 40 below its place and overshoots it: find where its offset changes sign.
+        let crossing = (1_000..3_000)
+            .find(|now| {
+                let row = rows.sample(ms(*now)).next().unwrap();
+                row.offset <= 0.0
+            })
+            .unwrap();
+        let row = rows.sample(ms(crossing)).next().unwrap();
+        assert!(row.offset.abs() < 2.0, "{} at {crossing} ms", row.offset);
+        assert!(row.travelling && row.moving());
+    }
+
+    #[test]
     fn a_first_place_is_not_a_move() {
         let mut rows = PresenceList::new();
         list(&[1, 2], 0, &mut rows);
@@ -398,31 +448,32 @@ ms        3       1       2
     }
 
     #[test]
-    fn a_second_reorder_during_a_move_does_not_jump() {
+    fn a_second_reorder_during_a_move_does_not_jump_and_keeps_its_speed() {
         let mut rows = PresenceList::new();
         list(&[1, 2, 3], 0, &mut rows);
         lay_out(&mut rows, Spring::SMOOTH, 0);
         list(&[3, 1, 2], 1_000, &mut rows);
         lay_out(&mut rows, Spring::SMOOTH, 1_000);
-        let before = drawn_at(&rows, 1_120);
+        let before = drawn_at(&rows, 1_119);
+        let at = drawn_at(&rows, 1_120);
         list(&[2, 3, 1], 1_120, &mut rows);
         lay_out(&mut rows, Spring::SMOOTH, 1_120);
-        let mut after = drawn_at(&rows, 1_120);
-        after.sort_by_key(|(key, _)| [3, 1, 2].iter().position(|k| k == key));
-        for ((key, was), (_, is)) in before.iter().zip(&after) {
+        let after = drawn_at(&rows, 1_120);
+        let next = drawn_at(&rows, 1_121);
+        for (((key, was), (_, is)), ((_, earlier), (_, later))) in
+            at.iter().zip(&after).zip(before.iter().zip(&next))
+        {
             assert!(
                 (was - is).abs() < 1e-3,
                 "item {key} jumped from {was} to {is}"
             );
+            let (speed_before, speed_after) = (was - earlier, later - is);
+            assert!(
+                (speed_after - speed_before).abs() < speed_before.abs() * 0.1 + 0.01,
+                "item {key} moved {speed_before} in the millisecond before and {speed_after} after"
+            );
         }
-        let in_flight = rows
-            .frame(ms(1_121))
-            .map(|row| row.offset)
-            .collect::<Vec<_>>();
-        assert!(
-            in_flight.iter().all(|offset| *offset != 0.0),
-            "{in_flight:?}"
-        );
+        assert!(rows.frame(ms(1_121)).all(|row| row.travelling));
         let settle = ms(1_120 + 2_000);
         assert!(
             rows.frame(settle)
@@ -431,7 +482,7 @@ ms        3       1       2
     }
 
     #[test]
-    fn items_that_arrive_and_leave_during_a_move_keep_their_order() {
+    fn items_that_arrive_and_leave_during_a_move_keep_their_order_and_their_offsets() {
         let mut rows = PresenceList::new();
         list(&[1, 2, 3, 4], 0, &mut rows);
         lay_out(&mut rows, glide(), 0);
@@ -440,8 +491,47 @@ ms        3       1       2
         list(&[4, 1, 9, 3], 1_030, &mut rows);
         lay_out(&mut rows, glide(), 1_030);
         assert_eq!(drawn(&mut rows, 1_050), "4 1 -2 +9 3");
-        assert!(rows.frame(ms(1_050)).any(|row| row.offset != 0.0));
+        // 4, 1 and 2 keep their places at 1_030 and go on with their glides,
+        // halfway at 1_050. 9 arrives where 3 was, and 3 is pushed a place down:
+        // from -28 at 1_030 it starts a new glide from -68, a fifth done at 1_050.
+        assert_eq!(offsets(&mut rows, 1_050), "4:60 1:-20 2:-20 9:0 3:-54.4");
         assert_eq!(drawn(&mut rows, 1_200), "4 1 9 3");
+        assert_eq!(offsets(&mut rows, 1_200), "4:0 1:0 9:0 3:0");
+    }
+
+    #[test]
+    fn a_leaving_item_travels_and_is_let_go_when_its_way_out_ends() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2], 1_000, &mut rows);
+        // 1 is leaving, still drawn first; 2 moves up to the top, 1 is placed below it.
+        rows.place_all([40.0, 0.0], glide(), ms(1_000));
+        assert_eq!(offsets(&mut rows, 1_050), "1:-20 2:20");
+        assert_eq!(drawn(&mut rows, 1_100), "2");
+        assert_eq!(offsets(&mut rows, 1_100), "2:0");
+    }
+
+    #[test]
+    fn an_item_that_comes_back_mid_move_keeps_where_it_is_drawn() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2, 1], 1_000, &mut rows);
+        lay_out(&mut rows, glide(), 1_000);
+        list(&[2], 1_020, &mut rows);
+        list(&[2, 1], 1_040, &mut rows);
+        assert_eq!(offsets(&mut rows, 1_040), "2:24 1:-24");
+    }
+
+    #[test]
+    fn places_that_are_not_finite_or_beyond_the_list_are_ignored() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2], 0, &mut rows);
+        rows.place_all([0.0, 40.0], glide(), ms(0));
+        rows.place_all([f32::NAN, f32::INFINITY, 80.0], glide(), ms(1_000));
+        assert_eq!(offsets(&mut rows, 1_000), "1:0 2:0");
+        assert!(rows.frame(ms(1_000)).all(|row| !row.moving()));
     }
 
     #[test]

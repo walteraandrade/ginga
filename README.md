@@ -95,7 +95,7 @@ assert_eq!(
 
 An item on its way out is still drawn, so it can still be clicked or focused unless you say otherwise: check for `Phase::Exiting`.
 
-An item whose place changes can travel there. After layout, tell the list where each item is with `place`; the list answers, in each item's `offset`, how far from that place to draw it this frame, a distance that heads for zero. A reorder in the middle of a move turns around from where the item is, with its speed.
+An item whose place changes can travel there. Tell the list where its items are laid out with `place_all`, in the order `frame` gives them; the list answers, in each item's `offset`, how far from its place to draw it this frame, a distance that heads for zero. A reorder in the middle of a move turns around from where the item is, with its speed.
 
 ```rust
 use std::time::Duration;
@@ -105,38 +105,42 @@ let ms = Duration::from_millis;
 let mut rows = PresenceList::new();
 
 rows.sync([("a", ()), ("b", ())], InOut::INSTANT, ms(0));
-rows.place(&"a", 0.0, Spring::SNAPPY, ms(0));
-rows.place(&"b", 40.0, Spring::SNAPPY, ms(0));
+rows.place_all([0.0, 40.0], Spring::SNAPPY, ms(0));
 
 rows.sync([("b", ()), ("a", ())], InOut::INSTANT, ms(1_000)); // "b" goes first
-rows.place(&"b", 0.0, Spring::SNAPPY, ms(1_000));
-rows.place(&"a", 40.0, Spring::SNAPPY, ms(1_000));
+rows.place_all([0.0, 40.0], Spring::SNAPPY, ms(1_000));
 
 let b = rows.frame(ms(1_000)).next().unwrap();
 assert_eq!((*b.key, b.offset), ("b", 40.0)); // drawn where it was, 40 below its new place
+assert!(b.moving()); // ask for another frame
 ```
 
-In a GPUI list the rows are laid out in order, and each one is drawn `offset` away from its place:
+In a GPUI list of rows of one height, a row's place is its index times the height, known before layout. Each row is drawn `offset` away from it:
 
 ```rust,ignore
-let row_height = 40.;
+const ROW: f32 = 40.;
+
+let count = self.rows.sample(now).count();
+self.rows.place_all((0..count).map(|index| index as f32 * ROW), Spring::SNAPPY, now);
+
 let mut moving = false;
-for (index, row) in (0..).zip(self.rows.frame(now)) {
-    // A row of fixed height: its place is known before layout.
-    self.rows.place(row.key, index as f32 * row_height, Spring::SNAPPY, now);
-}
-let list = div().flex().flex_col().children(self.rows.frame(now).map(|row| {
-    moving |= row.moving();
-    div()
-        .h(px(row_height))
-        .relative()
-        .top(px(row.offset))
-        .opacity(row.progress)
-        .child(row.content.label.clone())
-}));
+let rows: Vec<_> = self
+    .rows
+    .frame(now)
+    .map(|row| {
+        moving |= row.moving();
+        div()
+            .h(px(ROW))
+            .relative()
+            .top(px(row.offset))
+            .opacity(row.progress)
+            .child(row.content.label.clone())
+    })
+    .collect();
 if moving {
     window.request_animation_frame();
 }
+div().flex().flex_col().children(rows)
 ```
 
 Only the place moves: GPUI cannot scale a `div`, so a row whose size changes takes its new size at once.

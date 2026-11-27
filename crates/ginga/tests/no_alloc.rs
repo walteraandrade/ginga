@@ -86,15 +86,13 @@ fn moving_list_items_to_new_places_allocates_nothing() {
     let before = allocations();
     for frame in 0..10_000u32 {
         let now = Duration::from_micros(u64::from(frame) * 8_333);
-        for key in 0..8u32 {
-            // Every 50 frames the list turns around.
-            let index = if (frame / 50).is_multiple_of(2) {
-                key
-            } else {
-                7 - key
-            };
-            rows.place(&key, index as f32 * 40.0, Spring::SNAPPY, now);
-        }
+        // Every 50 frames the list turns around: the first item is placed last.
+        let turned = !(frame / 50).is_multiple_of(2);
+        let places = (0..8u8).map(|index| {
+            let index = if turned { 7 - index } else { index };
+            f32::from(index) * 40.0
+        });
+        rows.place_all(places, Spring::SNAPPY, now);
         checksum += rows.frame(now).map(|row| row.offset.abs()).sum::<f32>();
     }
     let after = allocations();

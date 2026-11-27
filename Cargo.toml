@@ -7,6 +7,7 @@ default-members = ["crates/ginga"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 # The oldest Rust the engine is checked with; CI runs on it.
 rust-version = "1.87"
 publish = false

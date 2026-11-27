@@ -193,4 +193,8 @@ cargo clippy -p ginga-gpui -- -D warnings   # the GPUI adapter; the first build 
 
 The engine needs Rust 1.87 or newer and the adapter Rust 1.95, the oldest that builds its GPUI. CI checks each on that version, on every pull request.
 
-Rules for changes are in [AGENTS.md](AGENTS.md). No license has been chosen yet.
+Rules for changes are in [AGENTS.md](AGENTS.md).
+
+## License
+
+Either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. Unless you say otherwise, a contribution you submit for inclusion, as defined in the Apache-2.0 license, is offered under the same two, with no other terms.

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use ginga_gpui::{Clock, Easing, InOut, Phase, PresenceList, Tween};
+use ginga_gpui::{Clock, Easing, InOut, Phase, PresenceList, Tween, unless_reduced};
 use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, px, rgb};
 
 /// A row's full height.
@@ -35,7 +35,10 @@ impl Rows {
         }
         self.wanted.push((self.next, format!("Row {}", self.next)));
         self.next += 1;
-        let fade = Tween::new(Duration::from_millis(300), Easing::InOut);
+        // A list presence is the engine's own, so it does not know the
+        // desktop's setting: `unless_reduced` makes the fade instant under
+        // reduced motion, as the adapter's `Motion` and `Presence` do.
+        let fade = unless_reduced(Tween::new(Duration::from_millis(300), Easing::InOut), cx);
         let now = self.clock.now(cx);
         self.list
             .sync(self.wanted.iter().cloned(), InOut::new(fade, fade), now);

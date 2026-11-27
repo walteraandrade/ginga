@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Wait until a pull request has comments that wait for an answer.
+#
+#   wait-for-comments <pr> [--since <UTC time, like 2026-11-27T11:00:00Z>] [--repo <owner/name>]
+#                          [--timeout <seconds>] [--interval <seconds>]
+#
+# A comment waits for an answer when it is in an unresolved review thread
+# whose last comment has no round-two marker, or when it is a review body or
+# a conversation comment newer than --since that has no marker.
+#
+# Exits 0 when something waits and nothing new arrived for one interval,
+# 2 after --timeout with nothing waiting, 3 when the PR is merged or closed,
+# 1 on an error. Prints what waits, one line per comment.
+set -euo pipefail
+
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+
+pr=""
+since="1970-01-01T00:00:00Z"
+repo=""
+timeout=3600
+interval=60
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --since) since="$2"; shift 2 ;;
+    --repo) repo="$2"; shift 2 ;;
+    --timeout) timeout="$2"; shift 2 ;;
+    --interval) interval="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    -*) echo "unknown option: $1" >&2; usage ;;
+    *) pr="${1#\#}"; shift ;;
+  esac
+done
+case "$pr" in ''|*[!0-9]*) echo "give a PR number" >&2; usage ;; esac
+
+if [ -z "$repo" ]; then
+  repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+fi
+owner=${repo%/*}
+name=${repo#*/}
+
+query='query($owner: String!, $name: String!, $pr: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $pr) {
+      state
+      reviewThreads(first: 100) {
+        nodes { isResolved comments(last: 1) { nodes { body url path line } } }
+      }
+      reviews(last: 100) { nodes { body url submittedAt } }
+      comments(last: 100) { nodes { body url createdAt } }
+    }
+  }
+}'
+
+# The pending list, as "STATE" on the first line and one comment per line.
+# gh's --jq takes no --arg, so --since is written into the filter.
+case "$since" in *[!0-9TZ:.-]*|*[!Z]) echo "--since takes a UTC time, like 2026-11-27T11:00:00Z" >&2; exit 1 ;; esac
+filter='"'"$since"'" as $since
+  | .data.repository.pullRequest as $p
+  | $p.state,
+    ( $p.reviewThreads.nodes[]
+      | select(.isResolved | not)
+      | .comments.nodes[0]
+      | select(.body | contains("<!-- round-two") | not)
+      | "thread  \(.url)  \(.path):\(.line // "outdated")" ),
+    ( $p.reviews.nodes[]
+      | select(.body != "" and .submittedAt > $since)
+      | select(.body | contains("<!-- round-two") | not)
+      | "review  \(.url)" ),
+    ( $p.comments.nodes[]
+      | select(.createdAt > $since)
+      | select(.body | contains("<!-- round-two") | not)
+      | "comment \(.url)" )'
+
+pending() {
+  gh api graphql -f query="$query" -F owner="$owner" -F name="$name" -F pr="$pr" \
+    --jq "$filter"
+}
+
+deadline=$(( $(date +%s) + timeout ))
+last=""
+while :; do
+  out=$(pending) || { echo "could not read PR #$pr in $repo" >&2; exit 1; }
+  state=$(head -n 1 <<<"$out")
+  list=$(tail -n +2 <<<"$out")
+  if [ "$state" != "OPEN" ]; then
+    echo "PR #$pr is $state"
+    exit 3
+  fi
+  if [ -n "$list" ] && [ "$list" = "$last" ]; then
+    echo "$list"
+    exit 0
+  fi
+  last="$list"
+  if [ "$(date +%s)" -ge "$deadline" ]; then
+    echo "nothing waits on PR #$pr after ${timeout}s"
+    exit 2
+  fi
+  sleep "$interval"
+done

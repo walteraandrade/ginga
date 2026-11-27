@@ -10,4 +10,6 @@ Issue #6 asked why a one-channel spring benchmarked slower than a four-channel o
 
 **Still open.** On x86 the bouncy (under-damped) one-channel spring still reports slower than four channels: 28 against 21 ns per frame. It is not the work. Valgrind counts 237 instructions per frame for one channel and 261 for four. The under-damped frame comes out at about 18 or about 28 ns depending on code layout, and small unrelated edits flip which case gets the slow layout. `#[inline(always)]` on `state`, `#[inline(never)]` on `phase`, multiplying by `sin / wd` instead of dividing, and aligning branches for the JCC erratum each moved the slow layout without removing it.
 
+Sharing the distance formula between `Phase::left` and `Phase::apply` through a helper was tried in review and reverted: valgrind counted 252 instructions per four-channel frame against 165, though the bench's one-channel bouncy case got faster with it. The bench alone would have called it a win.
+
 **So:** a few ns of difference between bench cases is not evidence by itself. Check instruction counts under valgrind before changing code for it.

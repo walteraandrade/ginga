@@ -264,14 +264,8 @@ pub fn main() {
             );
             record(name, folder);
         }
-        Some("--page") => {
-            let name = args.next().expect("--page takes a page's name");
-            gpui_platform::application().run(move |cx: &mut App| {
-                open(cx, Some(&name));
-            });
-        }
         Some(other) => {
-            panic!("unknown argument {other:?}: use --page <name> or --record <name> [folder]")
+            panic!("unknown argument {other:?}: use --record <page> [folder], or no argument")
         }
         None => gpui_platform::application().run(|cx: &mut App| {
             open(cx, None);

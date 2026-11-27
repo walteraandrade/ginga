@@ -66,7 +66,9 @@ pub enum Transition {
 impl Transition {
     /// The same transition, starting `delay` after the target is set. Until
     /// then the value holds still where it was, and a spring starts from rest.
-    /// A delayed [`Transition::Instant`] jumps to the target when the delay is over.
+    /// A delayed [`Transition::Instant`] jumps to the target when the delay is
+    /// over: it comes back as a zero-length [`Tween`] with that delay, so it no
+    /// longer matches `Transition::Instant`.
     ///
     /// To let items arrive one after another, give each a delay one step longer
     /// than the one before:

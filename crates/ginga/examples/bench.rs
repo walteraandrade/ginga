@@ -9,6 +9,9 @@
 //! target, and on frames after it settled. A mix of the two would hide a cost
 //! behind the share of frames spent at rest.
 //!
+//! Every number includes the timing loop's own cost, which the first row
+//! shows on its own.
+//!
 //! The rounds of all the cases are interleaved and each keeps its best: the
 //! machine's other work only ever adds time, and a slow spell of the machine
 //! then falls on every case alike.
@@ -103,6 +106,19 @@ fn retargeted<T: Animatable + 'static>(
     }
 }
 
+/// A frame that does nothing: what the timing loop itself costs, in every
+/// other case's numbers too.
+fn harness() -> Case {
+    Case {
+        name: "harness alone (an empty frame)",
+        frames: None,
+        moving: Some(round((0..60).map(|n| FRAME * n).collect(), |now| {
+            black_box(now);
+        })),
+        settled: None,
+    }
+}
+
 fn main() {
     let tween = Tween::new(Duration::from_millis(560), Easing::OutExpo);
     let bezier = Tween::new(
@@ -111,6 +127,7 @@ fn main() {
     );
     let four = ((0.0, 0.0, 0.0, 1.0), (300.0, 80.0, 12.0, 0.0));
     let mut cases = [
+        harness(),
         motion("at rest, 1 channel", 0.0, 0.0, Spring::SNAPPY),
         motion("spring, 1 channel", 0.0, 300.0, Spring::SNAPPY),
         motion("spring, 4 channels", four.0, four.1, Spring::SNAPPY),
@@ -135,12 +152,14 @@ fn main() {
             Spring::SNAPPY,
         ),
     ];
-    let mut best = [[f64::MAX; 2]; 8];
+    // Each case's best time, moving and settled; `None` for what it doesn't time.
+    let mut best = cases.each_ref().map(|_| [None::<f64>; 2]);
     for _ in 0..ROUNDS {
         for (case, best) in cases.iter_mut().zip(&mut best) {
             for (round, best) in [&mut case.moving, &mut case.settled].into_iter().zip(best) {
                 if let Some(round) = round {
-                    *best = best.min(round());
+                    let ns = round();
+                    *best = Some(best.map_or(ns, |old| old.min(ns)));
                 }
             }
         }
@@ -150,13 +169,8 @@ fn main() {
         "ns per frame of", "moving", "settled", "frames"
     );
     for (case, best) in cases.iter().zip(best) {
-        let [moving, settled] = best.map(|ns| {
-            if ns == f64::MAX {
-                "-".to_owned()
-            } else {
-                format!("{ns:.1}")
-            }
-        });
+        let [moving, settled] =
+            best.map(|ns| ns.map_or_else(|| "-".to_owned(), |ns| format!("{ns:.1}")));
         let frames = case
             .frames
             .map_or_else(|| "every".to_owned(), |n| n.to_string());

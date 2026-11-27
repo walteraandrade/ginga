@@ -198,6 +198,11 @@ impl Phase {
     /// The distance to the target of a channel released `offset` away from
     /// its target at `velocity`. The first half of [`Phase::apply`], for a
     /// frame that only draws: the velocity costs as much again.
+    ///
+    /// It repeats `apply`'s arithmetic, operation for operation, so the two
+    /// agree to the bit; a test checks it. Sharing the code through a helper
+    /// cost a four-channel frame 252 instructions against 165 (valgrind), so
+    /// the copy stays: change both together.
     pub(crate) fn left(&self, offset: f32, velocity: f32) -> f32 {
         match *self {
             Self::Critical { w, t, decay } => (offset + (velocity + w * offset) * t) * decay,

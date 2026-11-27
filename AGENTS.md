@@ -2,6 +2,12 @@
 
 ginga: motion for Rust UIs, as a pure function of time. The README says what it is and shows the whole API. These are the rules that keep it that way.
 
+## Memory: `brain/`
+
+- Read [`brain/index.md`](brain/index.md) before working. It links the principles behind these rules, the decisions already made, and gotchas in the code.
+- Words mean what [`brain/glossary.md`](brain/glossary.md) says; use them in issues, pull requests, docs and names. A new word goes there in the same change.
+- When a session learns something a different task would need (a decision, its reasons, a trap in the code), write it to `brain/` in the same pull request, following the rules in `brain/index.md`.
+
 ## Before you finish
 
 ```sh

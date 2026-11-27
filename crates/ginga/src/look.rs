@@ -431,12 +431,35 @@ macro_rules! values {
             /// ```
             #[must_use]
             pub fn delay(self, delay: Duration) -> Self {
+                self.each(|transition| transition.delay(transition.start_delay().saturating_add(delay)))
+            }
+
+            /// The same timings with no motion: each value, defaults
+            /// included, holds still for its own delay and is then at its
+            /// target at once (see [`Transition::without_motion`]).
+            ///
+            /// ```
+            /// use std::time::Duration;
+            /// use ginga::{Easing, Look, LookMotion, Transitions, Tween};
+            ///
+            /// let ms = Duration::from_millis;
+            /// let late = Transitions::new().opacity(Tween::new(ms(100), Easing::Linear).delay(ms(30)));
+            /// let mut row = LookMotion::at(Look::new().opacity(0.0).width(0.0));
+            /// row.set_target(Look::new().opacity(1.0).width(10.0), late.without_motion(), ms(0));
+            /// assert_eq!(row.sample(ms(0)).value, Look::new().opacity(0.0).width(10.0));
+            /// assert_eq!(row.sample(ms(30)).value, Look::new().opacity(1.0).width(10.0));
+            /// ```
+            #[must_use]
+            pub fn without_motion(self) -> Self {
+                self.each(Transition::without_motion)
+            }
+
+            /// Every value resolved, defaults included, then changed by `f`:
+            /// the one place that resolves them all.
+            fn each(self, f: impl Fn(Transition) -> Transition) -> Self {
                 Self {
                     own: Layer {
-                        $($field: Some({
-                            let transition = self.named(|layer| layer.$field).unwrap_or($default);
-                            transition.delay(transition.start_delay().saturating_add(delay))
-                        }),)*
+                        $($field: Some(f(self.named(|layer| layer.$field).unwrap_or($default))),)*
                     },
                     all: None,
                     under: Layer::EMPTY,

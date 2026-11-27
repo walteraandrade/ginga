@@ -19,7 +19,8 @@
 //! ```
 //!
 //! `toward` reads the frame's clock, asks GPUI for another frame while the
-//! value is moving, and moves at once when the desktop asks for reduced motion.
+//! value is moving, and moves at once when the desktop asks for reduced motion,
+//! once the transition's delay, if it has one, is over.
 
 #![forbid(unsafe_code)]
 
@@ -226,18 +227,21 @@ impl Clock {
     }
 }
 
-/// The transition to use this frame: `transition`, or none at all when the
-/// desktop asks for reduced motion.
+/// The transition to use this frame: `transition`, or, when the desktop asks
+/// for reduced motion, the same with no motion. A delay is timing, not
+/// motion, so it is kept: the value holds still until it is over, then is at
+/// its target at once ([`Transition::without_motion`]).
 pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition {
+    let transition = transition.into();
     if reduced(cx) {
-        Transition::Instant
+        transition.without_motion()
     } else {
-        transition.into()
+        transition
     }
 }
 
-/// The desktop asks for reduced motion: then every motion in the adapter is
-/// at its target at once. The one place that asks.
+/// The desktop asks for reduced motion: then every motion in the adapter
+/// drops its motion, and is at its target at once after its delay. The one place that asks.
 fn reduced(cx: &App) -> bool {
     cx.reduce_motion()
 }
@@ -263,7 +267,8 @@ impl<T: Animate> Motion<T> {
     ///
     /// Call it while rendering the view that owns the motion. While the value
     /// is moving it asks GPUI to render that view again on the next frame.
-    /// When the desktop asks for reduced motion the value is at `target` at once.
+    /// When the desktop asks for reduced motion the value is at `target` at
+    /// once, after the transition's delay (see [`unless_reduced`]).
     pub fn toward(
         &mut self,
         target: T,
@@ -314,7 +319,8 @@ impl<T: Animate> Motion<T> {
 /// }
 /// ```
 ///
-/// `show` and `hide` move at once when the desktop asks for reduced motion.
+/// `show` and `hide` move at once when the desktop asks for reduced motion,
+/// after the transition's delay (see [`unless_reduced`]).
 #[derive(Debug, Clone)]
 pub struct Presence<T> {
     presence: ginga::Presence<T>,

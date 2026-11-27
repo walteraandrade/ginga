@@ -36,12 +36,16 @@ fn next_frame<V: Render>(window: &WindowHandle<V>, cx: &mut TestAppContext) -> u
 struct Panel {
     width: Motion<Pixels>,
     target: Pixels,
+    /// How long the glide waits before it starts.
+    delay: Duration,
     drawn: Rc<RefCell<Vec<Pixels>>>,
 }
 
 impl Render for Panel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let width = self.width.toward(self.target, glide(), window, cx);
+        let width = self
+            .width
+            .toward(self.target, glide().delay(self.delay), window, cx);
         self.drawn.borrow_mut().push(width);
         div().w(width)
     }
@@ -54,6 +58,7 @@ fn open_panel(cx: &mut TestAppContext) -> (WindowHandle<Panel>, Rc<RefCell<Vec<P
         move |_, _| Panel {
             width: Motion::at(px(0.)),
             target: px(0.),
+            delay: Duration::ZERO,
             drawn,
         }
     });
@@ -113,6 +118,41 @@ fn toward_moves_at_once_under_reduced_motion(cx: &mut TestAppContext) {
     set_target(&window, px(100.), cx);
     assert_eq!(*drawn.borrow().last().unwrap(), px(100.));
     assert_eq!(next_frame(&window, cx), 0);
+}
+
+#[gpui::test]
+fn toward_keeps_the_delay_under_reduced_motion(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let (window, drawn) = open_panel(cx);
+    window
+        .update(cx, |panel, _, _| panel.delay = ms(160))
+        .unwrap();
+    set_target(&window, px(100.), cx);
+    assert_eq!(*drawn.borrow().last().unwrap(), px(0.), "it holds still");
+    cx.executor().advance_clock(ms(150));
+    assert_eq!(next_frame(&window, cx), 1);
+    assert_eq!(*drawn.borrow().last().unwrap(), px(0.));
+    cx.executor().advance_clock(ms(10));
+    assert_eq!(next_frame(&window, cx), 1);
+    assert_eq!(*drawn.borrow().last().unwrap(), px(100.), "then at once");
+    assert_eq!(next_frame(&window, cx), 0, "and settled");
+}
+
+#[gpui::test]
+fn show_keeps_its_delay_under_reduced_motion(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let (window, drawn) = open_toaster(cx);
+    window
+        .update(cx, |toaster, _, cx| {
+            toaster.toast.show(Rc::new(()), glide().delay(ms(100)), cx);
+            cx.notify();
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(last(&drawn), Some((Phase::Entering, 0.0)));
+    cx.executor().advance_clock(ms(100));
+    next_frame(&window, cx);
+    assert_eq!(last(&drawn), Some((Phase::Present, 1.0)));
 }
 
 /// Each frame of a presence: its phase and progress, or nothing drawn.

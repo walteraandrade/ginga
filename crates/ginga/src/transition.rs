@@ -55,7 +55,8 @@ impl Tween {
 /// How a [`Motion`](crate::Motion) gets to its target.
 #[derive(Debug, Clone, Copy)]
 pub enum Transition {
-    /// No motion: the value is at its target at once. Use it for reduced motion.
+    /// No motion: the value is at its target at once. For reduced motion,
+    /// [`without_motion`](Self::without_motion) keeps a transition's delay.
     Instant,
     /// A spring. Keeps the value's speed across a change of target.
     Spring(Spring),
@@ -98,8 +99,29 @@ impl Transition {
         }
     }
 
+    /// The same timing with no motion: it holds still for this transition's
+    /// delay, then is at its target at once. For reduced motion, where a
+    /// delay can carry meaning of its own, such as hover intent.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Easing, Motion, Transition, Tween};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let intent = Transition::from(Tween::new(ms(260), Easing::OutExpo).delay(ms(160)));
+    /// let mut card = Motion::at(0.0);
+    /// card.set_target(1.0, intent.without_motion(), ms(0));
+    /// assert_eq!(card.sample(ms(159)).value, 0.0);
+    /// assert_eq!(card.sample(ms(160)).value, 1.0);
+    /// assert!(card.sample(ms(160)).settled);
+    /// ```
+    #[must_use]
+    pub const fn without_motion(self) -> Self {
+        Self::Instant.delay(self.start_delay())
+    }
+
     /// How long after the target is set the motion starts.
-    pub(crate) fn start_delay(self) -> Duration {
+    pub(crate) const fn start_delay(self) -> Duration {
         match self {
             Self::Instant => Duration::ZERO,
             Self::Spring(spring) => spring.delay,

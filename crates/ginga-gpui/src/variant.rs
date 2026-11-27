@@ -41,7 +41,7 @@ use crate::Clock;
 /// ```
 ///
 /// Clones share one variant. Under reduced motion every element takes its
-/// look at once, with no schedule.
+/// look at once, with no schedule, after only its own transition's delay.
 #[derive(Debug)]
 pub struct Variant<N>(Rc<RefCell<State<N>>>);
 

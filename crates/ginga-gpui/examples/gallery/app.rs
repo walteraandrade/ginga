@@ -93,7 +93,7 @@ impl Page {
             Page::new(
                 "pulse",
                 "A mark breathes and three dots pulse, through keyframes that repeat.",
-                cx.new(|_| Pulse::new()),
+                cx.new(Pulse::new),
                 Pulse::play,
             ),
             Page::new(

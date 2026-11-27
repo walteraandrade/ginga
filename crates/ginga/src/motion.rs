@@ -531,8 +531,12 @@ mod tests {
         motion.set_target(100.0, Spring::SMOOTH, ms(0));
         let caught = motion.sample(ms(80)).value;
         motion.set_target(-50.0, Spring::SMOOTH.delay(ms(100)), ms(80));
-        for millis in [80, 120, 179] {
-            assert_eq!(motion.sample(ms(millis)).value, caught, "at {millis} ms");
+        // The spring is kept as an offset from its target, so the value it
+        // holds is `caught` to within rounding, and the same all through.
+        let held = motion.sample(ms(80)).value;
+        assert!((held - caught).abs() < 1e-4, "{held} holds {caught}");
+        for millis in [80, 120, 179, 180] {
+            assert_eq!(motion.sample(ms(millis)).value, held, "at {millis} ms");
             assert!(!motion.sample(ms(millis)).settled, "waiting is not settled");
             assert_eq!(motion.velocity(ms(millis)), [0.0]);
         }

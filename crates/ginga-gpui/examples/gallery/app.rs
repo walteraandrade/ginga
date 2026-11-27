@@ -196,7 +196,10 @@ fn record(name: String, folder: PathBuf) {
             timer.timer(SETTLE).await;
             fs::create_dir_all(&folder).expect("the record folder can be made");
             for old in fs::read_dir(&folder).into_iter().flatten().flatten() {
-                if old.file_name().to_string_lossy().starts_with("frame-") {
+                // An old contact sheet goes too, so a failed run leaves none behind.
+                let name = old.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with("frame-") || name == "contact.png" {
                     let _ = fs::remove_file(old.path());
                 }
             }

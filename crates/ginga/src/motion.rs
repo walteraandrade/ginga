@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use crate::{Animatable, Easing, Spring, Transition, Tween};
+use crate::{Animatable, Coast, Easing, Spring, Transition, Tween};
 
 /// A value on its way to a target.
 ///
@@ -61,6 +61,13 @@ enum Drive<C> {
         tween: Tween,
         start: Duration,
         from: C,
+    },
+    Coast {
+        coast: Coast,
+        start: Duration,
+        /// The speed each channel was let go with.
+        velocity: C,
+        settle: Duration,
     },
 }
 
@@ -145,6 +152,108 @@ impl<T: Animatable> Motion<T> {
         };
     }
 
+    /// Lets the value go at `now` with `velocity`, in units per second: it
+    /// coasts on and slows to a stop where [`Coast::rest`] says.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Coast, Motion};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let mut card = Motion::at(0.0);
+    /// card.coast(1_000.0, Coast::QUICK, ms(0));
+    /// assert_eq!(card.target(), 100.0);
+    /// assert!(card.sample(ms(100)).value > 60.0); // most of the way in one time constant
+    /// assert_eq!(card.sample(ms(2_000)).value, 100.0);
+    /// ```
+    pub fn coast(&mut self, velocity: T, coast: Coast, now: Duration) {
+        let from = self.state(now, Read::Value).value;
+        let velocity = velocity.to_channels();
+        let mut seconds = 0f32;
+        for speed in velocity.as_ref() {
+            seconds = seconds.max(coast.settle_secs(*speed, T::PRECISION));
+        }
+        self.target = coast
+            .rest(T::from_channels(from), T::from_channels(velocity))
+            .to_channels();
+        self.drive = if seconds > 0.0 {
+            Drive::Coast {
+                coast,
+                start: now,
+                velocity,
+                settle: now.saturating_add(Duration::from_secs_f32(seconds)),
+            }
+        } else {
+            Drive::Rest
+        };
+    }
+
+    /// As [`coast`](Self::coast), but it comes to rest with every channel
+    /// within `min..=max`: a value that would coast past a limit moves with
+    /// the coast's spring to that limit instead, keeping its speed, so it
+    /// passes the limit a little and comes back.
+    pub fn coast_within(&mut self, velocity: T, coast: Coast, min: T, max: T, now: Duration) {
+        let from = T::from_channels(self.state(now, Read::Value).value);
+        let mut rest = coast.rest(from, velocity).to_channels();
+        let mut past = false;
+        for ((place, low), high) in rest
+            .as_mut()
+            .iter_mut()
+            .zip(min.to_channels().as_ref())
+            .zip(max.to_channels().as_ref())
+        {
+            let inside = place.clamp(*low, high.max(*low));
+            past |= inside != *place;
+            *place = inside;
+        }
+        if past {
+            self.fling(rest, coast.spring, velocity.to_channels(), now);
+        } else {
+            self.coast(velocity, coast, now);
+        }
+    }
+
+    /// As [`coast`](Self::coast), but it comes to rest on whichever of
+    /// `points` is nearest to where it would coast to, moving there with the
+    /// coast's spring and keeping its speed. With no points it coasts.
+    pub fn coast_to_nearest(&mut self, velocity: T, coast: Coast, points: &[T], now: Duration) {
+        let from = T::from_channels(self.state(now, Read::Value).value);
+        let rest = coast.rest(from, velocity).to_channels();
+        let distance = |point: &T| -> f32 {
+            point
+                .to_channels()
+                .as_ref()
+                .iter()
+                .zip(rest.as_ref())
+                .map(|(a, b)| (a - b) * (a - b))
+                .sum()
+        };
+        let nearest = points
+            .iter()
+            .min_by(|a, b| distance(a).total_cmp(&distance(b)));
+        match nearest {
+            Some(point) => self.fling(
+                point.to_channels(),
+                coast.spring,
+                velocity.to_channels(),
+                now,
+            ),
+            None => self.coast(velocity, coast, now),
+        }
+    }
+
+    /// Heads for `target` with `spring`, from where the value is at `now` and
+    /// with `velocity` instead of the speed it had.
+    fn fling(&mut self, target: T::Channels, spring: Spring, velocity: T::Channels, now: Duration) {
+        let state = State {
+            value: self.state(now, Read::Value).value,
+            velocity,
+            settled: false,
+        };
+        self.target = target;
+        self.drive = self.spring(spring, &state, now);
+    }
+
     /// Puts the value at `value`, at rest, with no motion.
     pub fn jump_to(&mut self, value: T) {
         *self = Self::at(value);
@@ -181,6 +290,7 @@ impl<T: Animatable> Motion<T> {
             Drive::Rest => None,
             Drive::Spring { settle, .. } => Some(settle),
             Drive::Tween { tween, start, .. } => Some(start.saturating_add(tween.duration)),
+            Drive::Coast { settle, .. } => Some(settle),
         }
     }
 
@@ -232,7 +342,7 @@ impl<T: Animatable> Motion<T> {
         };
         match self.drive {
             Drive::Rest => resting,
-            Drive::Spring { settle, .. } if now >= settle => resting,
+            Drive::Spring { settle, .. } | Drive::Coast { settle, .. } if now >= settle => resting,
             Drive::Tween { tween, start, .. } if now >= start.saturating_add(tween.duration) => {
                 resting
             }
@@ -296,6 +406,25 @@ impl<T: Animatable> Motion<T> {
                 State {
                     value,
                     velocity,
+                    settled: false,
+                }
+            }
+            Drive::Coast {
+                coast,
+                start,
+                velocity,
+                ..
+            } => {
+                let seconds = now.saturating_sub(start).as_secs_f32();
+                let (mut value, mut speeds) = (self.target, velocity);
+                for (place, speed) in value.as_mut().iter_mut().zip(speeds.as_mut()) {
+                    let (left, moving) = coast.left(*speed, seconds);
+                    *place -= left;
+                    *speed = moving;
+                }
+                State {
+                    value,
+                    velocity: speeds,
                     settled: false,
                 }
             }

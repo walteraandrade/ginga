@@ -326,6 +326,30 @@ assert_eq!(at_100.opacity, Some(1.0));        // the fade is over
 assert!(at_100.offset.unwrap().1 > 0.0);       // the spring is still on its way
 ```
 
+### A look for a moment
+
+An element can take another look while the pointer is over it, while it is pressed, and while it has the keyboard focus. Each one names only what changes, and is laid over the element's own look with `Look::or`. Pressed wins over hover, and hover wins over focused. When the moment ends, the element goes back the same way, from where it is: a pointer that crosses quickly turns the motion around without a jump. The element's own handlers still run.
+
+```rust,ignore
+div()
+    .id("save")
+    .track_focus(&self.focus)
+    .on_click(cx.listener(|this, _, _, cx| this.save(cx)))
+    .look("save", Look::new().size(120., 40.).background(fill), Spring::SNAPPY)
+    .hover(Look::new().size(128., 44.))
+    .pressed(Look::new().size(112., 36.))
+    .focused(&self.focus, Look::new().border_color(ring))
+```
+
+`Look::or` lays any two looks over each other:
+
+```rust
+use ginga::Look;
+
+let rest = Look::new().size(120.0, 40.0).opacity(0.8);
+assert_eq!(Look::new().opacity(1.0).or(rest), Look::new().size(120.0, 40.0).opacity(1.0));
+```
+
 ## An element to drag
 
 `.draggable(&state, drag)` lets the pointer drag any styled element. While it is held it is exactly under the pointer, with no spring between them; let go, it keeps the pointer's speed and coasts. A `Drag` says how: `.along(Axis::Horizontal)`, `.within(min, max)` to spring back inside limits, `.snap_to(points)` to come to rest on the nearest one, and `.coast(Coast::SLOW)`. The view owns a `DragState`, `DragState::default()` or `DragState::at(offset)`: `offset()` is where the element was last drawn, `rest()` where it comes to rest, `is_held()` whether the pointer holds it, and `throw(velocity, &drag, cx)` lets it go as a pointer would, for a key or a button.

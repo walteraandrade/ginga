@@ -138,7 +138,9 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 ## Looks
 
-**Look** (`Look`). How a thing should look: an offset from its own place, an opacity, a width, a height, a corner radius, and a background, text and border color, each optional. A value a look does not name is left to whoever draws; on an element, it stays the element's own style.
+**Look** (`Look`). How a thing should look: an offset from its own place, an opacity, a width, a height, a corner radius, and a background, text and border color, each optional. A value a look does not name is left to whoever draws; on an element, it stays the element's own style. `a.or(b)` lays look `a` over `b`: what `a` names, else what `b` names.
+
+**Hover, pressed and focused looks** (`Looked::hover`, `pressed`, `focused`). Looks an element takes for a moment: while the pointer is over it, while it is pressed with the left button (a release anywhere ends it), and while a focus handle has the keyboard focus. Each is laid over the element's own look; pressed over hover over focused.
 
 **Color** (`Color`). Red, green and blue as sRGB and an alpha, each from `0.0` to `1.0`, written with `Color::hex(0xRRGGBB)` or `ginga_gpui::color(rgb(..))`. It moves in linear light with its alpha premultiplied, so between two colors there are only colors between them ([the decision](decisions/2026-11-27-colors-mix-in-linear-light-premultiplied.md)).
 

@@ -1,11 +1,16 @@
 //! A look declared on an element: the element gets there by itself.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use ginga::{Color, Look, LookMotion, Transition, Transitions};
 use gpui::{
-    AnyElement, App, Bounds, Element, ElementId, Global, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, ParentElement, Pixels, Position, Rgba, Styled, Window, px,
+    AnyElement, App, Bounds, DispatchPhase, Element, ElementId, FocusHandle, Global,
+    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Position,
+    Rgba, Styled, Window, px,
 };
 
 use crate::{Animate, Clock, reduced};
@@ -64,6 +69,16 @@ pub struct LookState(Rc<RefCell<Option<Moving>>>);
 struct Moving {
     motion: LookMotion,
     clock: Clock,
+    /// Whether the pointer is over the element and presses it, as its
+    /// listeners last heard. Shared with them, as they live past the frame.
+    gestures: Rc<Cell<Gestures>>,
+}
+
+/// What the pointer is doing to an element.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Gestures {
+    hovered: bool,
+    pressed: bool,
 }
 
 /// Where an element's look motion is kept.
@@ -84,12 +99,22 @@ enum Keep {
 ///
 /// It asks for frames only while the look moves, and takes each new look at
 /// once when the desktop asks for reduced motion.
+///
+/// It can take another look for a moment: [`hover`](Self::hover) while the
+/// pointer is over it, [`pressed`](Self::pressed) while it is pressed, and
+/// [`focused`](Self::focused) while it has the keyboard focus. Each is laid
+/// over the declared look with [`Look::or`], so it names only what changes;
+/// pressed wins over hover, which wins over focused. When the moment ends the
+/// element goes back the same way, from where it is.
 pub struct Looked<E> {
     element: Option<E>,
     keep: Keep,
     look: Look,
     from: Option<Look>,
     transitions: Transitions,
+    hover: Option<Look>,
+    pressed: Option<Look>,
+    focused: Option<(FocusHandle, Look)>,
 }
 
 impl<E: Styled + IntoElement + 'static> Looked<E> {
@@ -104,6 +129,9 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             look,
             from: None,
             transitions,
+            hover: None,
+            pressed: None,
+            focused: None,
         }
     }
 
@@ -115,18 +143,72 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         self
     }
 
-    /// This frame's look: moves the motion in `moving` toward the declared
+    /// The look while the pointer is over the element, laid over its own.
+    /// The element's own mouse handlers still run.
+    #[must_use]
+    pub fn hover(mut self, look: Look) -> Self {
+        self.hover = Some(look);
+        self
+    }
+
+    /// The look while the element is pressed with the left button, laid over
+    /// its own; it wins over [`hover`](Self::hover). A release anywhere ends
+    /// it. The element's own click handlers still run.
+    #[must_use]
+    pub fn pressed(mut self, look: Look) -> Self {
+        self.pressed = Some(look);
+        self
+    }
+
+    /// The look while `focus` has the keyboard focus, laid over the
+    /// element's own. Give the element the same handle with `track_focus`.
+    #[must_use]
+    pub fn focused(mut self, focus: &FocusHandle, look: Look) -> Self {
+        self.focused = Some((focus.clone(), look));
+        self
+    }
+
+    /// The pointer's looks are wanted: the element listens to the pointer.
+    fn hears_the_pointer(&self) -> bool {
+        self.hover.is_some() || self.pressed.is_some()
+    }
+
+    /// The look the element heads for now: its own, with the looks of the
+    /// moments it is in laid over it.
+    fn wanted(&self, gestures: Gestures, window: &Window) -> Look {
+        let mut look = self.look;
+        if let Some((focus, focused)) = &self.focused
+            && focus.is_focused(window)
+        {
+            look = focused.or(look);
+        }
+        if let Some(hover) = self.hover
+            && gestures.hovered
+        {
+            look = hover.or(look);
+        }
+        if let Some(pressed) = self.pressed
+            && gestures.pressed
+        {
+            look = pressed.or(look);
+        }
+        look
+    }
+
+    /// This frame's look: moves the motion in `moving` toward the wanted
     /// look, or starts one when there is none, and asks for a frame while it
     /// moves.
     fn frame(&self, moving: Option<Moving>, window: &mut Window, cx: &App) -> (Look, Moving) {
         let mut moving = moving.unwrap_or_else(|| Moving {
             motion: LookMotion::at(self.from.unwrap_or(self.look)),
             clock: Clock::default(),
+            gestures: Rc::default(),
         });
+        let look = self.wanted(moving.gestures.get(), window);
         let now = moving.clock.now(cx);
         // The transitions are read only when the look changes, so they are
         // laid over the app's only then, not on every frame.
-        let transitions = if moving.motion.target() == self.look {
+        let transitions = if moving.motion.target() == look {
             Transitions::new()
         } else if reduced(cx) {
             // Every value at once: a value's own transition would otherwise
@@ -136,7 +218,7 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             let app = cx.try_global::<AppTransitions>().map(|app| app.0);
             self.transitions.or(app.unwrap_or_default())
         };
-        let sample = moving.motion.toward(self.look, transitions, now);
+        let sample = moving.motion.toward(look, transitions, now);
         if !sample.settled {
             window.request_animation_frame();
         }
@@ -221,8 +303,10 @@ impl<E: Styled + IntoElement + 'static> IntoElement for Looked<E> {
 }
 
 impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
-    type RequestLayoutState = AnyElement;
-    type PrepaintState = ();
+    /// The element, and what the pointer is doing to it.
+    type RequestLayoutState = (AnyElement, Rc<Cell<Gestures>>);
+    /// Where the pointer is heard, when a look for it is wanted.
+    type PrepaintState = Option<Hitbox>;
 
     fn id(&self) -> Option<ElementId> {
         match &self.keep {
@@ -241,34 +325,38 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         _inspector_id: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, AnyElement) {
-        let look = match (&self.keep, id) {
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let (look, gestures) = match (&self.keep, id) {
             (Keep::Owned(state), _) => {
                 let mut slot = state.0.borrow_mut();
                 let (look, moving) = self.frame(slot.take(), window, cx);
+                let gestures = moving.gestures.clone();
                 *slot = Some(moving);
-                look
+                (look, gestures)
             }
-            (Keep::Id(_), Some(id)) => {
-                window.with_element_state(id, |moving, window| self.frame(moving, window, cx))
-            }
+            (Keep::Id(_), Some(id)) => window.with_element_state(id, |moving, window| {
+                let (look, moving) = self.frame(moving, window, cx);
+                ((look, moving.gestures.clone()), moving)
+            }),
             (Keep::Id(_), None) => unreachable!("an element with an id is laid out with one"),
         };
         let element = self.element.take().expect("an element is laid out once");
         let mut element = styled(element, look).into_any_element();
-        (element.request_layout(window, cx), element)
+        (element.request_layout(window, cx), (element, gestures))
     }
 
     fn prepaint(
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
-        element: &mut AnyElement,
+        bounds: Bounds<Pixels>,
+        (element, _): &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
-    ) {
+    ) -> Option<Hitbox> {
         element.prepaint(window, cx);
+        self.hears_the_pointer()
+            .then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal))
     }
 
     fn paint(
@@ -276,13 +364,56 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
-        element: &mut AnyElement,
-        (): &mut (),
+        (element, gestures): &mut Self::RequestLayoutState,
+        hitbox: &mut Option<Hitbox>,
         window: &mut Window,
         cx: &mut App,
     ) {
         element.paint(window, cx);
+        if let Some(hitbox) = hitbox.take() {
+            listen(gestures, hitbox, window);
+        }
     }
+}
+
+/// Listens to the pointer for an element's hover and pressed looks. After
+/// each change it draws again the view that drew the element, and no other.
+/// It stops nothing, so the element's own handlers run as they would.
+fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, window: &mut Window) {
+    let view = window.current_view();
+    let change = move |gestures: &Cell<Gestures>, cx: &mut App, f: &dyn Fn(&mut Gestures)| {
+        let mut now = gestures.get();
+        f(&mut now);
+        if now != gestures.get() {
+            gestures.set(now);
+            cx.notify(view);
+        }
+    };
+    let (on_move, over) = (gestures.clone(), hitbox.clone());
+    window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
+        if phase == DispatchPhase::Capture {
+            let hovered = over.is_hovered(window);
+            change(&on_move, cx, &|now| now.hovered = hovered);
+        }
+    });
+    let on_down = gestures.clone();
+    window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+        if phase == DispatchPhase::Bubble
+            && event.button == MouseButton::Left
+            && hitbox.is_hovered(window)
+        {
+            change(&on_down, cx, &|now| {
+                now.pressed = true;
+                now.hovered = true;
+            });
+        }
+    });
+    let on_up = gestures.clone();
+    window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+        if phase == DispatchPhase::Capture && event.button == MouseButton::Left {
+            change(&on_up, cx, &|now| now.pressed = false);
+        }
+    });
 }
 
 #[cfg(test)]

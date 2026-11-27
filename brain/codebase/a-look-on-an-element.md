@@ -15,6 +15,14 @@ A `Looked` with a `LookState` reports no id, so it adds no level to the element'
 - Opacity is clamped to `0..=1`, width, height and radius to `0` and up: a bouncy spring passes its target, and GPUI should not get a negative size.
 - Colors (`bg`, `text_color`, `border_color`) go to GPUI as they are, with no clamp here: `Color::new` holds a color to its range when it is built, and `Color::from_channels` holds each channel there while it moves, dividing by the alpha before clamping it so a spring past full alpha keeps the hue.
 
+## Hover, pressed and focused
+
+- The pointer's state (hovered, pressed) lives in an `Rc<Cell<Gestures>>` inside the element's motion state, because the window's mouse listeners live past the frame that registered them. `request_layout` reads it to choose the look, and hands the cell to `paint` through the layout state.
+- A hitbox is inserted in `prepaint` only when a hover or pressed look is given, so a plain look costs nothing more.
+- The listeners are window-wide, like the drag's. The move listener is in the capture phase, so nothing under the pointer can stop it. The press is in the bubble phase and checks the hitbox. The release is in the capture phase and is heard anywhere. None of them stops propagation, so the element's own `on_click` still runs. After a change they notify the view that drew the element (`window.current_view()`), and no other.
+- The focused look reads `FocusHandle::is_focused` while laying out. A change of focus redraws the window, so no listener is needed. The element itself has to `track_focus` the same handle.
+- `Gestures` is `pub` in a private module: it appears in `Looked`'s `Element` impl, which is public, but it cannot be named outside the crate.
+
 ## Settled
 
 The look is settled when every value it names is; a value it stopped naming may still be moving in the look motion, and is neither drawn nor waited for.

@@ -1,4 +1,4 @@
-# Crate names: `ginga` and `ginga-gpui`, not published yet
+# Crate names: `ginga` and `ginga-gpui`
 
 **Chosen.** The engine is `ginga` and the GPUI adapter is `ginga-gpui`. Both crates stay `publish = false`. Issue #2, pull request #16, which refers to #2 and does not close it.
 
@@ -14,3 +14,5 @@
 4. Both crates show the root README, GPUI section included, and its relative links (`docs/`, `brain/`) do not resolve on crates.io. Decide whether each crate gets a README of its own.
 
 Then `cargo publish -p ginga`, then `cargo publish -p ginga-gpui`. Write that decision in a new file here.
+
+**Later.** Waltinho kept these names and chose to publish them: [[decisions/2026-11-27-publish-on-crates-io]].

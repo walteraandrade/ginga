@@ -20,7 +20,8 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 ## Decisions
 
 - [[decisions/2026-11-27-license]]: MIT OR Apache-2.0 (#1).
-- [[decisions/2026-11-27-crate-names]]: `ginga` and `ginga-gpui`, not published yet (#2).
+- [[decisions/2026-11-27-crate-names]]: `ginga` and `ginga-gpui` (#2).
+- [[decisions/2026-11-27-publish-on-crates-io]]: published as 0.1.0 under the same names; how to release (#2).
 - [[decisions/2026-11-27-minimum-rust-versions]]: 1.87 for the engine, 1.95 for the adapter (#3).
 - [[decisions/2026-11-27-stagger-is-a-delay-on-the-transition]]: stagger is a delay on the transition (#8).
 - [[decisions/2026-11-27-a-brain-folder-for-memory]]: this folder, and why not a memory server (#36).

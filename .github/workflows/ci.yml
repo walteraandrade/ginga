@@ -45,6 +45,8 @@ jobs:
       - run: cargo fmt -p ginga --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      # What goes to crates.io builds on its own, and its README examples pass.
+      - run: cargo package --locked -p ginga
 
   adapter:
     name: gpui adapter (Rust ${{ needs.versions.outputs.adapter }})

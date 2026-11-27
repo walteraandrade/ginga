@@ -23,25 +23,31 @@ ginga has two goals, in this order.
 - `Trace` writes a motion down as a table of times and values, in a stable format: a test asserts on it, and a change in motion shows up as a diff ([Motion as text](#motion-as-text)).
 - The API is small and named in plain words (`toward`, `jump_to`, `settled`). This README shows it, and its engine examples run as tests; the GPUI ones are sketches, checked by the adapter's own tests.
 - An invalid value does not build, and the error says what to use instead.
-- The rules for a change are in [AGENTS.md](AGENTS.md), and the reasons and decisions behind them in [`brain/`](brain/index.md), so an agent that starts cold knows what was already decided.
+- The rules for a change are in [AGENTS.md](https://github.com/walteraandrade/ginga/blob/main/AGENTS.md), and the reasons and decisions behind them in [`brain/`](https://github.com/walteraandrade/ginga/blob/main/brain/index.md), so an agent that starts cold knows what was already decided.
 
 When the two pull apart, performance wins.
 
 ## Status
 
-Early work, and not on crates.io yet. Two crates:
+Early work: until 1.0, a new minor version can change the API. Two crates, on crates.io:
 
 | Crate | What it is | Depends on |
 | --- | --- | --- |
-| [`ginga`](crates/ginga) | The engine: springs, tweens, keyframes, coasting, colors, looks, presences and slots, derived values, sequences, trails and the trace. | nothing |
-| [`ginga-gpui`](crates/ginga-gpui) | GPUI views: the frame's clock and frame requests, reduced motion, a look declared on an element, ways in and out, shared elements, dragging, loops and islands. | `gpui-pre =0.3.12`, the GPUI that `gpui-kit` 0.9.1 builds on |
+| [`ginga`](https://github.com/walteraandrade/ginga/tree/main/crates/ginga) | The engine: springs, tweens, keyframes, coasting, colors, looks, presences and slots, derived values, sequences, trails and the trace. | nothing |
+| [`ginga-gpui`](https://github.com/walteraandrade/ginga/tree/main/crates/ginga-gpui) | GPUI views: the frame's clock and frame requests, reduced motion, a look declared on an element, ways in and out, shared elements, dragging, loops and islands. | `gpui-pre =0.3.12`, the GPUI that `gpui-kit` 0.9.1 builds on |
 
-Until they are published, depend on them from GitHub:
+```toml
+[dependencies]
+ginga = "0.1"
+ginga-gpui = "0.1" # for GPUI views
+```
+
+To follow `main` instead, depend on them from GitHub, both from the same revision:
 
 ```toml
 [dependencies]
 ginga = { git = "https://github.com/walteraandrade/ginga" }
-ginga-gpui = { git = "https://github.com/walteraandrade/ginga" } # for GPUI views
+ginga-gpui = { git = "https://github.com/walteraandrade/ginga" }
 ```
 
 `ginga-gpui` pins one GPUI, `gpui-pre =0.3.12`: an app must use the same one, or the types do not match. It also re-exports the engine as `ginga_gpui::ginga`.
@@ -528,7 +534,7 @@ div()
     .child(dot.clone())
 ```
 
-Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops, a frame cost the main thread about 19 to 22 ms with the island and 48 to 50 ms without it, and the heavy view did not render again while the dot moved: [the measurement](docs/measurements/2026-11-27-island-alone/README.md) (software rendering, no GPU). In an app it depends on what else asks for frames: in Desafinado a frame that skipped the heavy view cost about 40 % less, but only one frame in four skipped it: [that measurement](docs/measurements/2026-11-26-ai-caret-island/README.md). With the requests tray's marks in an island too, most frames of a Review skip it, and the Review draws about 17 % less: [the next one](docs/measurements/2026-11-27-tray-marks/README.md). Two loops in two views draw on their own beats, so the window can draw more frames than either asks for.
+Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops, a frame cost the main thread about 19 to 22 ms with the island and 48 to 50 ms without it, and the heavy view did not render again while the dot moved: [the measurement](https://github.com/walteraandrade/ginga/blob/main/docs/measurements/2026-11-27-island-alone/README.md) (software rendering, no GPU). In an app it depends on what else asks for frames: in Desafinado a frame that skipped the heavy view cost about 40 % less, but only one frame in four skipped it: [that measurement](https://github.com/walteraandrade/ginga/blob/main/docs/measurements/2026-11-26-ai-caret-island/README.md). With the requests tray's marks in an island too, most frames of a Review skip it, and the Review draws about 17 % less: [the next one](https://github.com/walteraandrade/ginga/blob/main/docs/measurements/2026-11-27-tray-marks/README.md). Two loops in two views draw on their own beats, so the window can draw more frames than either asks for.
 
 ## Watch it move
 
@@ -557,11 +563,11 @@ Recording runs the page in a virtual display and leaves its frames and a contact
 
 Each number includes about 1 ns that the timing loop costs on its own; the bench prints it as its first row.
 
-The bouncy spring with one channel reports slower than with four although it runs fewer instructions: valgrind counts 237 per frame for one channel and 261 for four. It is an effect of code layout, not of the work, and which case gets the slow layout changes with unrelated edits. [Issue #6](https://github.com/walteraandrade/ginga/issues/6) is closed on that explanation, and its measure is now instructions per frame: a few nanoseconds between bench cases are not evidence by themselves. See [the note](brain/codebase/bouncy-spring-bench-and-code-layout.md).
+The bouncy spring with one channel reports slower than with four although it runs fewer instructions: valgrind counts 237 per frame for one channel and 261 for four. It is an effect of code layout, not of the work, and which case gets the slow layout changes with unrelated edits. [Issue #6](https://github.com/walteraandrade/ginga/issues/6) is closed on that explanation, and its measure is now instructions per frame: a few nanoseconds between bench cases are not evidence by themselves. See [the note](https://github.com/walteraandrade/ginga/blob/main/brain/codebase/bouncy-spring-bench-and-code-layout.md).
 
-Reading and retargeting a motion never allocates; [`tests/no_alloc.rs`](crates/ginga/tests/no_alloc.rs) fails if it does.
+Reading and retargeting a motion never allocates; [`tests/no_alloc.rs`](https://github.com/walteraandrade/ginga/blob/main/crates/ginga/tests/no_alloc.rs) fails if it does.
 
-The engine is not where a frame's time goes. Measured in a real app, a frame of motion cost the main thread about 1.2 ms, and two engines cost the same: [the measurement](docs/measurements/2026-11-26-ai-caret/README.md). What a motion costs is what GPUI renders for it.
+The engine is not where a frame's time goes. Measured in a real app, a frame of motion cost the main thread about 1.2 ms, and two engines cost the same: [the measurement](https://github.com/walteraandrade/ginga/blob/main/docs/measurements/2026-11-26-ai-caret/README.md). What a motion costs is what GPUI renders for it.
 
 ## What it does not do yet
 
@@ -592,7 +598,7 @@ ginga takes ideas that work elsewhere and fits them to its two goals ([What it i
 
 ## Contributing
 
-How to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md), and the rules for a change are in [AGENTS.md](AGENTS.md), for people and coding agents alike. The checks to run before pushing:
+How to contribute is in [CONTRIBUTING.md](https://github.com/walteraandrade/ginga/blob/main/CONTRIBUTING.md), and the rules for a change are in [AGENTS.md](https://github.com/walteraandrade/ginga/blob/main/AGENTS.md), for people and coding agents alike. The checks to run before pushing:
 
 ```sh
 cargo fmt --all
@@ -604,8 +610,8 @@ cargo test -p ginga-gpui                                  # the adapter on GPUI'
 
 The engine needs Rust 1.87 or newer and the adapter Rust 1.95, the oldest that builds its GPUI. CI checks each on that version, on every pull request.
 
-Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md); report a security problem as [SECURITY.md](SECURITY.md) says.
+Everyone taking part follows the [code of conduct](https://github.com/walteraandrade/ginga/blob/main/CODE_OF_CONDUCT.md); report a security problem as [SECURITY.md](https://github.com/walteraandrade/ginga/blob/main/SECURITY.md) says.
 
 ## License
 
-Either of [Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. Unless you say otherwise, a contribution you submit for inclusion, as defined in the Apache-2.0 license, is offered under the same two, with no other terms.
+Either of [Apache-2.0](https://github.com/walteraandrade/ginga/blob/main/LICENSE-APACHE) or [MIT](https://github.com/walteraandrade/ginga/blob/main/LICENSE-MIT), at your option. Unless you say otherwise, a contribution you submit for inclusion, as defined in the Apache-2.0 license, is offered under the same two, with no other terms.

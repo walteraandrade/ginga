@@ -10,7 +10,6 @@ categories.workspace = true
 keywords = ["animation", "motion", "spring", "gpui", "ui"]
 # gpui-pre =0.3.12 uses library features stabilized in Rust 1.95.
 rust-version = "1.95"
-publish.workspace = true
 
 [dependencies]
 ginga.workspace = true

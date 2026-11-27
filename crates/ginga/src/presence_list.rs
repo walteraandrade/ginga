@@ -44,6 +44,9 @@ use crate::{Animatable, InOut, Motion, Phase, Transition};
 pub struct PresenceList<K, T> {
     entries: Vec<Entry<K, T>>,
     filled: bool,
+    /// The places last told follow the order the items are in: no `sync`
+    /// has moved them since. A sweep reads told places only then.
+    placed_in_order: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +165,7 @@ impl<K, T> PresenceList<K, T> {
         Self {
             entries: Vec::new(),
             filled: false,
+            placed_in_order: true,
         }
     }
 
@@ -229,6 +233,7 @@ impl<K, T> PresenceList<K, T> {
     ) {
         let transition = transition.into();
         self.sweep(now);
+        self.placed_in_order = true;
         for (index, entry) in self.entries.iter_mut().enumerate() {
             let Some(at) = entry.shown(now).map(|item| place(index, &item)) else {
                 continue;
@@ -248,6 +253,11 @@ impl<K, T> PresenceList<K, T> {
                 } else if !near(told) {
                     position.toward(Place(at - entry.shift), transition, now);
                 }
+                // At rest, the shift folds into the place, so it never grows.
+                if entry.shift != 0.0 && position.sample(now).settled {
+                    *position = Motion::at(Place(position.target().0 + entry.shift));
+                    entry.shift = 0.0;
+                }
             } else {
                 entry.position = Some(Motion::at(Place(at)));
                 entry.shift = 0.0;
@@ -257,16 +267,22 @@ impl<K, T> PresenceList<K, T> {
 
     /// Lets go of the items whose way out is over. The items after one may
     /// move up in the layout by the room it took, from its place to the next
-    /// item's: when the next place told for them is that, the move is the
-    /// layout's and they do not travel. A place that stays put is no move
-    /// either.
+    /// item's, as last told. For an item at rest, when the next place told for
+    /// it is that, the move is the layout's and it does not travel; a place
+    /// that stays put is no move either. An item on its way somewhere takes
+    /// the move into its travel, from where it is drawn. While the told places
+    /// are from an order the list no longer has, nothing is measured.
     fn sweep(&mut self, now: Duration) {
         // How far the items from here on may have moved up, and the place of
         // the first item of the run being let go.
         let mut moved = 0.0;
         let mut swept_from: Option<f32> = None;
+        let in_order = self.placed_in_order;
         self.entries.retain_mut(|entry| {
-            let place = entry.expected().map(|place| place - moved);
+            let place = entry
+                .expected()
+                .filter(|_| in_order)
+                .map(|place| place - moved);
             if !entry.wanted && entry.amount.sample(now).settled {
                 swept_from = swept_from.or(place);
                 return false;
@@ -274,7 +290,13 @@ impl<K, T> PresenceList<K, T> {
             if let (Some(from), Some(place)) = (swept_from.take(), place) {
                 moved += place - from;
             }
-            entry.swept -= moved;
+            let at_rest = entry
+                .position
+                .as_ref()
+                .is_some_and(|position| position.sample(now).settled);
+            if at_rest {
+                entry.swept -= moved;
+            }
             true
         });
     }
@@ -303,6 +325,8 @@ impl<K: PartialEq, T> PresenceList<K, T> {
             }
         };
         let incoming: Vec<(K, T)> = first_change.into_iter().chain(items).collect();
+        // The places told so far may no longer follow the order.
+        self.placed_in_order = false;
         let mut old: Vec<Option<Entry<K, T>>> = self.entries.drain(same..).map(Some).collect();
         let stays: Vec<bool> = old
             .iter()
@@ -722,15 +746,17 @@ ms        3       1       2
         lay_out(&mut rows, glide(), 1_050);
         let mut before = drawn_at(&rows, 1_099);
         before.retain(|(key, _)| *key != 1);
-        // 1 is swept at 1_100: 3 and 2 move up a row with the layout, and
-        // their glide goes on from where they are drawn, a row higher.
+        // 1 is let go at 1_100 and 3 and 2 are laid out a row higher. They
+        // are on their way, so that move joins their travel: drawn where
+        // they were, with no snap, they go on to their new places.
         lay_out(&mut rows, glide(), 1_100);
         let after = drawn_at(&rows, 1_100);
         for ((key, was), (_, is)) in before.iter().zip(&after) {
-            assert!((was - 40.0 - is).abs() < 0.5, "{key}: {was} then {is}");
+            assert!((was - is).abs() < 0.5, "{key}: {was} then {is}");
         }
-        assert_eq!(offsets(&mut rows, 1_100), "3:20 2:-20");
-        assert_eq!(offsets(&mut rows, 1_150), "3:0 2:0");
+        assert_eq!(offsets(&mut rows, 1_100), "3:60 2:20");
+        assert_eq!(offsets(&mut rows, 1_150), "3:30 2:10");
+        assert_eq!(offsets(&mut rows, 1_200), "3:0 2:0");
     }
 
     #[test]
@@ -821,5 +847,90 @@ ms        3       1       2
         }
         assert_eq!(offsets(&mut rows, 1_200), "4:0 5:0");
         assert!(rows.sample(ms(1_200)).all(|row| !row.moving()));
+    }
+
+    #[test]
+    fn rows_held_at_the_bottom_do_not_move_when_one_above_is_let_go() {
+        let mut rows = PresenceList::new();
+        // Toasts that stack up from a bottom edge at 400.
+        let from_bottom = |rows: &mut PresenceList<u32, String>, now: u64| {
+            let count = rows.sample(ms(now)).count() as f32;
+            rows.place_all(
+                |index, _| 400.0 - (count - index as f32) * 40.0,
+                glide(),
+                ms(now),
+            );
+        };
+        list(&[1, 2, 3], 0, &mut rows);
+        from_bottom(&mut rows, 0);
+        list(&[2, 3], 1_000, &mut rows);
+        for now in [1_000, 1_084, 1_100, 1_150] {
+            from_bottom(&mut rows, now);
+        }
+        assert_eq!(offsets(&mut rows, 1_150), "2:0 3:0");
+    }
+
+    #[test]
+    fn places_from_before_a_reorder_measure_nothing_when_an_item_is_let_go() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2, 3], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2, 3], 1_000, &mut rows);
+        lay_out(&mut rows, glide(), 1_000);
+        // 3 moves to the top while 1 still leaves, and no place is told
+        // before 1 is let go at 1_106.
+        list(&[3, 2], 1_090, &mut rows);
+        lay_out(&mut rows, glide(), 1_106);
+        assert_eq!(offsets(&mut rows, 1_106), "3:80 2:0");
+        assert_eq!(offsets(&mut rows, 1_206), "3:0 2:0");
+    }
+
+    #[test]
+    fn runs_of_items_let_go_together_move_the_rest_by_all_their_room() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2, 3, 4, 5, 6], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[3, 5, 6], 1_000, &mut rows);
+        for now in [1_000, 1_050, 1_100] {
+            lay_out(&mut rows, glide(), now);
+        }
+        assert_eq!(drawn(&mut rows, 1_100), "3 5 6");
+        assert_eq!(offsets(&mut rows, 1_100), "3:0 5:0 6:0");
+        assert!(rows.sample(ms(1_100)).all(|row| !row.moving()));
+    }
+
+    #[test]
+    fn a_row_chasing_a_folding_row_with_a_spring_is_not_jolted_when_it_is_let_go() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2], 1_000, &mut rows);
+        // 2 sits below what is left of 1, and follows it with a spring.
+        let mut last: Option<f32> = None;
+        for now in (1_000..1_300).step_by(16) {
+            let mut top = 0.0;
+            let mut told = 0.0;
+            rows.place_all(
+                |_, row| {
+                    let place = top;
+                    top += 40.0 * row.progress;
+                    if *row.key == 2 {
+                        told = place;
+                    }
+                    place
+                },
+                Spring::SMOOTH,
+                ms(now),
+            );
+            let offset = rows
+                .frame(ms(now))
+                .find(|row| *row.key == 2)
+                .map_or(0.0, |row| row.offset);
+            let drawn = told + offset;
+            if let Some(last) = last {
+                assert!((drawn - last).abs() < 7.0, "at {now}: {last} then {drawn}");
+            }
+            last = Some(drawn);
+        }
     }
 }

@@ -6,7 +6,7 @@
 //!
 //! It runs on Linux, where the adapter has GPUI's platform as a dev-dependency.
 //!
-//! Pick a page on the left and press Play, or click the page itself.
+//! Pick a page on the left and press Play.
 //!
 //! To record a page in a virtual display, so a pull request can show a motion
 //! as frames beside its trace:

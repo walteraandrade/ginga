@@ -84,7 +84,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Offset** (`ShownItem::offset`). How far from its place to draw an item: where it is drawn minus where it is laid out. `0.0` unless its place changed; then it heads for `0.0`. The engine animates the offset, never the position, so a list of any layout can use it.
 
-**Travelling** (`ShownItem::travelling`). An item is on its way to its place: its offset is not settled. *Not the offset*: an offset can pass `0.0` while it travels, so `moving()` checks this.
+**Travelling** (checked by `ShownItem::moving`). An item is on its way to its place: its offset is not settled. *Not the offset*: an offset can pass `0.0` while it travels, so `moving()` checks this.
 
 ## In a GPUI view
 

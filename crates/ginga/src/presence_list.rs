@@ -117,8 +117,9 @@ pub struct ShownItem<'a, K, T> {
     /// [`PresenceList::place_all`]; after that it heads for `0.0`.
     pub offset: f32,
     /// It is on its way to its place: its offset is not settled yet. The
-    /// offset can pass `0.0` while it travels, so check this, not the offset.
-    pub travelling: bool,
+    /// offset can pass `0.0` while it travels, so [`ShownItem::moving`]
+    /// checks this, not the offset.
+    travelling: bool,
 }
 
 impl<K, T> ShownItem<'_, K, T> {

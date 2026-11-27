@@ -28,7 +28,7 @@ fn allocations() -> usize {
 // SAFETY: every call is forwarded unchanged to the system allocator.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // A thread that is being torn down has no counter left; it is not the test's.
+        // `try_with`, not `with`: an allocator must never panic.
         let _ = ALLOCATIONS.try_with(|count| count.set(count.get() + 1));
         // SAFETY: the caller upholds `GlobalAlloc::alloc`'s contract.
         unsafe { System.alloc(layout) }
@@ -44,8 +44,20 @@ unsafe impl GlobalAlloc for Counting {
 static ALLOCATOR: Counting = Counting;
 
 #[test]
+fn the_counter_sees_this_threads_allocations() {
+    let before = allocations();
+    drop(std::hint::black_box(Box::new(1_u8)));
+    assert!(
+        allocations() > before,
+        "the counter must count this thread's allocations, or the test below checks nothing"
+    );
+}
+
+#[test]
 fn reading_and_retargeting_a_motion_allocates_nothing() {
-    let transitions: [Transition; 4] = [
+    let ms = Duration::from_millis;
+    let transitions: [Transition; 5] = [
+        Transition::Instant,
         Spring::SNAPPY.into(),
         Spring::BOUNCY.into(),
         Tween::new(Duration::from_millis(300), Easing::OutExpo).into(),
@@ -65,7 +77,9 @@ fn reading_and_retargeting_a_motion_allocates_nothing() {
         } else {
             400.0
         };
-        let transition = transitions[(frame / 500) as usize % transitions.len()];
+        // Staggered as a list would be: a delay that grows, up to a cap.
+        let delay = (ms(20) * u32::try_from(frame / 37 % 4).unwrap()).min(ms(40));
+        let transition = transitions[(frame / 500) as usize % transitions.len()].delay(delay);
         let sample = motion.toward((side, 120.0, side / 2.0, 1.0), transition, now);
         checksum += sample.value.0;
     }

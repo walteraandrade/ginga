@@ -75,6 +75,9 @@ struct Moving {
     /// Whether the pointer is over the element and presses it, as its
     /// listeners last heard. Shared with them, as they live past the frame.
     gestures: Rc<Cell<Gestures>>,
+    /// The variant's count of changes of name when the element was last
+    /// drawn: a change of look follows the schedule only after a new name.
+    heard: u64,
 }
 
 /// What the pointer is doing to an element.
@@ -130,10 +133,14 @@ pub struct Looked<E> {
     focused: Option<(FocusHandle, Look)>,
     /// The variant the element leads or follows, and its place in it.
     variant: Option<(Rc<dyn Schedule>, Role)>,
+    /// A change of course held from layout to prepaint, for a parent that
+    /// goes after its children.
+    held: Option<Held>,
 }
 
-/// A change of course held until the element's children are laid out, for
-/// a parent that goes after them.
+/// A change of course held until the element's children, cached views
+/// included, are laid out and said when they end, for a parent that goes
+/// after them.
 #[derive(Clone, Copy)]
 struct Held {
     look: Look,
@@ -157,6 +164,7 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             pressed: None,
             focused: None,
             variant: None,
+            held: None,
         }
     }
 
@@ -200,7 +208,13 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
 
     /// The element is the parent of `variant`: when the variant's name
     /// changes, its look changes at the parent's place in the schedule. Pick
-    /// the look from [`Variant::name`].
+    /// the look from [`Variant::name`]. With [`Order::ChildrenFirst`](crate::Order::ChildrenFirst)
+    /// it waits for the children laid out inside it, cached views of their
+    /// own included, and not for children drawn beside it.
+    ///
+    /// Only the first change of look after a new name follows the schedule,
+    /// with the schedule's delay added to the transition's own; any other
+    /// change, such as a hover, goes at once.
     #[must_use]
     pub fn leads<N: Copy + PartialEq + 'static>(mut self, variant: &Variant<N>) -> Self {
         self.variant = Some((variant.schedule(), Role::Leads));
@@ -265,6 +279,10 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             ),
             clock: Clock::default(),
             gestures: Rc::default(),
+            heard: self
+                .variant
+                .as_ref()
+                .map_or(0, |(schedule, _)| schedule.changes()),
         });
         // A moment whose look is no longer given is forgotten, so it cannot
         // come back stale when the look is given again.
@@ -288,10 +306,19 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             let app = cx.try_global::<AppTransitions>().map(|app| app.0);
             self.transitions.or(app.unwrap_or_default())
         };
-        let scheduled = self.variant.as_ref().filter(|_| changed && !reduced);
+        // Only a change of look that comes with a new name follows the
+        // schedule: a hover or a change of the app's own goes at once.
+        let mut new_name = false;
         if let Some((schedule, _)) = &self.variant {
             schedule.drawn_by(window.current_view());
+            let count = schedule.changes();
+            new_name = count != moving.heard;
+            moving.heard = count;
         }
+        let scheduled = self
+            .variant
+            .as_ref()
+            .filter(|_| changed && !reduced && new_name);
         if let Some((schedule, role)) = scheduled {
             if schedule.waits_for_children(*role) {
                 window.request_animation_frame();
@@ -325,21 +352,19 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         tell_the_end(&moving.motion, schedule.as_ref(), *role, held.now, cx);
     }
 
-    /// Takes this frame's look, lays the element out with it, and changes a
-    /// held course once its children are laid out.
+    /// Takes this frame's look and lays the element out with it. A held
+    /// change of course waits for prepaint.
     fn lay_out(
         &mut self,
         moving: Option<Moving>,
         window: &mut Window,
         cx: &mut App,
     ) -> ((LayoutId, AnyElement, Rc<Cell<Gestures>>), Moving) {
-        let (look, mut moving, held) = self.frame(moving, window, cx);
+        let (look, moving, held) = self.frame(moving, window, cx);
         let element = self.element.take().expect("an element is laid out once");
         let mut element = styled(element, look).into_any_element();
         let layout = element.request_layout(window, cx);
-        if let Some(held) = held {
-            self.finish(&mut moving, &held, cx);
-        }
+        self.held = held;
         let gestures = moving.gestures.clone();
         ((layout, element, gestures), moving)
     }
@@ -480,7 +505,7 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
+        id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         (element, _): &mut Self::RequestLayoutState,
@@ -493,6 +518,25 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
             .hears_the_pointer()
             .then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal));
         element.prepaint(window, cx);
+        // GPUI lays out a cached view in prepaint, so only now have all the
+        // children inside said when they end.
+        if let Some(held) = self.held.take() {
+            match (&self.keep, id) {
+                (Keep::Owned(state), _) => {
+                    if let Some(moving) = state.0.borrow_mut().as_mut() {
+                        self.finish(moving, &held, cx);
+                    }
+                }
+                (Keep::Id(_), Some(id)) => {
+                    window.with_element_state(id, |moving: Option<Moving>, _| {
+                        let mut moving = moving.expect("laid out in this frame");
+                        self.finish(&mut moving, &held, cx);
+                        ((), moving)
+                    });
+                }
+                (Keep::Id(_), None) => {}
+            }
+        }
         hitbox
     }
 

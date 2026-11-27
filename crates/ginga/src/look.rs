@@ -404,8 +404,9 @@ macro_rules! values {
                 }
             }
 
-            /// Every value's transition, starting `delay` after the target is
-            /// set, as [`Transition::delay`] gives it. Each value's transition
+            /// Every value's transition, starting `delay` later than it would:
+            /// the delay is added to the one a transition has of its own, so a
+            /// stagger written on a value is kept. Each value's transition
             /// is resolved first, ginga's defaults included, so lay these over
             /// any defaults ([`or`](Self::or)) before delaying them: defaults
             /// laid under them afterwards change nothing.
@@ -420,14 +421,22 @@ macro_rules! values {
             /// row.set_target(Look::new().opacity(1.0), fade.delay(ms(50)), ms(0));
             /// assert_eq!(row.sample(ms(50)).value.opacity, Some(0.0));
             /// assert_eq!(row.sample(ms(100)).value.opacity, Some(0.5));
+            ///
+            /// // A value delayed on its own keeps that delay, and waits the new one after it.
+            /// let late = Transitions::new().opacity(Tween::new(ms(100), Easing::Linear).delay(ms(30)));
+            /// let mut row = LookMotion::at(Look::new().opacity(0.0));
+            /// row.set_target(Look::new().opacity(1.0), late.delay(ms(50)), ms(0));
+            /// assert_eq!(row.sample(ms(80)).value.opacity, Some(0.0));
+            /// assert_eq!(row.sample(ms(130)).value.opacity, Some(0.5));
             /// ```
             #[must_use]
             pub fn delay(self, delay: Duration) -> Self {
                 Self {
                     own: Layer {
-                        $($field: Some(
-                            self.named(|layer| layer.$field).unwrap_or($default).delay(delay),
-                        ),)*
+                        $($field: Some({
+                            let transition = self.named(|layer| layer.$field).unwrap_or($default);
+                            transition.delay(transition.start_delay().saturating_add(delay))
+                        }),)*
                     },
                     all: None,
                     under: Layer::EMPTY,

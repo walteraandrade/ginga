@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use ginga_gpui::{Color, Look, LookExt, Order, Spring, Variant, color};
+use ginga_gpui::{Color, Easing, Look, LookExt, Order, Spring, Tween, Variant, color};
 use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, px, rgb};
 
 const ROWS: [&str; 4] = ["New file", "Open", "Save", "Close"];
@@ -49,10 +49,11 @@ impl Menus {
 fn menu(id: &'static str, variant: &Variant<Menu>) -> impl IntoElement {
     let open = variant.name() == Menu::Open;
     let fill = color(rgb(0x0026_2b36));
+    // The panel only fades its fill, so the rows stay in sight both ways.
     let panel = if open {
-        Look::new().height(176.).background(fill)
+        Look::new().background(fill)
     } else {
-        Look::new().height(32.).background(Color::TRANSPARENT)
+        Look::new().background(Color::TRANSPARENT)
     };
     let row = if open {
         Look::new().offset(0., 0.).opacity(1.)
@@ -66,8 +67,11 @@ fn menu(id: &'static str, variant: &Variant<Menu>) -> impl IntoElement {
         .flex()
         .flex_col()
         .gap(px(4.))
-        .overflow_hidden()
-        .look(id, panel, Spring::SNAPPY)
+        .look(
+            id,
+            panel,
+            Tween::new(Duration::from_millis(200), Easing::Out),
+        )
         .leads(variant)
         .child(div().h(px(16.)).text_color(rgb(0x009b_a1a6)).child(id))
         .children((0..).zip(ROWS).map(|(n, text)| {

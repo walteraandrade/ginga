@@ -54,8 +54,9 @@ impl<N> Clone for Variant<N> {
 #[derive(Debug)]
 struct State<N> {
     variant: ginga::Variant<N>,
-    /// The order the variant was given, which the parent reads.
-    order: Order,
+    /// How many times the name has changed: an element changes course on
+    /// the schedule only for the first change of look after a new name.
+    changes: u64,
     clock: Clock,
     /// The views that drew an element of this variant since the name last
     /// changed: they are rendered again when it changes.
@@ -69,7 +70,7 @@ impl<N: Copy + PartialEq + 'static> Variant<N> {
     pub fn new(name: N) -> Self {
         Self(Rc::new(RefCell::new(State {
             variant: ginga::Variant::new(name),
-            order: Order::Together,
+            changes: 0,
             clock: Clock::default(),
             views: Vec::new(),
         })))
@@ -86,7 +87,6 @@ impl<N: Copy + PartialEq + 'static> Variant<N> {
     #[must_use]
     pub fn order(self, order: Order) -> Self {
         self.change(|variant| variant.order(order));
-        self.0.borrow_mut().order = order;
         self
     }
 
@@ -104,17 +104,21 @@ impl<N: Copy + PartialEq + 'static> Variant<N> {
     /// Shows `name` from this frame. A new name renders again every view that
     /// drew an element of this variant; the same name changes nothing.
     pub fn set(&self, name: N, cx: &mut App) {
-        let views = {
+        let mut views = {
             let mut state = self.0.borrow_mut();
             let now = state.clock.now(cx);
             if !state.variant.set(name, now) {
                 return;
             }
+            state.changes += 1;
             std::mem::take(&mut state.views)
         };
-        for view in views {
+        // Notifying renders nothing yet, so no view registers meanwhile.
+        for view in views.drain(..) {
             cx.notify(view);
         }
+        // The buffer is kept for the views to register in again.
+        self.0.borrow_mut().views = views;
     }
 
     /// The schedule an element of this variant reads.
@@ -141,6 +145,8 @@ pub(crate) trait Schedule {
     fn waits_for_children(&self, role: Role) -> bool;
     /// `view` drew an element of this variant.
     fn drawn_by(&self, view: EntityId);
+    /// How many times the name has changed.
+    fn changes(&self) -> u64;
 }
 
 impl<N: Copy + PartialEq> Schedule for RefCell<State<N>> {
@@ -163,13 +169,18 @@ impl<N: Copy + PartialEq> Schedule for RefCell<State<N>> {
     }
 
     fn waits_for_children(&self, role: Role) -> bool {
-        role == Role::Leads && self.borrow().order == Order::ChildrenFirst
+        role == Role::Leads && self.borrow().variant.parent_waits_for_children()
     }
 
     fn drawn_by(&self, view: EntityId) {
         let mut state = self.borrow_mut();
-        if !state.views.contains(&view) {
+        // Elements of one view come in a row: the last is checked first.
+        if state.views.last() != Some(&view) && !state.views.contains(&view) {
             state.views.push(view);
         }
+    }
+
+    fn changes(&self) -> u64 {
+        self.borrow().changes
     }
 }

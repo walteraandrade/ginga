@@ -102,10 +102,11 @@ impl<N: Copy + PartialEq> Variant<N> {
         self.name
     }
 
-    /// When the name last changed, or zero if it never has.
+    /// The parent waits for its children ([`Order::ChildrenFirst`]): ask
+    /// for its delay only after they said when they end.
     #[must_use]
-    pub fn since(&self) -> Duration {
-        self.since
+    pub fn parent_waits_for_children(&self) -> bool {
+        self.order == Order::ChildrenFirst
     }
 
     /// Shows `name` from `now`. A new name starts the schedule again, and
@@ -124,7 +125,8 @@ impl<N: Copy + PartialEq> Variant<N> {
 
     /// How long after `now` the parent should start toward the name's look.
     /// With [`Order::ChildrenFirst`], it waits for the last child that said
-    /// when it ends ([`child_ends`](Self::child_ends)), so ask after them.
+    /// when it ends ([`child_ends`](Self::child_ends)), so ask after them:
+    /// asked before any child said, it does not wait at all.
     #[must_use]
     pub fn parent_delay(&self, now: Duration) -> Duration {
         let starts = match self.order {
@@ -136,12 +138,13 @@ impl<N: Copy + PartialEq> Variant<N> {
 
     /// How long after `now` child `index` should start: its place times the
     /// step, after the parent with [`Order::ParentFirst`] once the parent
-    /// said when it ends ([`parent_ends`](Self::parent_ends)). A child that
-    /// asks after its place has passed starts at once.
+    /// said when it ends ([`parent_ends`](Self::parent_ends)): asked before
+    /// the parent said, it does not wait for it. A child that asks after its
+    /// place has passed starts at once.
     #[must_use]
     pub fn child_delay(&self, index: u32, now: Duration) -> Duration {
         let first = match self.order {
-            Order::ParentFirst => self.parent_ends.unwrap_or(self.since).max(self.since),
+            Order::ParentFirst => self.parent_ends.unwrap_or(self.since),
             Order::Together | Order::ChildrenFirst => self.since,
         };
         first
@@ -281,6 +284,26 @@ mod tests {
     }
 
     #[test]
+    fn a_side_that_asks_before_the_other_said_does_not_wait() {
+        let mut rows_first = Variant::new(Menu::Hidden).order(Order::ChildrenFirst);
+        rows_first.set(Menu::Shown, ms(0));
+        assert!(rows_first.parent_waits_for_children());
+        assert_eq!(rows_first.parent_delay(ms(0)), Duration::ZERO);
+        rows_first.child_ends(ms(120));
+        rows_first.child_ends(ms(80));
+        assert_eq!(rows_first.parent_delay(ms(0)), ms(120), "the latest child");
+
+        let mut menu_first = Variant::new(Menu::Hidden)
+            .stagger(ms(10))
+            .order(Order::ParentFirst);
+        menu_first.set(Menu::Shown, ms(0));
+        assert!(!menu_first.parent_waits_for_children());
+        assert_eq!(menu_first.child_delay(1, ms(0)), ms(10));
+        menu_first.parent_ends(ms(100));
+        assert_eq!(menu_first.child_delay(1, ms(0)), ms(110));
+    }
+
+    #[test]
     fn a_child_late_to_ask_keeps_its_place_in_time() {
         let mut menu = Variant::new(Menu::Hidden).stagger(ms(50));
         menu.set(Menu::Shown, ms(1000));
@@ -298,7 +321,11 @@ mod tests {
         assert!(!menu.set(Menu::Shown, ms(100)));
         assert_eq!(menu.child_delay(0, ms(100)), ms(200));
         assert!(menu.set(Menu::Hidden, ms(150)));
-        assert_eq!(menu.since(), ms(150));
+        assert_eq!(
+            menu.child_delay(1, ms(150)),
+            Duration::ZERO,
+            "no step without a stagger"
+        );
         // The parent has not said when it ends yet: the children do not wait.
         assert_eq!(menu.child_delay(0, ms(150)), Duration::ZERO);
     }

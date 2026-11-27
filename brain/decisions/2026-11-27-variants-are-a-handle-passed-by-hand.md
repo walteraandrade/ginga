@@ -13,6 +13,8 @@
 
 - The engine's `Variant` is a schedule of delays, like a `Sequence` ([[decisions/2026-11-27-a-sequence-is-a-schedule]]): it sets no targets. Each element asks for its delay when its look changes and says when it will be settled (`parent_ends`, `child_ends`), so the side that waits knows how long. It is `Copy` and does not allocate.
 - Delays are counted from the time the name changed, not from the frame each element is drawn in. A child drawn a frame late keeps its place in time; one whose place has passed starts at once.
-- `Order::ChildrenFirst` needs the children laid out before the parent changes course. So the parent holds its change until its children are laid out, and that works only for children drawn inside it. Children in a cached view of their own are laid out later, and the parent does not wait for them.
+- `Order::ChildrenFirst` needs the children to say when they end before the parent changes course. So the parent holds its change from layout to its own prepaint, after its children's. That covers children laid out inside it, and cached views of their own, which GPUI lays out in prepaint. Children drawn beside the parent do not hold it.
+- Only the first change of look after a new name follows the schedule. A hover, or any other change, goes at once and tells the schedule nothing, so it cannot move the other side's wait.
+- The schedule's delay is added to the one a transition has of its own (`Transitions::delay`), so a stagger written on a value is kept.
 - Under reduced motion every element takes its look at once, with no schedule.
 - `Transitions::delay` and `LookMotion::settles_at` came with it: the parent and the children delay a whole look and say when it ends.

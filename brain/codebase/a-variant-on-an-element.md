@@ -5,12 +5,13 @@
 ## When the look changes
 
 - `Looked::frame` reads the transitions only when the wanted look differs from the motion's target. A variant's delay is applied then: `transitions.or(app).delay(schedule.delay(role))`. The delay goes on last, because `Transitions::delay` resolves every value's transition, ginga's defaults included, and anything laid under it afterwards does nothing.
-- A hover or a focus also changes the look. It gets the variant's delay too, but that delay is zero once the schedule's times have passed.
+- Only a change of look that comes with a new name is scheduled. The handle counts changes of name (`Schedule::changes`), and each element keeps the count it last drew with (`Moving::heard`). A hover or another change of the app's own goes at once and reports nothing; `tests/variant.rs` has a test that fails otherwise.
+- `Transitions::delay` adds to each value's own delay, so a stagger on a value is kept.
 - After it changes course, the element tells the schedule when it will be settled (`tell_the_end`). Times cross clocks as "this long after now": each element and the handle have their own `Clock`, with its own epoch.
 
 ## A parent after its children
 
-GPUI lays out a parent's children inside the parent's `request_layout`. A parent with `Order::ChildrenFirst` keeps its old course for this frame and returns a `Held` change. Its value this frame is the one it would have anyway, because a delayed motion holds still. `lay_out` then lays out the children, which say when they end, and `finish` sets the target at the frame's time with the right delay. All of it runs inside one `with_element_state` call, which is not re-entered for the same id.
+GPUI lays out a parent's children inside the parent's `request_layout`, but a cached view of children only in prepaint. A parent with `Order::ChildrenFirst` keeps its old course for this frame and keeps a `Held` change in the element. Its value this frame is the one it would have anyway, because a delayed motion holds still. In its own `prepaint`, after its children's, every child inside it has said when it ends, and `finish` sets the target at the frame's time with the right delay. It reaches the motion again with a second `with_element_state` call on its id in the same frame, which GPUI allows: it looks in the next frame's states first.
 
 ## Rendering again
 

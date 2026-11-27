@@ -11,6 +11,7 @@ use ginga::{
     Coast, Color, Easing, InOut, Keyframes, Look, LookMotion, Map, Motion, PresenceList, Sequence,
     SettledOnce, Slot, Spring, Stop, Swap, Trail, Transition, Transitions, Tween,
 };
+use ginga::{Order, Variant};
 
 struct Counting;
 
@@ -310,6 +311,52 @@ fn swapping_a_slot_and_mixing_its_looks_allocates_nothing() {
         for shown in slot.frame(now).into_iter().flatten() {
             let look = from.mix(Look::new(), shown.progress);
             checksum += look.opacity.unwrap_or_default();
+        }
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn switching_a_variant_and_following_it_allocates_nothing() {
+    let shown = Look::new().offset(0.0, 0.0).opacity(1.0);
+    let hidden = Look::new().offset(0.0, 12.0).opacity(0.0);
+    let transitions = Transitions::new()
+        .opacity(Tween::new(Duration::from_millis(120), Easing::Linear))
+        .or(Transitions::new().all(Spring::SNAPPY));
+    let mut checksum = 0.0;
+    let before = allocations();
+    for order in [Order::ParentFirst, Order::ChildrenFirst, Order::Together] {
+        let mut menu = Variant::new(false)
+            .stagger(Duration::from_millis(40))
+            .order(order);
+        let mut panel = LookMotion::at(hidden);
+        let mut rows = [LookMotion::at(hidden); 4];
+        for frame in 0..5_000u64 {
+            let now = Duration::from_micros(frame * 8_333);
+            // Every 53 frames the menu switches, and the schedule starts again.
+            if menu.set((frame / 53).is_multiple_of(2), now) {
+                let look = if menu.name() { shown } else { hidden };
+                let set_panel = |menu: &mut Variant<bool>, panel: &mut LookMotion| {
+                    panel.set_target(look, transitions.delay(menu.parent_delay(now)), now);
+                    menu.parent_ends(panel.settles_at().unwrap_or(now));
+                };
+                if !menu.parent_waits_for_children() {
+                    set_panel(&mut menu, &mut panel);
+                }
+                for (n, row) in (0..).zip(&mut rows) {
+                    row.set_target(look, transitions.delay(menu.child_delay(n, now)), now);
+                    menu.child_ends(row.settles_at().unwrap_or(now));
+                }
+                if menu.parent_waits_for_children() {
+                    set_panel(&mut menu, &mut panel);
+                }
+            }
+            checksum += panel.sample(now).value.opacity.unwrap_or_default();
+            for row in &rows {
+                checksum += row.sample(now).value.opacity.unwrap_or_default();
+            }
         }
     }
     let after = allocations();

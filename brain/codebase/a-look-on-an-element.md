@@ -13,6 +13,7 @@ A `Looked` with a `LookState` reports no id, so it adds no level to the element'
 
 - Offset: `left` and `top`, after `relative()` unless the element is `absolute`. An absolute element keeps its position, and the offset replaces its own `left` and `top`, so it should give its place as the offset.
 - Opacity is clamped to `0..=1`, width, height and radius to `0` and up: a bouncy spring passes its target, and GPUI should not get a negative size.
+- Colors (`bg`, `text_color`, `border_color`) go to GPUI as they are, with no clamp here: `Color::new` holds a color to its range when it is built, and `Color::from_channels` holds each channel there while it moves, dividing by the alpha before clamping it so a spring past full alpha keeps the hue.
 
 ## Settled
 

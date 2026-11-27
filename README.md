@@ -229,7 +229,7 @@ let look = if self.open {
 div().bg(rgb(0x2a2f3a)).look("card", look, Spring::SNAPPY)
 ```
 
-A look can name colors too: `.background(..)`, `.text_color(..)` and `.border_color(..)` take a `Color`, written as `Color::hex(0x3b6ef5)` or taken from GPUI with `ginga_gpui::color(rgb(0x3b6ef5))`. Colors mix in linear light with the alpha premultiplied: red on its way to blue passes through purple, never green, and a color fading in from transparent never darkens.
+A look can name colors too: `.background(..)`, `.text_color(..)` and `.border_color(..)` take a `Color`: `Color::hex(0x3b6ef5)`, `Color::new(r, g, b, alpha)`, `Color::TRANSPARENT`, any of them `.with_alpha(a)`, or one taken from GPUI with `ginga_gpui::color(rgb(0x3b6ef5))`. Each value is held to `0.0..=1.0`. GPUI's `Rgba` and `Hsla` can also move in a `ginga_gpui::Motion`. Colors mix in linear light with the alpha premultiplied: red on its way to blue passes through purple, never green, and a color fading in from transparent never darkens.
 
 ```rust
 use std::time::Duration;
@@ -242,6 +242,13 @@ button.set_target(Look::new().background(Color::hex(0x0000ff)), Tween::new(ms(10
 let middle = button.sample(ms(50)).value.background.unwrap();
 assert_eq!(middle.green, 0.0);       // never green
 assert!(middle.red > 0.7);           // a bright purple, as light mixes
+
+// A fill that fades in from nothing keeps its own color, only less opaque.
+let red = Color::hex(0xe5484d);
+let mut fill = LookMotion::at(Look::new().background(red.with_alpha(0.0)));
+fill.set_target(Look::new().background(red), Tween::new(ms(100), Easing::Linear), ms(0));
+let half = fill.sample(ms(50)).value.background.unwrap();
+assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);
 ```
 
 When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transition)`. Like `toward`, it asks for frames only while it moves and moves at once under reduced motion.

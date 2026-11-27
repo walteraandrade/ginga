@@ -53,12 +53,22 @@ struct Entry<K, T> {
     wanted: bool,
     /// How much of the item is here, from zero to one.
     amount: Motion<f32>,
-    /// Where the item is drawn along the list, heading for its place. `None`
-    /// until its place is first told.
+    /// Where the item is drawn along the list, heading for its place, less
+    /// `shift`. `None` until its place is first told.
     position: Option<Motion<Place>>,
+    /// How far the layout moved the item when items before it were swept
+    /// out: added to `position`, so that move is not travel.
+    shift: f32,
 }
 
 impl<K, T> Entry<K, T> {
+    /// The place last told for the item, or `None` before the first.
+    fn place(&self) -> Option<f32> {
+        self.position
+            .as_ref()
+            .map(|position| position.target().0 + self.shift)
+    }
+
     /// The item as drawn at `now`, or `None` once its way out is over.
     fn shown(&self, now: Duration) -> Option<ShownItem<'_, K, T>> {
         let amount = self.amount.sample(now);
@@ -172,6 +182,12 @@ impl<K, T> PresenceList<K, T> {
     /// far it still is. The first place told for an item is where it is: it
     /// does not travel. A place that is not a finite number is ignored.
     ///
+    /// When an item's way out is over and it is let go, the items after it
+    /// move up by the room it took, from its place to the next item's. That
+    /// move is the layout's, not travel: they stay drawn at their place, and
+    /// an item on its way somewhere keeps going. A row that folds as it
+    /// leaves takes no room by then, so nothing moves.
+    ///
     /// A place can follow the items before it, such as below a row whose
     /// height follows its progress: `place` can keep a running total. A place
     /// that changes on every frame makes the item chase it: a tween starts
@@ -210,18 +226,39 @@ impl<K, T> PresenceList<K, T> {
             if !at.is_finite() {
                 continue;
             }
-            match &mut entry.position {
-                Some(position) => {
-                    position.toward(Place(at), transition, now);
+            let shift = entry.shift;
+            if let Some(position) = &mut entry.position {
+                if (at - (position.target().0 + shift)).abs() >= Place::PRECISION / 2.0 {
+                    position.toward(Place(at - shift), transition, now);
                 }
-                None => entry.position = Some(Motion::at(Place(at))),
+            } else {
+                entry.position = Some(Motion::at(Place(at)));
+                entry.shift = 0.0;
             }
         }
     }
 
+    /// Lets go of the items whose way out is over. The items after one move
+    /// up in the layout by the room it took, from its place to the next
+    /// item's: that move is the layout's, so it is added to their shift and
+    /// they do not travel. An item still on its way somewhere keeps going.
     fn sweep(&mut self, now: Duration) {
-        self.entries
-            .retain(|entry| entry.wanted || !entry.amount.sample(now).settled);
+        // How far the items from here on moved up, and the place of the
+        // first item of the run being swept.
+        let mut moved = 0.0;
+        let mut swept_from: Option<f32> = None;
+        self.entries.retain_mut(|entry| {
+            let place = entry.place().map(|place| place - moved);
+            if !entry.wanted && entry.amount.sample(now).settled {
+                swept_from = swept_from.or(place);
+                return false;
+            }
+            if let (Some(from), Some(place)) = (swept_from.take(), place) {
+                moved += place - from;
+            }
+            entry.shift -= moved;
+            true
+        });
     }
 }
 
@@ -272,6 +309,7 @@ impl<K: PartialEq, T> PresenceList<K, T> {
                     wanted: true,
                     amount,
                     position: None,
+                    shift: 0.0,
                 });
                 continue;
             };
@@ -630,5 +668,102 @@ ms        3       1       2
         list(&[], 1_000, &mut rows);
         assert_eq!(drawn(&mut rows, 1_050), "-1 -2");
         assert_eq!(drawn(&mut rows, 1_100), "");
+    }
+
+    #[test]
+    fn the_items_after_a_swept_one_move_up_with_the_layout_and_do_not_glide() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2, 3], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2, 3], 1_000, &mut rows);
+        // 1 leaves in its place, a full row high, until 1_100.
+        for now in [1_000, 1_050, 1_099] {
+            lay_out(&mut rows, glide(), now);
+            assert_eq!(offsets(&mut rows, now), "1:0 2:0 3:0");
+        }
+        // At 1_100 it is swept, and 2 and 3 are laid out a row higher.
+        for now in [1_100, 1_116, 1_150, 1_250] {
+            lay_out(&mut rows, glide(), now);
+            assert_eq!(offsets(&mut rows, now), "2:0 3:0", "at {now}");
+            assert!(rows.sample(ms(now)).all(|row| !row.moving()), "at {now}");
+        }
+    }
+
+    #[test]
+    fn a_glide_under_way_when_an_item_before_it_is_swept_keeps_going() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2, 3], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2, 3], 1_000, &mut rows);
+        lay_out(&mut rows, glide(), 1_000);
+        // 3 and 2 swap at 1_050, while 1 still leaves.
+        list(&[3, 2], 1_050, &mut rows);
+        lay_out(&mut rows, glide(), 1_050);
+        let mut before = drawn_at(&rows, 1_099);
+        before.retain(|(key, _)| *key != 1);
+        // 1 is swept at 1_100: 3 and 2 move up a row with the layout, and
+        // their glide goes on from where they are drawn, a row higher.
+        lay_out(&mut rows, glide(), 1_100);
+        let after = drawn_at(&rows, 1_100);
+        for ((key, was), (_, is)) in before.iter().zip(&after) {
+            assert!((was - 40.0 - is).abs() < 0.5, "{key}: {was} then {is}");
+        }
+        assert_eq!(offsets(&mut rows, 1_100), "3:20 2:-20");
+        assert_eq!(offsets(&mut rows, 1_150), "3:0 2:0");
+    }
+
+    #[test]
+    fn a_sweep_inside_sync_is_not_travel_either() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2, 3], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2, 3], 1_000, &mut rows);
+        lay_out(&mut rows, glide(), 1_050);
+        // No frame ran after 1's way out ended: `sync` sweeps it, and adds 4.
+        list(&[2, 3, 4], 1_200, &mut rows);
+        lay_out(&mut rows, glide(), 1_200);
+        assert_eq!(offsets(&mut rows, 1_200), "2:0 3:0 4:0");
+        assert_eq!(drawn(&mut rows, 1_200), "2 3 +4");
+    }
+
+    #[test]
+    fn a_reorder_in_the_sync_that_sweeps_still_travels() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2, 3], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2, 3], 1_000, &mut rows);
+        lay_out(&mut rows, glide(), 1_050);
+        // 1 is swept by this sync, which also swaps 2 and 3: only the swap travels.
+        list(&[3, 2], 1_200, &mut rows);
+        lay_out(&mut rows, glide(), 1_200);
+        assert_eq!(offsets(&mut rows, 1_200), "3:40 2:-40");
+        assert_eq!(offsets(&mut rows, 1_250), "3:20 2:-20");
+    }
+
+    #[test]
+    fn a_row_that_folds_as_it_leaves_moves_nothing_when_it_is_swept() {
+        let mut rows = PresenceList::new();
+        list(&[1, 2], 0, &mut rows);
+        lay_out(&mut rows, glide(), 0);
+        list(&[2], 1_000, &mut rows);
+        // 1's height follows its progress, so 2 is laid out just below what is left of it.
+        let fold = |rows: &mut PresenceList<u32, String>, now: u64| {
+            let mut top = 0.0;
+            rows.place_all(
+                |_, row| {
+                    let place = top;
+                    top += 40.0 * row.progress;
+                    place
+                },
+                Transition::Instant,
+                ms(now),
+            );
+        };
+        for now in [1_000, 1_050, 1_100, 1_150] {
+            fold(&mut rows, now);
+        }
+        assert_eq!(drawn_at(&rows, 1_150), [(2, 0.0)]);
+        lay_out(&mut rows, glide(), 1_150);
+        assert_eq!(offsets(&mut rows, 1_150), "2:0");
     }
 }

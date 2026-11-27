@@ -192,7 +192,11 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
         // In the pause, the value holds where the round ended.
         let within = within.min(round);
         let backward = self.mirrored && index % 2 == 1;
-        let at = if backward { round - within } else { within };
+        let at = if backward {
+            round.saturating_sub(within)
+        } else {
+            within
+        };
         Sample {
             value: self.value_at(at),
             settled: false,
@@ -243,9 +247,9 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
             return self.stops[0].value;
         }
         let (from, to) = (&self.stops[to - 1], &self.stops[to]);
-        let length = (to.at - from.at).as_secs_f32();
+        let length = to.at.saturating_sub(from.at).as_secs_f32();
         let progress = if length > 0.0 {
-            (at - from.at).as_secs_f32() / length
+            at.saturating_sub(from.at).as_secs_f32() / length
         } else {
             1.0
         };

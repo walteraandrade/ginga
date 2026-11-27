@@ -30,6 +30,8 @@ mod compose;
 #[cfg(target_os = "linux")]
 mod drag;
 #[cfg(target_os = "linux")]
+mod gestures;
+#[cfg(target_os = "linux")]
 mod island;
 #[cfg(target_os = "linux")]
 mod list;

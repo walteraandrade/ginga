@@ -116,6 +116,42 @@ impl Look {
         self.border_color = Some(color);
         self
     }
+
+    /// This look laid over `under`: each value this one names, and where it
+    /// names none, the value `under` names. A look for a moment, such as
+    /// while a pointer is over a thing, laid over the look it has otherwise.
+    ///
+    /// ```
+    /// use ginga::Look;
+    ///
+    /// let rest = Look::new().size(120.0, 40.0).opacity(0.8);
+    /// let hover = Look::new().opacity(1.0);
+    /// assert_eq!(hover.or(rest), Look::new().size(120.0, 40.0).opacity(1.0));
+    /// ```
+    #[must_use]
+    pub const fn or(self, under: Look) -> Self {
+        // `Option::or` is not const yet.
+        macro_rules! first {
+            ($($field:ident),*) => {
+                Self {
+                    $($field: match self.$field {
+                        Some(value) => Some(value),
+                        None => under.$field,
+                    },)*
+                }
+            };
+        }
+        first!(
+            offset,
+            opacity,
+            width,
+            height,
+            radius,
+            background,
+            text_color,
+            border_color
+        )
+    }
 }
 
 /// Pixels, or any unit where a tenth is too small to see: an offset, a size

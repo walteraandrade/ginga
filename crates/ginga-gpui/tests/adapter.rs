@@ -89,12 +89,12 @@ fn toward_draws_the_engines_value_for_the_frames_time(cx: &mut TestAppContext) {
     assert_eq!(next_frame(&window, cx), 1);
     assert_eq!(*drawn.borrow().last().unwrap(), px(75.), "at 150 ms");
 
-    cx.executor().advance_clock(ms(60));
+    cx.executor().advance_clock(ms(50));
     assert_eq!(next_frame(&window, cx), 1);
     assert_eq!(
         *drawn.borrow().last().unwrap(),
         px(100.),
-        "settled exactly on the target"
+        "settled exactly on the target, at 200 ms"
     );
 
     let frames = drawn.borrow().len();

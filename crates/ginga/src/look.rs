@@ -156,7 +156,7 @@ impl Look {
 
 impl Look {
     /// The look `part` of the way from this one to `to`: `0.0` gives this
-    /// one, `1.0` gives `to` exactly, and a part past either end goes on in
+    /// one for what both name, `1.0` gives `to` exactly, and a part past either end goes on in
     /// the same line, as a spring's overshoot should. NaN counts as `0.0`.
     ///
     /// A value both looks name moves in a straight line; a color mixes in

@@ -3,7 +3,7 @@
 
 use ginga::{InOut, Look, Phase, Shown, Slot, Swap, Transition};
 use gpui::{
-    AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId,
+    AnyElement, App, Bounds, Element, ElementId, FocusHandle, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, LayoutId, ParentElement, Pixels, Styled, Window, div,
 };
 
@@ -63,16 +63,20 @@ pub struct Present<T> {
 }
 
 impl<T: PartialEq + 'static> Present<T> {
-    /// The look content arrives from, mixed into its own as it arrives (see
-    /// [`Look::mix`]): an offset and an opacity go to no offset and fully
-    /// opaque. Without it, content appears at once.
+    /// The look content arrives from: its offset and its opacity, which go
+    /// to no offset and fully opaque as it arrives (see [`Look::mix`]). Any
+    /// other value the look names is left out: the element's own size and
+    /// colors are its content's to give. Without it, content appears at once.
     #[must_use]
     pub fn arrive_from(mut self, look: Look) -> Self {
         self.arrive_from = Some(look);
         self
     }
 
-    /// The look content leaves to. Without it, content is gone at once.
+    /// The look content leaves to: its offset and its opacity, as for
+    /// [`arrive_from`](Self::arrive_from). Content that comes back on its way
+    /// out returns from this look, so it turns around from where it is.
+    /// Without it, content is gone at once.
     #[must_use]
     pub fn leave_to(mut self, look: Look) -> Self {
         self.leave_to = Some(look);
@@ -81,7 +85,7 @@ impl<T: PartialEq + 'static> Present<T> {
 
     /// How other content takes the place of what is there:
     /// [`Swap::Sync`], the default, crosses them; [`Swap::Wait`] lets the
-    /// old one go first. The first frame's choice is kept.
+    /// old one go first, unseen until then. A change applies to the next swap.
     #[must_use]
     pub fn swap(mut self, swap: Swap) -> Self {
         self.swap = swap;
@@ -116,9 +120,14 @@ impl<T: PartialEq + 'static> Present<T> {
         &self,
         shown: &Shown<'_, Numbered<T>>,
         swapped_out: bool,
+        came_back: Option<u64>,
     ) -> gpui::Stateful<gpui::Div> {
+        let coming_back = came_back == Some(shown.content.number);
         let look = match shown.phase {
             Phase::Present => Look::new(),
+            Phase::Entering if coming_back => self
+                .leave_to
+                .map_or(Look::new(), |to| to.mix(Look::new(), shown.progress)),
             Phase::Entering => self
                 .arrive_from
                 .map_or(Look::new(), |from| from.mix(Look::new(), shown.progress)),
@@ -164,6 +173,12 @@ struct Kept<T> {
     clock: Clock,
     /// The number the next new content gets.
     next: u64,
+    /// The content that turned around on its way out: it comes back from
+    /// the look it was leaving to.
+    came_back: Option<u64>,
+    /// A focus handle for each content on its way out, to tell whether the
+    /// focus is inside it.
+    focus: Vec<(u64, FocusHandle)>,
 }
 
 impl<T: PartialEq + 'static> IntoElement for Present<T> {
@@ -201,24 +216,82 @@ impl<T: PartialEq + 'static> Element for Present<T> {
                 slot: Slot::new(self.swap),
                 clock: Clock::default(),
                 next: 0,
+                came_back: None,
+                focus: Vec::new(),
             });
+            kept.slot.set_swap(self.swap);
             let now = kept.clock.now(cx);
             match content {
                 Some(content) => {
-                    let number = kept.next;
-                    kept.next += 1;
+                    let held = kept
+                        .slot
+                        .sample(now)
+                        .into_iter()
+                        .flatten()
+                        .find(|shown| shown.content.content == content)
+                        .map(|shown| (shown.content.number, shown.phase));
+                    // Shown again on its way out: it turns around.
+                    if let Some((number, Phase::Exiting)) = held {
+                        kept.came_back = Some(number);
+                    }
+                    let number = held.map_or(kept.next, |(number, _)| number);
+                    if held.is_none() {
+                        kept.next += 1;
+                    }
                     kept.slot.show(Numbered { number, content }, ways, now);
                 }
                 None => kept.slot.hide(ways.exit, now),
             }
-            let [leaving, here] = kept.slot.frame(now);
-            if leaving.as_ref().is_some_and(Shown::moving)
-                || here.as_ref().is_some_and(Shown::moving)
-            {
+            let shown = kept.slot.frame(now);
+            if shown.iter().flatten().any(Shown::moving) {
                 window.request_animation_frame();
             }
-            let leaving = leaving.map(|shown| self.drawn(&shown, true));
-            let here = here.map(|shown| self.drawn(&shown, false));
+            let [first, second, here] = shown;
+            if here
+                .as_ref()
+                .is_some_and(|here| here.phase == Phase::Present)
+            {
+                kept.came_back = None;
+            }
+            // While it leaves, the focus is taken from inside it.
+            let leaving: Vec<u64> = [&first, &second, &here]
+                .into_iter()
+                .flatten()
+                .filter(|shown| shown.phase == Phase::Exiting)
+                .map(|shown| shown.content.number)
+                .collect();
+            kept.focus.retain(|(number, _)| leaving.contains(number));
+            for number in &leaving {
+                if !kept.focus.iter().any(|(held, _)| held == number) {
+                    kept.focus.push((*number, cx.focus_handle()));
+                }
+            }
+            if kept
+                .focus
+                .iter()
+                .any(|(_, focus)| focus.contains_focused(window, cx))
+            {
+                window.defer(cx, Window::blur);
+            }
+            let came_back = kept.came_back;
+            let focus = |number: u64| {
+                kept.focus
+                    .iter()
+                    .find(|(held, _)| *held == number)
+                    .map(|(_, focus)| focus.clone())
+            };
+            let drawn = |shown: &Shown<'_, Numbered<T>>, swapped_out: bool| {
+                let drawn = self.drawn(shown, swapped_out, came_back);
+                match focus(shown.content.number) {
+                    Some(focus) => drawn.track_focus(&focus),
+                    None => drawn,
+                }
+            };
+            let leaving = [first, second]
+                .into_iter()
+                .flatten()
+                .map(|shown| drawn(&shown, true));
+            let here = here.map(|shown| drawn(&shown, false));
             // What arrives lies over what leaves; what leaves takes no room.
             let element = div()
                 .relative()

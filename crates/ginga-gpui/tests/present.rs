@@ -26,6 +26,8 @@ type Drawn = Rc<RefCell<Vec<(&'static str, Bounds<Pixels>)>>>;
 struct Stage {
     wanted: Rc<Cell<Option<&'static str>>>,
     swap: Swap,
+    /// Without the arriving and leaving looks, both ways are instant.
+    looks: bool,
     drawn: Drawn,
     clicks: Rc<Cell<u32>>,
     focus: FocusHandle,
@@ -35,31 +37,35 @@ impl Render for Stage {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let fade = Tween::new(ms(100), Easing::Linear);
         let (drawn, clicks, focus) = (self.drawn.clone(), self.clicks.clone(), self.focus.clone());
-        div().size_full().pt(px(100.)).child(
-            present(
-                "stage",
-                self.wanted.get(),
-                InOut::new(fade, fade),
-                move |name: &&'static str| {
-                    let (name, drawn, clicks) = (*name, drawn.clone(), clicks.clone());
-                    div()
-                        .id(name)
-                        .size(px(50.))
-                        .track_focus(&focus)
-                        .on_click(move |_, _, _| clicks.set(clicks.get() + 1))
-                        .child(
-                            canvas(
-                                move |bounds, _, _| drawn.borrow_mut().push((name, bounds)),
-                                |_, (), _, _| {},
-                            )
-                            .size_full(),
+        let shown = present(
+            "stage",
+            self.wanted.get(),
+            InOut::new(fade, fade),
+            move |name: &&'static str| {
+                let (name, drawn, clicks) = (*name, drawn.clone(), clicks.clone());
+                div()
+                    .id(name)
+                    .size(px(50.))
+                    .track_focus(&focus)
+                    .on_click(move |_, _, _| clicks.set(clicks.get() + 1))
+                    .child(
+                        canvas(
+                            move |bounds, _, _| drawn.borrow_mut().push((name, bounds)),
+                            |_, (), _, _| {},
                         )
-                },
-            )
-            .arrive_from(Look::new().offset(0., 40.))
-            .leave_to(Look::new().offset(0., -40.))
-            .swap(self.swap),
+                        .size_full(),
+                    )
+            },
         )
+        .swap(self.swap);
+        let shown = if self.looks {
+            shown
+                .arrive_from(Look::new().offset(0., 40.))
+                .leave_to(Look::new().offset(0., -40.))
+        } else {
+            shown
+        };
+        div().size_full().pt(px(100.)).child(shown)
     }
 }
 
@@ -72,6 +78,15 @@ struct Opened<'a> {
 }
 
 fn open<'a>(cx: &'a mut TestAppContext, first: Option<&'static str>, swap: Swap) -> Opened<'a> {
+    open_with(cx, first, swap, true)
+}
+
+fn open_with<'a>(
+    cx: &'a mut TestAppContext,
+    first: Option<&'static str>,
+    swap: Swap,
+    looks: bool,
+) -> Opened<'a> {
     let wanted = Rc::new(Cell::new(first));
     let (drawn, clicks) = (Drawn::default(), Rc::new(Cell::new(0)));
     let focus = cx.update(|cx| cx.focus_handle());
@@ -81,6 +96,7 @@ fn open<'a>(cx: &'a mut TestAppContext, first: Option<&'static str>, swap: Swap)
         move |_, _| Stage {
             wanted,
             swap,
+            looks,
             drawn,
             clicks,
             focus,
@@ -104,6 +120,11 @@ impl Opened<'_> {
         self.cx.executor().advance_clock(ms(millis));
         self.cx.update(Window::simulate_next_frame);
         self.cx.run_until_parked();
+        self.last()
+    }
+
+    /// What the last frame drew, with how far each top is from its place.
+    fn last(&self) -> Vec<(&'static str, f32)> {
         self.drawn
             .borrow()
             .iter()
@@ -114,7 +135,9 @@ impl Opened<'_> {
     /// Wants `content` from the next frame on.
     fn want(&mut self, content: Option<&'static str>) {
         self.wanted.set(content);
+        self.drawn.borrow_mut().clear();
         self.cx.update(|window, _| window.refresh());
+        self.cx.run_until_parked();
     }
 }
 
@@ -145,9 +168,10 @@ fn wanted_again_on_its_way_out_it_turns_around_from_where_it_is(cx: &mut TestApp
     stage.want(None);
     assert_eq!(stage.after(50), [("toast", -20.)]);
     stage.want(Some("toast"));
-    // It is half in: it comes back from there, now arriving from below.
-    assert_eq!(stage.after(0), [("toast", 20.)]);
-    assert_eq!(stage.after(100), [("toast", 0.)]);
+    // It comes back the way it was leaving, from where it is: no jump.
+    assert_eq!(stage.after(0), [("toast", -20.)]);
+    assert_eq!(stage.after(50), [("toast", -10.)]);
+    assert_eq!(stage.after(50), [("toast", 0.)]);
 }
 
 #[gpui::test]
@@ -178,6 +202,47 @@ fn in_sync_both_are_drawn_and_waiting_the_new_one_holds_back(cx: &mut TestAppCon
     let mut stage = open(cx, Some("old"), Swap::Wait);
     stage.after(100);
     stage.want(Some("new"));
-    assert_eq!(stage.after(50), [("old", -20.), ("new", 40.)]);
+    assert_eq!(stage.after(50), [("old", -20.)], "new waits, unseen");
     assert_eq!(stage.after(100), [("new", 20.)]);
+}
+
+#[gpui::test]
+fn content_that_has_the_focus_loses_it_when_its_way_out_starts(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("field"), Swap::Sync);
+    stage.after(100);
+    let focus = stage.focus.clone();
+    stage.cx.update(|window, cx| window.focus(&focus, cx));
+    assert!(stage.cx.update(|window, _| focus.is_focused(window)));
+    stage.want(None);
+    stage.after(10);
+    stage.after(10);
+    assert!(
+        !stage.cx.update(|window, _| focus.is_focused(window)),
+        "the focus left with it"
+    );
+}
+
+#[gpui::test]
+fn without_looks_both_ways_are_instant(cx: &mut TestAppContext) {
+    let mut stage = open_with(cx, Some("toast"), Swap::Sync, false);
+    assert_eq!(stage.last(), [("toast", 0.)], "there at once");
+    assert_eq!(stage.cx.update(Window::simulate_next_frame), 0);
+    stage.want(None);
+    assert_eq!(stage.last(), [], "gone at once");
+}
+
+#[gpui::test]
+fn without_looks_a_swap_that_waits_is_instant_too(cx: &mut TestAppContext) {
+    let mut stage = open_with(cx, Some("old"), Swap::Wait, false);
+    stage.want(Some("new"));
+    assert_eq!(stage.last(), [("new", 0.)], "the old one left at once");
+}
+
+#[gpui::test]
+fn under_reduced_motion_it_is_there_and_gone_at_once(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let mut stage = open(cx, Some("toast"), Swap::Sync);
+    assert_eq!(stage.last(), [("toast", 0.)]);
+    stage.want(None);
+    assert_eq!(stage.last(), []);
 }

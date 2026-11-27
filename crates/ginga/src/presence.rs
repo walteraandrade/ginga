@@ -150,10 +150,15 @@ impl<T> Presence<T> {
     /// What to draw at `now`, or `None` when nothing is here. This is the one
     /// call a frame needs: it also lets go of content whose way out is over.
     pub fn frame(&mut self, now: Duration) -> Option<Shown<'_, T>> {
+        self.let_go(now);
+        self.sample(now)
+    }
+
+    /// Drops the content if its way out is over at `now`.
+    pub(crate) fn let_go(&mut self, now: Duration) {
         if !self.wanted && self.amount.sample(now).settled {
             self.content = None;
         }
-        self.sample(now)
     }
 
     /// What to draw at `now`, without changing anything.

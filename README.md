@@ -198,7 +198,7 @@ assert_eq!(
 );
 ```
 
-A `Slot` is one place whose content is swapped, such as a title: the old content leaves and the new one arrives. With `Swap::Sync` they cross; with `Swap::Wait` the new one arrives only when the old one is gone. `frame` hands back both, what leaves first:
+A `Slot` is one place whose content is swapped, such as a title: the old content leaves and the new one arrives. With `Swap::Sync` they cross; with `Swap::Wait` the new one arrives, unseen until then, only when the old one is gone. `frame` hands back what leaves (two at most, the oldest first) and then what arrives:
 
 ```rust
 use std::time::Duration;
@@ -210,12 +210,20 @@ let mut title = Slot::new(Swap::Wait);
 
 title.show("Inbox", InOut::INSTANT, ms(0));
 title.show("Sent", InOut::new(fade, fade), ms(0));
-let [leaving, arriving] = title.frame(ms(50));
+let [leaving, _, arriving] = title.frame(ms(50));
 assert_eq!(leaving.unwrap().progress, 0.5); // "Inbox", halfway out
-assert_eq!(arriving.unwrap().progress, 0.0); // "Sent" waits for it
+assert!(arriving.is_none()); // "Sent" waits for it, unseen
 ```
 
-`Look::mix` draws a way in or out as a look: the look a thing arrives from, mixed into its own by its progress. An offset and an opacity go to no offset and fully opaque.
+`Look::mix` draws a way in or out as a look: the look a thing arrives from, mixed into its own by its progress. A `Map` moves one value and a `LookMotion` moves a look in time; `mix` is a look at a progress that something else, such as a presence, moves.
+
+```rust
+use ginga::Look;
+
+let from = Look::new().offset(0.0, 24.0).opacity(0.0);
+assert_eq!(from.mix(Look::new(), 0.5), Look::new().offset(0.0, 12.0).opacity(0.5));
+assert_eq!(from.mix(Look::new(), 1.0), Look::new()); // there: no offset, fully opaque
+```
 
 An item on its way out is still drawn, so it can still be clicked or focused unless you say otherwise: check for `Phase::Exiting`.
 
@@ -409,7 +417,7 @@ assert_eq!(Look::new().opacity(1.0).or(rest), Look::new().size(120.0, 40.0).opac
 
 ### Ways in and out
 
-`present` draws a thing while it is there and keeps drawing it on its way out, with no field in the view: say each frame whether it is there, and how it comes and goes. It arrives from `arrive_from` and leaves to `leave_to`; wanted again on its way out, it turns around from where it is. While it leaves it takes no clicks. Other content in its place swaps, crossing (`Swap::Sync`) or one after the other (`Swap::Wait`).
+`present` draws a thing while it is there and keeps drawing it on its way out, with no field in the view: say each frame whether it is there, and how it comes and goes. It arrives from `arrive_from` and leaves to `leave_to`, each an offset and an opacity; wanted again on its way out, it turns around from where it is. While it leaves it takes no clicks, and the focus leaves it. Other content in its place swaps, crossing (`Swap::Sync`) or one after the other (`Swap::Wait`).
 
 ```rust,ignore
 let ways = InOut::new(Spring::SNAPPY, Tween::new(ms(200), Easing::In));

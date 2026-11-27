@@ -19,7 +19,7 @@
 //! `target/gallery/presence/`. It runs the gallery as
 //! `gallery --record <page> <folder>` under `xvfb-run`, which opens the page,
 //! presses Play, presses it again a second later, and grabs the screen with
-//! `ffmpeg`. It needs `xvfb-run`, `ffmpeg`, a Vulkan driver and ImageMagick's `montage`.
+//! `ffmpeg`. It needs `xvfb-run`, `ffmpeg`, a Vulkan driver and `montage`.
 
 #[cfg(target_os = "linux")]
 mod app;

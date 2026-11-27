@@ -45,6 +45,7 @@
 
 mod animatable;
 mod easing;
+mod keyframes;
 mod motion;
 mod presence;
 mod presence_list;
@@ -54,6 +55,7 @@ mod transition;
 
 pub use animatable::Animatable;
 pub use easing::Easing;
+pub use keyframes::{Keyframes, KeyframesError, Stop};
 pub use motion::{Motion, Sample};
 pub use presence::{InOut, Phase, Presence, Shown};
 pub use presence_list::{PresenceList, ShownItem};

@@ -194,7 +194,7 @@ mod tests {
         InOut::new(fade, fade)
     }
 
-    fn cell(shown: &Option<Shown<'_, &str>>) -> String {
+    fn cell(shown: Option<&Shown<'_, &str>>) -> String {
         match shown {
             None => String::from("-"),
             Some(shown) => {
@@ -214,14 +214,14 @@ mod tests {
         let leaving: Vec<String> = [first, second]
             .iter()
             .filter(|shown| shown.is_some())
-            .map(cell)
+            .map(|shown| cell(shown.as_ref()))
             .collect();
         let leaving = if leaving.is_empty() {
             String::from("-")
         } else {
             leaving.join(", ")
         };
-        format!("{at:>3}  {leaving:<12}  {}", cell(&current))
+        format!("{at:>3}  {leaving:<12}  {}", cell(current.as_ref()))
     }
 
     /// "Old" is shown at 0 and settled; "New" swaps in at 100. Each line is
@@ -338,7 +338,7 @@ mod tests {
         let just_before = gone.saturating_sub(ms(1));
         assert!(slot.frame(just_before)[2].is_none(), "still waiting");
         let [_, _, new] = slot.frame(gone);
-        assert_eq!(cell(&new), "New in 0.00");
+        assert_eq!(cell(new.as_ref()), "New in 0.00");
         assert!(slot.frame(gone)[0].is_none(), "the old one is gone");
     }
 

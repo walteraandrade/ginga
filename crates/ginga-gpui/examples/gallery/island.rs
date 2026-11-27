@@ -11,11 +11,13 @@ use gpui::{
 /// Cells in the grid.
 const CELLS: u32 = 600;
 
-/// The dot: a place and where it heads, and the grid's count of renders.
+/// The dot: a place and where it heads, and the grid's count of renders,
+/// with what it was at the last Play.
 pub struct Dot {
     x: Motion<Pixels>,
     target: Pixels,
     grid_renders: Rc<Cell<u32>>,
+    at_play: Option<u32>,
 }
 
 /// A view heavy enough to notice: many boxes with numbers. It counts its renders.
@@ -60,18 +62,25 @@ impl IslandPage {
                     x: Motion::at(px(0.)),
                     target: px(0.),
                     grid_renders: renders,
+                    at_play: None,
                 },
                 |dot, window, cx| {
                     let x = dot.x.toward(dot.target, Spring::SMOOTH, window, cx);
-                    // The island renders after the grid beside it, so the
-                    // count includes this frame's render, if there was one.
-                    let renders = dot.grid_renders.get();
+                    // The island renders before the cached grid in a frame,
+                    // so it counts the grid's renders since Play, not in all.
+                    let label = match dot.at_play {
+                        None => "Press Play: the grid does not render while the dot moves".into(),
+                        Some(at_play) => format!(
+                            "The grid has rendered {} times since Play",
+                            dot.grid_renders.get() - at_play
+                        ),
+                    };
                     div()
                         .absolute()
                         .top(px(-56.))
                         .left_0()
                         .right_0()
-                        .child(format!("The grid has rendered {renders} times"))
+                        .child(label)
                         .child(
                             div()
                                 .absolute()
@@ -91,6 +100,7 @@ impl IslandPage {
     pub fn play(&mut self, cx: &mut Context<Self>) {
         self.dot.update(cx, |island, cx| {
             let dot = island.state_mut();
+            dot.at_play = Some(dot.grid_renders.get());
             dot.target = if dot.target == px(0.) {
                 px(560.)
             } else {

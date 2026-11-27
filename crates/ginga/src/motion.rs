@@ -261,7 +261,13 @@ impl<T: Animatable> Motion<T> {
         };
         self.goal = target;
         self.target = target.to_channels();
-        self.drive = self.spring(spring, &state, now);
+        // A spring with no response moves the value there at once. A let-go
+        // happens now, so a delay on the coast's spring is not waited for.
+        self.drive = if spring.is_instant() {
+            Drive::Rest
+        } else {
+            self.spring(spring, &state, now)
+        };
     }
 
     /// Puts the value at `value`, at rest, with no motion.

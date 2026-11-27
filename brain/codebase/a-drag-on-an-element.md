@@ -8,6 +8,7 @@ How `ginga_gpui::Dragged` follows the pointer, and the traps it avoids (#32).
 - So `Dragged` registers window-wide listeners in `paint` with `window.on_mouse_event`: the press checks its own hitbox (inserted in `prepaint`), the move and the release are heard anywhere in the window while the element is held, in the capture phase so that nothing under the pointer can stop them.
 - After a press, a move or a release it notifies the view that drew the element (`window.current_view()` in `paint`), not `window.refresh()`: a refresh draws every view in the window again, cached ones included, which would undo what an island saves.
 - The press stops propagation, so only the topmost draggable under the pointer is taken: `HitboxBehavior::Normal` does not hide the hitboxes beneath.
+- The press listener is registered before the element's children paint. GPUI runs bubble listeners last-registered first, so a child's listener runs before it: a button inside a card that stops the press keeps the card from being taken. Registered after, the card would take every press first. A test covers it.
 - A move with the left button up, while held, is a release that was lost (outside the window): the element is let go there.
 
 ## Where the element is

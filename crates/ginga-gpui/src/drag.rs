@@ -381,7 +381,6 @@ impl<E: Styled + IntoElement + 'static> Element for Dragged<E> {
         window: &mut Window,
         cx: &mut App,
     ) {
-        element.paint(window, cx);
         // The view that draws the element is drawn again after each change,
         // and not the whole window: views cached beside it stay as they are.
         let view = window.current_view();
@@ -398,6 +397,10 @@ impl<E: Styled + IntoElement + 'static> Element for Dragged<E> {
                 cx.notify(view);
             }
         });
+        // Painted after the press is listened for, so that what is inside the
+        // element hears a press first: a button in a card that stops the
+        // press keeps the card from being taken.
+        element.paint(window, cx);
         let (state, drag) = (self.state.clone(), self.drag.clone());
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
             if phase != DispatchPhase::Capture {

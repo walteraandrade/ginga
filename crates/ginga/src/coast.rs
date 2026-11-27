@@ -79,7 +79,9 @@ impl Coast {
     }
 
     /// The spring that brings the value back inside a limit or onto a snap
-    /// point. [`Spring::SNAPPY`] unless set.
+    /// point. [`Spring::SNAPPY`] unless set. A spring with no response puts
+    /// the value there at once, and a delay on it is not waited for: a value
+    /// is let go now.
     #[must_use]
     pub const fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
@@ -348,6 +350,25 @@ ms           value
         let snappy = farthest(Coast::QUICK);
         let bouncy = farthest(Coast::QUICK.spring(crate::Spring::BOUNCY));
         assert!(bouncy > snappy, "{bouncy} > {snappy}");
+    }
+
+    #[test]
+    fn a_wall_with_an_instant_spring_puts_the_value_there_at_once() {
+        let instant = Coast::QUICK.spring(crate::Spring::new(Duration::ZERO));
+        let mut knob = Motion::at(0.0);
+        knob.coast_within(3_000.0, instant, 0.0, 50.0, ms(0));
+        let now = knob.sample(ms(0));
+        assert_eq!((now.value, now.settled), (50.0, true));
+        let mut card = Motion::at(0.0);
+        let snaps = [0.0, 100.0];
+        card.coast_to_nearest(
+            800.0,
+            instant.spring(crate::Spring::new(Duration::ZERO).delay(ms(80))),
+            &snaps,
+            ms(0),
+        );
+        let now = card.sample(ms(0));
+        assert_eq!((now.value, now.settled), (100.0, true));
     }
 
     #[test]

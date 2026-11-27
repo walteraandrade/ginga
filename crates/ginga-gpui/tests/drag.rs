@@ -5,8 +5,9 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 
 use ginga_gpui::{Coast, Drag, DragExt, DragState, Spring};
 use gpui::{
-    AppContext, Axis, Context, IntoElement, Modifiers, MouseButton, ParentElement, Pixels, Point,
-    Render, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    AppContext, Axis, Context, InteractiveElement, IntoElement, Modifiers, MouseButton,
+    ParentElement, Pixels, Point, Render, Styled, TestAppContext, VisualTestContext, Window, div,
+    point, px,
 };
 
 fn ms(millis: u64) -> Duration {
@@ -302,6 +303,49 @@ fn only_the_topmost_element_under_the_pointer_is_taken(cx: &mut TestAppContext) 
     press(cx, at(50., 50.));
     assert!(over.is_held());
     assert!(!under.is_held());
+}
+
+/// A card with a button in its corner that takes its own presses.
+struct CardWithButton {
+    card: DragState,
+    pressed: Rc<Cell<u32>>,
+}
+
+impl Render for CardWithButton {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let pressed = self.pressed.clone();
+        div().size_full().child(
+            div()
+                .size(px(100.))
+                .child(
+                    div()
+                        .size(px(20.))
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            pressed.set(pressed.get() + 1);
+                            cx.stop_propagation();
+                        }),
+                )
+                .draggable(&self.card, Drag::new()),
+        )
+    }
+}
+
+#[gpui::test]
+fn a_button_inside_that_takes_the_press_keeps_the_element_from_being_taken(
+    cx: &mut TestAppContext,
+) {
+    let (card, pressed) = (DragState::default(), Rc::new(Cell::new(0)));
+    let (_, cx) = cx.add_window_view({
+        let (card, pressed) = (card.clone(), pressed.clone());
+        move |_, _| CardWithButton { card, pressed }
+    });
+    cx.run_until_parked();
+    press(cx, at(10., 10.));
+    assert_eq!(pressed.get(), 1);
+    assert!(!card.is_held(), "the button took the press");
+    release(cx, at(10., 10.));
+    press(cx, at(60., 60.));
+    assert!(card.is_held(), "outside the button the card is taken");
 }
 
 /// A card that starts away from its place, `absolute`, and a heavy view

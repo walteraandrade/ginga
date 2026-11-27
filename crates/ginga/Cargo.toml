@@ -4,6 +4,10 @@ description = "Motion for Rust UIs: springs and tweens as pure functions of time
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+readme = "README.md"
+categories.workspace = true
+keywords = ["animation", "motion", "spring", "tween", "ui"]
 rust-version.workspace = true
 publish.workspace = true
 

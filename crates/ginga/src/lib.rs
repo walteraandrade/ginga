@@ -63,5 +63,5 @@ pub use transition::{Transition, Tween};
 
 /// The README's examples, run as tests.
 #[cfg(doctest)]
-#[doc = include_str!("../../../README.md")]
+#[doc = include_str!("../README.md")]
 struct Readme;

@@ -44,6 +44,28 @@ width.toward(180.0, Spring::SNAPPY, ms(100));
 
 `now` is a `Duration` since any fixed moment you choose. The engine never reads a clock.
 
+### One after another
+
+Any transition can wait before it starts: `.delay(d)` on a spring, a tween or a `Transition`. Until then the value holds still where it is. To let a group arrive in turn, give each item a delay one step longer than the one before, up to a cap:
+
+```rust
+use std::time::Duration;
+use ginga::{Motion, Spring};
+
+let ms = Duration::from_millis;
+let mut bars = [Motion::at(0.0); 5];
+
+for (n, bar) in (0..).zip(&mut bars) {
+    let delay = (ms(40) * n).min(ms(120)); // 40 ms apart, never more than 120 ms late
+    bar.set_target(1.0, Spring::SMOOTH.delay(delay), ms(0));
+}
+
+let started: Vec<bool> = bars.iter().map(|bar| bar.sample(ms(60)).value > 0.0).collect();
+assert_eq!(started, [true, true, false, false, false]);
+```
+
+The same works for things that come and go: `rows[n].show(row, fade.delay(step * n), now)`.
+
 ## Things that come and go
 
 A `Presence` is something you show and hide. Hiding does not drop it: the presence keeps the content, as it was, until its way out is over, so there is always something to draw the exit with.
@@ -176,7 +198,7 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 
 - Animate layout: an item of a `PresenceList` that moves to a new place jumps there.
 - Shared elements.
-- Sequences, stagger, keyframes.
+- Sequences and keyframes.
 - Gestures and drag.
 
 Limits that come from GPUI and not from this library: a `div` has no transform, so moving a box means changing its position or size and laying out again; and there is no way to redraw one element without rendering its view.

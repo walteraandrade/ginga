@@ -36,7 +36,11 @@ static ALLOCATOR: Counting = Counting;
 
 #[test]
 fn reading_and_retargeting_a_motion_allocates_nothing() {
-    let transitions: [Transition; 4] = [
+    let ms = Duration::from_millis;
+    let transitions: [Transition; 7] = [
+        Spring::SNAPPY.delay(ms(40)).into(),
+        Tween::new(ms(300), Easing::OutExpo).delay(ms(80)).into(),
+        Transition::Instant.delay(ms(20)),
         Spring::SNAPPY.into(),
         Spring::BOUNCY.into(),
         Tween::new(Duration::from_millis(300), Easing::OutExpo).into(),

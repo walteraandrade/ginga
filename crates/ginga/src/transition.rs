@@ -18,6 +18,7 @@ use crate::{Easing, Spring};
 pub struct Tween {
     pub(crate) duration: Duration,
     pub(crate) easing: Easing,
+    pub(crate) delay: Duration,
 }
 
 impl Tween {
@@ -25,7 +26,18 @@ impl Tween {
     /// moves the value at once.
     #[must_use]
     pub const fn new(duration: Duration, easing: Easing) -> Self {
-        Self { duration, easing }
+        Self {
+            duration,
+            easing,
+            delay: Duration::ZERO,
+        }
+    }
+
+    /// The same tween, starting `delay` after the target is set. Until then
+    /// the value holds still where it was.
+    #[must_use]
+    pub const fn delay(self, delay: Duration) -> Self {
+        Self { delay, ..self }
     }
 }
 
@@ -38,6 +50,51 @@ pub enum Transition {
     Spring(Spring),
     /// A fixed length and a curve.
     Tween(Tween),
+}
+
+impl Transition {
+    /// The same transition, starting `delay` after the target is set. Until
+    /// then the value holds still where it was, and a spring starts from rest.
+    /// A delayed [`Transition::Instant`] jumps to the target when the delay is over.
+    ///
+    /// To let items arrive one after another, give each a delay one step longer
+    /// than the one before:
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Motion, Spring, Transition};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let mut bars = [Motion::at(0.0); 5];
+    /// for (n, bar) in (0..).zip(&mut bars) {
+    ///     // 40 ms after the one before, and never more than 120 ms late.
+    ///     let delay = (ms(40) * n).min(ms(120));
+    ///     bar.set_target(1.0, Transition::from(Spring::SMOOTH).delay(delay), ms(0));
+    /// }
+    ///
+    /// let starts: Vec<_> = bars.iter().map(|bar| bar.sample(ms(60)).value > 0.0).collect();
+    /// assert_eq!(starts, [true, true, false, false, false]);
+    /// ```
+    #[must_use]
+    pub fn delay(self, delay: Duration) -> Self {
+        match self {
+            Self::Instant if delay.is_zero() => Self::Instant,
+            Self::Instant => Tween::new(Duration::ZERO, Easing::Linear)
+                .delay(delay)
+                .into(),
+            Self::Spring(spring) => spring.delay(delay).into(),
+            Self::Tween(tween) => tween.delay(delay).into(),
+        }
+    }
+
+    /// How long after the target is set the motion starts.
+    pub(crate) fn start_delay(self) -> Duration {
+        match self {
+            Self::Instant => Duration::ZERO,
+            Self::Spring(spring) => spring.delay,
+            Self::Tween(tween) => tween.delay,
+        }
+    }
 }
 
 impl From<Spring> for Transition {

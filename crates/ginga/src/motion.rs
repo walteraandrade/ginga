@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use crate::{Animatable, Spring, Transition, Tween};
+use crate::{Animatable, Easing, Spring, Transition, Tween};
 
 /// A value on its way to a target.
 ///
@@ -108,13 +108,27 @@ impl<T: Animatable> Motion<T> {
     }
 
     /// Changes course at `now`, from the value and the speed the motion has then.
+    ///
+    /// A transition with a [delay](Transition::delay) holds the value still
+    /// where it is until the delay is over, then moves from rest.
     pub fn set_target(&mut self, target: T, transition: impl Into<Transition>, now: Duration) {
-        let state = self.state(now, Read::ValueAndSpeed);
+        let mut state = self.state(now, Read::ValueAndSpeed);
         self.target = target.to_channels();
-        self.drive = match transition.into() {
-            Transition::Spring(spring) if !spring.is_instant() => self.spring(spring, &state, now),
-            Transition::Tween(tween) if !tween.duration.is_zero() => self.tween(tween, &state, now),
-            _ => Drive::Rest,
+        let transition = transition.into();
+        let delay = transition.start_delay();
+        if !delay.is_zero() {
+            // A delayed motion waits still, so it starts from rest.
+            state.velocity = T::Channels::default();
+        }
+        let start = now + delay;
+        self.drive = match transition {
+            Transition::Spring(spring) if spring.is_instant() => {
+                self.tween(Tween::new(Duration::ZERO, Easing::Linear), &state, start)
+            }
+            Transition::Spring(spring) => self.spring(spring, &state, start),
+            Transition::Tween(tween) if tween.duration.is_zero() && delay.is_zero() => Drive::Rest,
+            Transition::Tween(tween) => self.tween(tween, &state, start),
+            Transition::Instant => Drive::Rest,
         };
     }
 
@@ -207,6 +221,27 @@ impl<T: Animatable> Motion<T> {
             Drive::Rest => resting,
             Drive::Spring { settle, .. } if now >= settle => resting,
             Drive::Tween { tween, start, .. } if now >= start + tween.duration => resting,
+            Drive::Spring {
+                start,
+                offset,
+                velocity,
+                ..
+            } if now < start => {
+                let mut value = self.target;
+                for (place, released) in value.as_mut().iter_mut().zip(offset.as_ref()) {
+                    *place += released;
+                }
+                State {
+                    value,
+                    velocity,
+                    settled: false,
+                }
+            }
+            Drive::Tween { start, from, .. } if now < start => State {
+                value: from,
+                velocity: T::Channels::default(),
+                settled: false,
+            },
             Drive::Spring {
                 spring,
                 start,
@@ -428,6 +463,98 @@ mod tests {
             }
         );
         assert_eq!(motion.target(), 40.0);
+    }
+
+    #[test]
+    fn a_delayed_tween_holds_still_then_runs_its_time() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, linear(200).delay(ms(50)), ms(1_000));
+        assert_eq!(
+            motion.sample(ms(1_049)),
+            Sample {
+                value: 0.0,
+                settled: false
+            }
+        );
+        assert_eq!(motion.sample(ms(1_100)).value, 25.0);
+        assert_eq!(motion.settles_at(), Some(ms(1_250)));
+        assert!(motion.sample(ms(1_250)).settled);
+    }
+
+    #[test]
+    fn a_delayed_spring_waits_where_it_is_and_starts_from_rest() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, Spring::SMOOTH, ms(0));
+        let caught = motion.sample(ms(80)).value;
+        motion.set_target(-50.0, Spring::SMOOTH.delay(ms(100)), ms(80));
+        for millis in [80, 120, 179] {
+            assert_eq!(motion.sample(ms(millis)).value, caught, "at {millis} ms");
+            assert_eq!(motion.velocity(ms(millis)), [0.0]);
+        }
+        assert!(motion.sample(ms(200)).value < caught);
+        let settle = motion.settles_at().unwrap();
+        assert_eq!(motion.sample(settle).value, -50.0);
+    }
+
+    #[test]
+    fn a_delayed_instant_jumps_when_the_delay_is_over() {
+        let mut motion = Motion::at(0.0);
+        let late = Transition::Instant.delay(ms(30));
+        motion.set_target(1.0, late, ms(0));
+        assert_eq!(motion.sample(ms(29)).value, 0.0);
+        assert!(!motion.sample(ms(29)).settled);
+        assert_eq!(
+            motion.sample(ms(30)),
+            Sample {
+                value: 1.0,
+                settled: true
+            }
+        );
+        let mut motion = Motion::at(0.0);
+        motion.set_target(1.0, Spring::new(Duration::ZERO).delay(ms(30)), ms(0));
+        assert_eq!(motion.sample(ms(29)).value, 0.0);
+        assert_eq!(motion.sample(ms(30)).value, 1.0);
+    }
+
+    #[test]
+    fn staggered_items_each_start_one_step_after_the_one_before() {
+        let step = ms(40);
+        let mut items = [Motion::at(0.0); 5];
+        for (n, item) in (0..).zip(&mut items) {
+            item.set_target(100.0, linear(100).delay(step * n), ms(0));
+        }
+        let traces: Vec<crate::Trace> = items
+            .iter()
+            .map(|item| crate::Trace::of(item, ms(0), ms(20)))
+            .collect();
+        let starts: Vec<Duration> = traces
+            .iter()
+            .map(|trace| {
+                trace
+                    .rows()
+                    .iter()
+                    .find(|row| row.values[0] > 0.0)
+                    .unwrap()
+                    .at
+            })
+            .collect();
+        assert_eq!(starts, [ms(20), ms(60), ms(100), ms(140), ms(180)]);
+        assert_eq!(
+            traces[2].to_string(),
+            "\
+ms           value
+0            0.000
+20           0.000
+40           0.000
+60           0.000
+80           0.000
+100         20.000
+120         40.000
+140         60.000
+160         80.000
+180        100.000  settled
+"
+        );
     }
 
     #[test]

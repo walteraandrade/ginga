@@ -1,11 +1,12 @@
 //! Buttons that answer to the pointer and the keyboard: each grows a little
-//! under the pointer, sinks while pressed, and shows a ring with the focus.
+//! under the pointer, sinks while pressed, and shows a ring with the focus,
+//! which a press gives it.
 //! Play turns them from quiet to loud, so the page moves without a pointer.
 
 use ginga_gpui::{Color, Look, LookExt, Spring, color};
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, px, rgb,
+    Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
+    div, px, rgb,
 };
 
 pub struct Buttons {
@@ -45,7 +46,6 @@ impl Render for Buttons {
                     .radius(8.)
                     .background(fill)
                     .border_color(Color::TRANSPARENT);
-                let focus_for_click = focus.clone();
                 div()
                     .id(index)
                     .flex()
@@ -54,7 +54,6 @@ impl Render for Buttons {
                     .border_2()
                     .cursor_pointer()
                     .track_focus(focus)
-                    .on_click(move |_, window, cx| window.focus(&focus_for_click, cx))
                     .child(label)
                     .look(("button", index), rest, Spring::SNAPPY)
                     .hover(
@@ -62,7 +61,10 @@ impl Render for Buttons {
                             .size(128., 44.)
                             .background(fill.with_alpha(0.85)),
                     )
-                    .pressed(Look::new().size(112., 36.).radius(12.))
+                    // It sinks by moving down, not by shrinking: a smaller
+                    // button could slide out from under the pointer and lose
+                    // the click.
+                    .pressed(Look::new().offset(0., 2.).radius(12.))
                     .focused(focus, Look::new().border_color(color(rgb(0x00e8_eaed))))
             });
         div()

@@ -337,7 +337,7 @@ div()
     .on_click(cx.listener(|this, _, _, cx| this.save(cx)))
     .look("save", Look::new().size(120., 40.).background(fill), Spring::SNAPPY)
     .hover(Look::new().size(128., 44.))
-    .pressed(Look::new().size(112., 36.))
+    .pressed(Look::new().offset(0., 2.))
     .focused(&self.focus, Look::new().border_color(ring))
 ```
 

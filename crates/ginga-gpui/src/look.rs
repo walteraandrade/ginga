@@ -9,8 +9,8 @@ use ginga::{Color, Look, LookMotion, Transition, Transitions};
 use gpui::{
     AnyElement, App, Bounds, DispatchPhase, Element, ElementId, FocusHandle, Global,
     GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Position,
-    Rgba, Styled, Window, px,
+    MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    Pixels, Position, Rgba, Styled, Window, px,
 };
 
 use crate::{Animate, Clock, reduced};
@@ -79,6 +79,8 @@ struct Moving {
 pub struct Gestures {
     hovered: bool,
     pressed: bool,
+    /// The pointer has moved in the window since it last left it.
+    inside: bool,
 }
 
 /// Where an element's look motion is kept.
@@ -144,7 +146,9 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
     }
 
     /// The look while the pointer is over the element, laid over its own.
-    /// The element's own mouse handlers still run.
+    /// The element's own mouse handlers still run. A size in it moves the
+    /// element's edges, and with them where the pointer is over it: a hover
+    /// look smaller than the element's own flickers at its edge.
     #[must_use]
     pub fn hover(mut self, look: Look) -> Self {
         self.hover = Some(look);
@@ -153,7 +157,10 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
 
     /// The look while the element is pressed with the left button, laid over
     /// its own; it wins over [`hover`](Self::hover). A release anywhere ends
-    /// it. The element's own click handlers still run.
+    /// it, and a child that stops the press keeps it from the element. The
+    /// element's own click handlers still run, but GPUI counts a click only
+    /// when the release is over the element: a pressed look that shrinks it
+    /// can lose a click near its edge, so shrink it with care or not at all.
     #[must_use]
     pub fn pressed(mut self, look: Look) -> Self {
         self.pressed = Some(look);
@@ -354,9 +361,13 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<Hitbox> {
+        // Inserted before the children's, so theirs lie over it, as GPUI's
+        // own elements do.
+        let hitbox = self
+            .hears_the_pointer()
+            .then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal));
         element.prepaint(window, cx);
-        self.hears_the_pointer()
-            .then(|| window.insert_hitbox(bounds, HitboxBehavior::Normal))
+        hitbox
     }
 
     fn paint(
@@ -369,16 +380,30 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         window: &mut Window,
         cx: &mut App,
     ) {
-        element.paint(window, cx);
+        // Registered before the children's listeners, so in the bubble phase
+        // theirs run first, and a child that takes the press keeps it.
         if let Some(hitbox) = hitbox.take() {
+            // The element can move under a still pointer, as in a scroll:
+            // this frame's hit test says whether the pointer is over it now.
+            let mut now = gestures.get();
+            let hovered = now.inside && hitbox.is_hovered(window);
+            if now.hovered != hovered {
+                now.hovered = hovered;
+                gestures.set(now);
+                window.request_animation_frame();
+            }
             listen(gestures, hitbox, window);
         }
+        element.paint(window, cx);
     }
 }
 
 /// Listens to the pointer for an element's hover and pressed looks. After
 /// each change it draws again the view that drew the element, and no other.
-/// It stops nothing, so the element's own handlers run as they would.
+/// It stops nothing, so the element's own handlers run as they would; a
+/// child that stops a press keeps it from the element. It does not read
+/// `default_prevented`: GPUI's own focus handling marks every press on a
+/// focusable element so.
 fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, window: &mut Window) {
     let view = window.current_view();
     let change = move |gestures: &Cell<Gestures>, cx: &mut App, f: &dyn Fn(&mut Gestures)| {
@@ -390,10 +415,27 @@ fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, window: &mut Window) {
         }
     };
     let (on_move, over) = (gestures.clone(), hitbox.clone());
-    window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
+    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
         if phase == DispatchPhase::Capture {
             let hovered = over.is_hovered(window);
-            change(&on_move, cx, &|now| now.hovered = hovered);
+            // A move with the button up is a release that was lost, such as
+            // one outside the window.
+            let released = event.pressed_button != Some(MouseButton::Left);
+            change(&on_move, cx, &|now| {
+                now.inside = true;
+                now.hovered = hovered;
+                now.pressed &= !released;
+            });
+        }
+    });
+    // The pointer can leave the window without a last move.
+    let on_exit = gestures.clone();
+    window.on_mouse_event(move |_: &MouseExitEvent, phase, _, cx| {
+        if phase == DispatchPhase::Capture {
+            change(&on_exit, cx, &|now| {
+                now.inside = false;
+                now.hovered = false;
+            });
         }
     });
     let on_down = gestures.clone();
@@ -403,6 +445,7 @@ fn listen(gestures: &Rc<Cell<Gestures>>, hitbox: Hitbox, window: &mut Window) {
             && hitbox.is_hovered(window)
         {
             change(&on_down, cx, &|now| {
+                now.inside = true;
                 now.pressed = true;
                 now.hovered = true;
             });

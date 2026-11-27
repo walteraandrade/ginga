@@ -11,7 +11,7 @@ How `.shared(key, transition)` makes two elements one thing that travels between
 
 ## The frames of a trip
 
-1. The new element's state is made in `request_layout`. It takes the motion of the key's last element when that is another element, still alive, in the same window, and motion is not reduced. It has a motion but no destination yet: it is laid out normally and not painted (`Mode::Measuring`). This is the one frame a trip spends drawing nothing. It cannot draw the traveller then: the element is laid out once per frame, in its destination, and an element is not `Clone`.
+1. The new element's state is made in `request_layout`. It takes the motion of the key's last element when that is another element, still alive, in the same window, and motion is not reduced. It has a motion but no destination yet: it is laid out normally, and neither prepainted nor painted (`Mode::Measuring`): a prepaint would leave its hitboxes and any deferred draw inside it on screen for a frame. This is the one frame a trip spends drawing nothing. It cannot draw the traveller then: the element is laid out once per frame, in its destination, and an element is not `Clone`.
 2. In `prepaint` it learns its bounds and sets the motion's target there, from wherever the motion is. That keeps a change of destination in the middle of a trip continuous.
 3. Each frame after, until the motion settles, it is a holder `div` in the layout with the element itself `absolute` at the motion's bounds, relative to the holder, inside `deferred(..).with_priority(1)`, so it is drawn over the rest (`Mode::Travelling`). The holder takes the element's own layout style: its position and inset, margins, flex grow, shrink and basis, `align_self`, min and max size, and its width and height where the element names one (else the size it had). So an absolute mark stays out of the flow, a margin keeps its room, and a destination whose size changes mid-trip (a `w_full` card whose parent resizes) is followed, not snapped to. Tests cover all three.
 4. Settled, it is drawn in place and asks for no frame. Later moves of its destination, from layout, are jumps: only the first destination, or one that changes while travelling, is a target.
@@ -19,7 +19,7 @@ How `.shared(key, transition)` makes two elements one thing that travels between
 ## Traps
 
 - GPUI's global id holds only the ids of ancestors that *have* ids. Tabs or rows with no id give every shared element of a key the same global id, so GPUI sees one element that moved: no new state, and no trip. The tests give each tab and the row and card an id, and the doc says so.
-- `Mode` and `Frame` are `pub` in a private module, because they appear in the `Element` impl's associated type (E0446 otherwise).
+- `Frame` is `pub` in a private module, because it is the `Element` impl's associated type (E0446 otherwise). `Mode` stays private: past layout, only whether the element measures matters.
 - Bounds move through `impl Animate for Bounds<Pixels>`, whose stand-in is `InPixels<4>`: x, y, width, height.
 - Under reduced motion a new element takes no motion from the key, so it is in its destination in its first frame and asks for none.
 

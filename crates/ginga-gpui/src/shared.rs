@@ -98,10 +98,9 @@ struct Kept {
     place: Option<Bounds<Pixels>>,
 }
 
-/// How a shared element is drawn this frame. `pub` in a private module: it
-/// appears in the `Element` impl, and cannot be named outside the crate.
+/// How a shared element is drawn this frame.
 #[derive(Clone, Copy, PartialEq)]
-pub enum Mode {
+enum Mode {
     /// In its place.
     InPlace,
     /// Laid out in its place to learn where that is, and not drawn.
@@ -111,10 +110,12 @@ pub enum Mode {
 }
 
 /// What one frame of a shared element carries from layout to paint: what
-/// is drawn, how, and the frame's time, read once.
+/// is drawn, whether it only measures, and the frame's time, read once.
+/// `pub` in a private module: it appears in the `Element` impl, and cannot
+/// be named outside the crate.
 pub struct Frame {
     element: AnyElement,
-    mode: Mode,
+    measuring: bool,
     now: Duration,
 }
 
@@ -216,7 +217,11 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
         let mut element = element;
         (
             element.request_layout(window, cx),
-            Frame { element, mode, now },
+            Frame {
+                element,
+                measuring: mode == Mode::Measuring,
+                now,
+            },
         )
     }
 
@@ -230,7 +235,11 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
         cx: &mut App,
     ) {
         let id = id.expect("a shared element has an id");
-        frame.element.prepaint(window, cx);
+        // Measuring, it is not drawn: nothing in it is prepainted either, so
+        // it leaves no hitbox and no deferred draw behind.
+        if !frame.measuring {
+            frame.element.prepaint(window, cx);
+        }
         let now = frame.now;
         let transition = unless_reduced(self.transition, cx);
         let (kept, changed) = window.with_element_state(id, |kept: Option<Kept>, _| {
@@ -290,7 +299,7 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if frame.mode != Mode::Measuring {
+        if !frame.measuring {
             frame.element.paint(window, cx);
         }
     }

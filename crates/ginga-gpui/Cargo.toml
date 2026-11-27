@@ -3,6 +3,8 @@ name = "ginga-gpui"
 description = "ginga motion for GPUI views: the frame's clock, frame requests and reduced motion."
 version.workspace = true
 edition.workspace = true
+# gpui-pre =0.3.12 uses library features stabilized in Rust 1.95.
+rust-version = "1.95"
 publish.workspace = true
 
 [dependencies]

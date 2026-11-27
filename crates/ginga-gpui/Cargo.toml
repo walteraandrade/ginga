@@ -29,3 +29,9 @@ gpui = { workspace = true, features = ["test-support"] }
 # development packages there.
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", default-features = false, features = ["x11", "font-kit"] }
+
+# The gallery's own tests, which play each page on GPUI's test platform, run
+# with `cargo test -p ginga-gpui`.
+[[example]]
+name = "gallery"
+test = true

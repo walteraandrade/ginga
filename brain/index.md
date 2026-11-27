@@ -32,6 +32,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/no-alloc-counts-one-thread]]: the allocation test counts the test's own thread only.
 - [[codebase/bouncy-spring-bench-and-code-layout]]: why the bouncy one-channel spring benchmarks slow (#6).
 - [[codebase/what-a-cached-view-saves]]: render, layout and paint, not the scene's trip to the GPU.
+- [[codebase/recording-a-gallery-page]]: how a recording drives the gallery, and why it must never block the main thread.
 
 ## Measurements
 

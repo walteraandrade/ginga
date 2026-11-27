@@ -13,3 +13,5 @@ The view above an island is rendered on each of the island's frames (it is on th
 Seen in [the island measurement](../../docs/measurements/2026-11-27-island-alone/README.md): the heavy view rendered 0 times beside the island, and about 20 ms of main-thread time per frame was left with lavapipe.
 
 Caching is skipped while GPUI's inspector is picking an element, and a view whose opacity changed is redrawn on the next frame.
+
+Order within a frame, seen in the gallery's island page under Xvfb: the island renders *before* the cached view beside it, and the cached view renders twice while the window opens. A count a view shows of another view's renders is therefore one frame old; the page counts renders since Play instead.

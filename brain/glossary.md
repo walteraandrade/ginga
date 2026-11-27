@@ -111,3 +111,5 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 **Island** (`ginga_gpui::Island`). A small view of its own that draws what moves, so that the frames its motion asks for render the island and the views above it, and not the heavy, cached views beside it.
 
 **Stale pane.** A cached view that shows old state because it changed without being notified. The risk an island brings.
+
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].

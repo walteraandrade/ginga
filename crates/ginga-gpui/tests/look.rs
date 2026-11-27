@@ -131,7 +131,7 @@ fn a_change_of_look_animates_and_settles_on_it(cx: &mut TestAppContext) {
 fn a_value_the_look_does_not_name_is_the_elements_own(cx: &mut TestAppContext) {
     let (window, drawn) = open(cx, Look::new().width(100.).offset(0., 0.), None, false);
     change(&window, cx, |cards| {
-        cards.look = Look::new().width(100.).offset(40., 20.)
+        cards.look = Look::new().width(100.).offset(40., 20.);
     });
     after(100, &window, cx);
     let bounds = last(&drawn);

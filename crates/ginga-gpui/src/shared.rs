@@ -23,7 +23,7 @@ pub trait SharedExt: Styled + IntoElement + 'static {
     ///
     /// ```ignore
     /// // In each tab: only the selected one draws the mark.
-    /// div().children(selected.then(|| {
+    /// div().id(tab).children(selected.then(|| {
     ///     div().h(px(2.)).w_full().bg(accent).shared("tab-mark", Spring::SNAPPY)
     /// }))
     /// ```
@@ -54,6 +54,11 @@ impl<E: Styled + IntoElement + 'static> SharedExt for E {}
 /// before, or that is still drawn: a key whose last element went long ago
 /// is not a place to come from. The frame it appears in is spent measuring
 /// where it goes, and it is not drawn in that frame.
+///
+/// GPUI tells elements apart by the ids of the elements around them. Two
+/// elements of one key must differ there, such as tabs that each have an id:
+/// to GPUI, two with the same ids around them are one element that moved,
+/// and it takes its new place at once.
 pub struct Shared<E> {
     key: SharedString,
     transition: Transition,

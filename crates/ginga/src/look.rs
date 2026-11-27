@@ -446,4 +446,54 @@ ms               x           y     opacity
              0            1.000       2.000       0.500       3.000       4.000       5.000  settled\n"
         );
     }
+
+    #[test]
+    fn samples_out_of_order_or_far_apart_give_the_same_look() {
+        let mut card = LookMotion::at(Look::new().offset(0.0, 0.0).opacity(0.0));
+        card.set_target(Look::new().offset(80.0, 40.0).opacity(1.0), glide(), ms(0));
+        let in_order: Vec<_> = [20, 50, 80].map(|t| card.sample(ms(t)).value).into();
+        let shuffled = [80, 20, 50].map(|t| (t, card.sample(ms(t)).value));
+        for (t, look) in shuffled {
+            let index = [20, 50, 80].iter().position(|&u| u == t).unwrap();
+            assert_eq!(look, in_order[index], "at {t} ms");
+        }
+        assert_eq!(
+            card.sample(ms(50)).value,
+            Look::new().offset(40.0, 20.0).opacity(0.5)
+        );
+    }
+
+    #[test]
+    fn a_change_to_one_value_does_not_start_the_others_over() {
+        let mut card = LookMotion::at(Look::new().width(100.0).opacity(0.0));
+        card.set_target(Look::new().width(200.0).opacity(0.0), glide(), ms(0));
+        card.set_target(Look::new().width(200.0).opacity(1.0), glide(), ms(50));
+        let sample = card.sample(ms(100)).value;
+        assert_eq!(
+            sample.width,
+            Some(200.0),
+            "the width ends at 100 ms, not 150"
+        );
+        assert_eq!(sample.opacity, Some(0.5), "the opacity started at 50 ms");
+    }
+
+    #[test]
+    fn a_value_dropped_while_it_moves_and_named_again_takes_its_value_at_once() {
+        let mut card = LookMotion::at(Look::new().width(0.0).opacity(0.0));
+        card.set_target(Look::new().width(100.0).opacity(1.0), glide(), ms(0));
+        card.set_target(Look::new().opacity(1.0), glide(), ms(20));
+        card.set_target(Look::new().width(300.0).opacity(1.0), glide(), ms(40));
+        assert_eq!(card.sample(ms(40)).value.width, Some(300.0));
+        assert_eq!(card.target(), Look::new().width(300.0).opacity(1.0));
+    }
+
+    #[test]
+    fn jump_to_puts_the_look_at_rest_with_no_motion() {
+        let mut card = LookMotion::at(Look::new().width(0.0));
+        card.set_target(Look::new().width(100.0), glide(), ms(0));
+        card.jump_to(Look::new().width(40.0).radius(4.0));
+        let sample = card.sample(ms(10));
+        assert_eq!(sample.value, Look::new().width(40.0).radius(4.0));
+        assert!(sample.settled);
+    }
 }

@@ -441,7 +441,7 @@ div().id(tab).children((tab == selected).then(|| {
 }))
 ```
 
-While it travels it is drawn above the rest, and its place stays empty at its size, so nothing around it moves. It comes only from an element of its key drawn in the frame before; the frame it appears in measures where it goes and draws nothing. Its content is laid out again at each size it passes, since GPUI cannot scale an element. Two elements of one key must have different ids around them, such as tabs that each have an id: to GPUI, two with the same ids around them are one element, which takes its new place at once.
+While it travels it is drawn above the rest, and its destination stays empty at its size, with its margins and its position, so nothing around it moves. A key names one thing in a window, so two tab bars need a key each. It comes only from an element of its key drawn in the frame before, in the same window; the frame it appears in measures where it goes and draws nothing, so a trip starts with one blank frame. Under reduced motion it is in its destination at once. Its content is laid out again at each size it passes, since GPUI cannot scale an element. Two elements of one key must have different ids around them, such as tabs that each have an id: to GPUI, two with the same ids around them are one element, which takes its new place at once.
 
 ## An element to drag
 

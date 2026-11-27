@@ -4,12 +4,14 @@
 use std::{
     collections::HashMap,
     rc::{Rc, Weak},
+    time::Duration,
 };
 
 use ginga::Transition;
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, Global, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, ParentElement, Pixels, SharedString, Styled, Window, deferred, div, px,
+    IntoElement, LayoutId, ParentElement, Pixels, SharedString, Styled, Window, WindowId, deferred,
+    div, px,
 };
 
 use crate::{Animate, Clock, unless_reduced};
@@ -50,9 +52,11 @@ impl<E: Styled + IntoElement + 'static> SharedExt for E {}
 /// empty at its size, so nothing around it moves. GPUI cannot scale an
 /// element, so its content is laid out again at each size it passes.
 ///
-/// It travels only from an element of its key that was drawn in the frame
-/// before, or that is still drawn: a key whose last element went long ago
-/// is not a place to come from. The frame it appears in is spent measuring
+/// A key names one thing in a window: two tab bars in one window need a
+/// key each, such as `format!("tab-mark-{bar}")`. It travels only from an
+/// element of its key, in the same window, that was drawn in the frame
+/// before or is still drawn: a key whose last element went long ago is not
+/// a place to come from. The frame it appears in is spent measuring
 /// where it goes, and it is not drawn in that frame.
 ///
 /// GPUI tells elements apart by the ids of the elements around them. Two
@@ -65,13 +69,13 @@ pub struct Shared<E> {
     element: Option<E>,
 }
 
-/// Where each key was drawn last, by which element, and on what way: the
-/// one place two elements of a key meet. One clock for all of them, so a
-/// motion handed from one element to another reads the same time.
+/// Where each key was drawn last in each window, by which element, and on
+/// what way: the one place two elements of a key meet. One clock for all of
+/// them, so a motion handed from one element to another reads the same time.
 #[derive(Default)]
 struct Places {
     clock: Clock,
-    last: HashMap<SharedString, Place>,
+    last: HashMap<(WindowId, SharedString), Place>,
 }
 
 impl Global for Places {}
@@ -106,6 +110,14 @@ pub enum Mode {
     Travelling,
 }
 
+/// What one frame of a shared element carries from layout to paint: what
+/// is drawn, how, and the frame's time, read once.
+pub struct Frame {
+    element: AnyElement,
+    mode: Mode,
+    now: Duration,
+}
+
 impl<E: Styled + IntoElement + 'static> IntoElement for Shared<E> {
     type Element = Self;
 
@@ -115,7 +127,7 @@ impl<E: Styled + IntoElement + 'static> IntoElement for Shared<E> {
 }
 
 impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
-    type RequestLayoutState = (AnyElement, Mode);
+    type RequestLayoutState = Frame;
     type PrepaintState = ();
 
     fn id(&self) -> Option<ElementId> {
@@ -132,9 +144,12 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
         _inspector_id: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, (AnyElement, Mode)) {
+    ) -> (LayoutId, Frame) {
         let id = id.expect("a shared element has an id");
         let now = now(cx);
+        // Under reduced motion it comes from nowhere: it is in its place at once.
+        let travels = !matches!(unless_reduced(self.transition, cx), Transition::Instant);
+        let key = (window.window_handle().window_id(), self.key.clone());
         let places = cx.default_global::<Places>();
         let kept = window.with_element_state(id, |kept: Option<Kept>, _| {
             let kept = kept.unwrap_or_else(|| Kept {
@@ -143,39 +158,66 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
                 // there or was drawn in the frame before.
                 motion: places
                     .last
-                    .get(&self.key)
-                    .filter(|place| place.owner != *id && place.alive.upgrade().is_some())
+                    .get(&key)
+                    .filter(|place| {
+                        travels && place.owner != *id && place.alive.upgrade().is_some()
+                    })
                     .map(|place| place.motion),
                 place: None,
             });
             (kept.clone(), kept)
         });
-        let element = self.element.take().expect("an element is laid out once");
-        let (element, mode) = match (kept.motion, kept.place) {
-            (Some(_), None) => (element.into_any_element(), Mode::Measuring),
-            (Some(motion), Some(place)) if !motion.sample(now).settled => {
-                let at = Bounds::from_repr(motion.sample(now).value);
+        let mut element = self.element.take().expect("an element is laid out once");
+        let sample = kept.motion.map(|motion| motion.sample(now));
+        let mode = match (sample, kept.place) {
+            (Some(_), None) => Mode::Measuring,
+            (Some(sample), Some(_)) if !sample.settled => Mode::Travelling,
+            _ => Mode::InPlace,
+        };
+        let element = match (mode, sample, kept.place) {
+            (Mode::Travelling, Some(sample), Some(place)) => {
+                let at = Bounds::from_repr(sample.value);
+                let style = element.style();
+                // The place keeps the element's own place in the layout:
+                // where it sits, its margins, how it grows, and its size
+                // where it names one, else the size it had.
+                let mut holder = div().relative();
+                let held = holder.style();
+                held.position = style.position.take();
+                held.inset = core::mem::take(&mut style.inset);
+                held.margin = core::mem::take(&mut style.margin);
+                held.flex_grow = style.flex_grow.take();
+                held.flex_shrink = style.flex_shrink.take();
+                held.flex_basis = style.flex_basis.take();
+                held.align_self = style.align_self.take();
+                held.min_size = style.min_size.clone();
+                held.max_size = style.max_size.clone();
+                held.size.width = style.size.width.or(Some(place.size.width.into()));
+                held.size.height = style.size.height.or(Some(place.size.height.into()));
                 let traveller = element
                     .absolute()
                     .left(at.origin.x - place.origin.x)
                     .top(at.origin.y - place.origin.y)
                     .w(at.size.width.max(px(0.)))
-                    .h(at.size.height.max(px(0.)));
-                let element = div()
-                    .relative()
-                    .w(place.size.width)
-                    .h(place.size.height)
+                    .h(at.size.height.max(px(0.)))
+                    .min_w(px(0.))
+                    .min_h(px(0.))
+                    .max_w(at.size.width.max(px(0.)))
+                    .max_h(at.size.height.max(px(0.)));
+                holder
                     .child(deferred(traveller).with_priority(1))
-                    .into_any_element();
-                (element, Mode::Travelling)
+                    .into_any_element()
             }
-            _ => (element.into_any_element(), Mode::InPlace),
+            _ => element.into_any_element(),
         };
         if mode != Mode::InPlace {
             window.request_animation_frame();
         }
         let mut element = element;
-        (element.request_layout(window, cx), (element, mode))
+        (
+            element.request_layout(window, cx),
+            Frame { element, mode, now },
+        )
     }
 
     fn prepaint(
@@ -183,17 +225,18 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
         id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        (element, _): &mut (AnyElement, Mode),
+        frame: &mut Frame,
         window: &mut Window,
         cx: &mut App,
     ) {
         let id = id.expect("a shared element has an id");
-        element.prepaint(window, cx);
-        let now = now(cx);
+        frame.element.prepaint(window, cx);
+        let now = frame.now;
         let transition = unless_reduced(self.transition, cx);
-        let kept = window.with_element_state(id, |kept: Option<Kept>, _| {
+        let (kept, changed) = window.with_element_state(id, |kept: Option<Kept>, _| {
             let mut kept = kept.expect("laid out before it is prepainted");
             let target = bounds.to_repr();
+            let changed = kept.place != Some(bounds) || kept.motion.is_none();
             match &mut kept.motion {
                 // A place to head for, the first time or because it moved.
                 Some(motion) if kept.place != Some(bounds) => {
@@ -207,18 +250,34 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
                 None => kept.motion = Some(ginga::Motion::at(target)),
             }
             kept.place = Some(bounds);
-            (kept.clone(), kept)
+            ((kept.clone(), changed), kept)
         });
-        if let Some(motion) = kept.motion {
-            cx.default_global::<Places>().last.insert(
-                self.key.clone(),
-                Place {
-                    owner: id.clone(),
-                    alive: Rc::downgrade(&kept.token),
-                    motion,
-                },
-            );
+        let Some(motion) = kept.motion else { return };
+        let key = (window.window_handle().window_id(), self.key.clone());
+        let places = cx.default_global::<Places>();
+        // Written only when it says something new: at rest, nothing changes.
+        if !changed
+            && places
+                .last
+                .get(&key)
+                .is_some_and(|place| place.owner == *id)
+        {
+            return;
         }
+        if !places.last.contains_key(&key) {
+            // A new key: let go of the keys whose last element is gone.
+            places
+                .last
+                .retain(|_, place| place.alive.upgrade().is_some());
+        }
+        places.last.insert(
+            key,
+            Place {
+                owner: id.clone(),
+                alive: Rc::downgrade(&kept.token),
+                motion,
+            },
+        );
     }
 
     fn paint(
@@ -226,19 +285,19 @@ impl<E: Styled + IntoElement + 'static> Element for Shared<E> {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
-        (element, mode): &mut (AnyElement, Mode),
+        frame: &mut Frame,
         (): &mut (),
         window: &mut Window,
         cx: &mut App,
     ) {
-        if *mode != Mode::Measuring {
-            element.paint(window, cx);
+        if frame.mode != Mode::Measuring {
+            frame.element.paint(window, cx);
         }
     }
 }
 
 /// The time on the clock every shared element reads.
-fn now(cx: &mut App) -> core::time::Duration {
+fn now(cx: &mut App) -> Duration {
     let mut clock = cx.default_global::<Places>().clock;
     let now = clock.now(cx);
     cx.global_mut::<Places>().clock = clock;

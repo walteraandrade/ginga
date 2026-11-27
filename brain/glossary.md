@@ -122,6 +122,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Travelling** (checked by `ShownItem::moving`). An item is on its way to its place: its offset is not settled. *Not the offset*: an offset can pass `0.0` while it travels, so `moving()` checks this.
 
+**Shared element** (`SharedExt::shared`, `Shared`) and **traveller**. Elements in different spots that declare one key are one thing. The one that appears while another of its key has just gone is the *traveller*: drawn above the rest, it moves and resizes from the other's bounds to its own *destination*, the bounds layout gives it, which is kept empty at its size meanwhile. *Not a list's place or travelling*: those are `PresenceList::place_all`'s, for items along one list. See [[codebase/a-shared-element]].
+
 ## In a GPUI view
 
 **Test platform.** GPUI with its `test-support` feature: windows with no display, a clock the test moves and frames the test delivers. How the adapter's tests run ([[codebase/testing-the-adapter]]).
@@ -161,7 +163,5 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 **Premultiplied alpha.** A color kept with each of red, green and blue multiplied by its alpha. Transparent is then all zeros whatever its color, so a fade from it never passes through black.
 
 **Look motion** (`LookMotion`). A look on its way to another, one motion for each value. A value the last look named moves from where it is; a value it did not name has no place to start from and takes its new value at once.
-
-**Shared element** (`SharedExt::shared`, `Shared`) and **traveller**. Elements in different places that declare one key are one thing. The one that appears while another of its key has just gone is the *traveller*: drawn above the rest, it moves and resizes from the other's bounds to its own place, which is kept empty at its size. Its *place* is where layout puts it; see [[codebase/a-shared-element]].
 
 **Declared look** (`LookExt::look`, `Looked`). A look written on a GPUI element, with the transition that gets it there. Its look motion is kept with the element's id while the element is drawn each frame, or in a `LookState` the view owns.

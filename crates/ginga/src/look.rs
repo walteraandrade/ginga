@@ -110,11 +110,42 @@ impl Look {
 #[derive(Debug, Clone, Copy)]
 pub struct LookMotion {
     target: Look,
-    offset: Motion<(f32, f32)>,
+    offset: Motion<Pixels<2>>,
     opacity: Motion<f32>,
-    width: Motion<f32>,
-    height: Motion<f32>,
-    radius: Motion<f32>,
+    width: Motion<Pixels<1>>,
+    height: Motion<Pixels<1>>,
+    radius: Motion<Pixels<1>>,
+}
+
+/// Pixels, or any unit where a tenth is too small to see: an offset, a size
+/// and a radius settle a tenth from their target, where an opacity settles a
+/// thousandth from it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Pixels<const N: usize>([f32; N]);
+
+impl<const N: usize> crate::Animatable for Pixels<N>
+where
+    [f32; N]: Default,
+{
+    type Channels = [f32; N];
+
+    const PRECISION: f32 = 0.1;
+
+    fn to_channels(self) -> [f32; N] {
+        self.0
+    }
+
+    fn from_channels(channels: [f32; N]) -> Self {
+        Self(channels)
+    }
+}
+
+fn one(value: Option<f32>) -> Option<Pixels<1>> {
+    value.map(|value| Pixels([value]))
+}
+
+fn two(value: Option<(f32, f32)>) -> Option<Pixels<2>> {
+    value.map(|(x, y)| Pixels([x, y]))
 }
 
 impl LookMotion {
@@ -123,11 +154,11 @@ impl LookMotion {
     pub fn at(look: Look) -> Self {
         Self {
             target: look,
-            offset: Motion::at(look.offset.unwrap_or_default()),
+            offset: Motion::at(two(look.offset).unwrap_or(Pixels([0.0; 2]))),
             opacity: Motion::at(look.opacity.unwrap_or_default()),
-            width: Motion::at(look.width.unwrap_or_default()),
-            height: Motion::at(look.height.unwrap_or_default()),
-            radius: Motion::at(look.radius.unwrap_or_default()),
+            width: Motion::at(one(look.width).unwrap_or(Pixels([0.0]))),
+            height: Motion::at(one(look.height).unwrap_or(Pixels([0.0]))),
+            radius: Motion::at(one(look.radius).unwrap_or(Pixels([0.0]))),
         }
     }
 
@@ -153,7 +184,13 @@ impl LookMotion {
     pub fn set_target(&mut self, look: Look, transition: impl Into<Transition>, now: Duration) {
         let transition = transition.into();
         let was = self.target;
-        retarget(&mut self.offset, was.offset, look.offset, transition, now);
+        retarget(
+            &mut self.offset,
+            two(was.offset),
+            two(look.offset),
+            transition,
+            now,
+        );
         retarget(
             &mut self.opacity,
             was.opacity,
@@ -161,9 +198,27 @@ impl LookMotion {
             transition,
             now,
         );
-        retarget(&mut self.width, was.width, look.width, transition, now);
-        retarget(&mut self.height, was.height, look.height, transition, now);
-        retarget(&mut self.radius, was.radius, look.radius, transition, now);
+        retarget(
+            &mut self.width,
+            one(was.width),
+            one(look.width),
+            transition,
+            now,
+        );
+        retarget(
+            &mut self.height,
+            one(was.height),
+            one(look.height),
+            transition,
+            now,
+        );
+        retarget(
+            &mut self.radius,
+            one(was.radius),
+            one(look.radius),
+            transition,
+            now,
+        );
         self.target = look;
     }
 
@@ -179,11 +234,14 @@ impl LookMotion {
         let mut settled = true;
         let target = self.target;
         let look = Look {
-            offset: read(target.offset, &self.offset, now, &mut settled),
+            offset: read(target.offset, &self.offset, now, &mut settled)
+                .map(|Pixels([x, y])| (x, y)),
             opacity: read(target.opacity, &self.opacity, now, &mut settled),
-            width: read(target.width, &self.width, now, &mut settled),
-            height: read(target.height, &self.height, now, &mut settled),
-            radius: read(target.radius, &self.radius, now, &mut settled),
+            width: read(target.width, &self.width, now, &mut settled).map(|Pixels([value])| value),
+            height: read(target.height, &self.height, now, &mut settled)
+                .map(|Pixels([value])| value),
+            radius: read(target.radius, &self.radius, now, &mut settled)
+                .map(|Pixels([value])| value),
         };
         Sample {
             value: look,
@@ -199,8 +257,8 @@ impl LookMotion {
 }
 
 /// One value of a look at `now`, when the target names it.
-fn read<T: crate::Animatable>(
-    named: Option<T>,
+fn read<T: crate::Animatable, U>(
+    named: Option<U>,
     motion: &Motion<T>,
     now: Duration,
     settled: &mut bool,
@@ -353,5 +411,24 @@ ms               x           y     opacity
         assert!(last.settled);
         assert_eq!(last.values, [-12.5, 3.0, 320.0, 180.0, 6.0]);
         assert_eq!(card.sample(last.at).value, target);
+    }
+
+    #[test]
+    fn pixels_settle_a_tenth_from_their_target_and_opacity_a_thousandth() {
+        let mut card = LookMotion::at(Look::new().size(180.0, 110.0));
+        card.set_target(Look::new().size(360.0, 220.0), Spring::SNAPPY, ms(0));
+        let trace = Trace::of(&card, ms(0), ms(48));
+        assert_eq!(
+            trace.rows().last().unwrap().at,
+            ms(432),
+            "not 624 ms, a thousandth away"
+        );
+
+        let mut fade = LookMotion::at(Look::new().opacity(0.0));
+        fade.set_target(Look::new().opacity(1.0), Spring::SNAPPY, ms(0));
+        // At 240 ms the opacity is within a tenth of 1.0, but not a thousandth.
+        let close = fade.sample(ms(240));
+        assert!(close.value.opacity.unwrap() > 0.9);
+        assert!(!close.settled, "an opacity still moves a thousandth away");
     }
 }

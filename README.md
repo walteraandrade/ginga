@@ -95,6 +95,52 @@ assert_eq!(
 
 An item on its way out is still drawn, so it can still be clicked or focused unless you say otherwise: check for `Phase::Exiting`.
 
+An item whose place changes can travel there. After layout, tell the list where each item is with `place`; the list answers, in each item's `offset`, how far from that place to draw it this frame, a distance that heads for zero. A reorder in the middle of a move turns around from where the item is, with its speed.
+
+```rust
+use std::time::Duration;
+use ginga::{InOut, PresenceList, Spring};
+
+let ms = Duration::from_millis;
+let mut rows = PresenceList::new();
+
+rows.sync([("a", ()), ("b", ())], InOut::INSTANT, ms(0));
+rows.place(&"a", 0.0, Spring::SNAPPY, ms(0));
+rows.place(&"b", 40.0, Spring::SNAPPY, ms(0));
+
+rows.sync([("b", ()), ("a", ())], InOut::INSTANT, ms(1_000)); // "b" goes first
+rows.place(&"b", 0.0, Spring::SNAPPY, ms(1_000));
+rows.place(&"a", 40.0, Spring::SNAPPY, ms(1_000));
+
+let b = rows.frame(ms(1_000)).next().unwrap();
+assert_eq!((*b.key, b.offset), ("b", 40.0)); // drawn where it was, 40 below its new place
+```
+
+In a GPUI list the rows are laid out in order, and each one is drawn `offset` away from its place:
+
+```rust,ignore
+let row_height = 40.;
+let mut moving = false;
+for (index, row) in (0..).zip(self.rows.frame(now)) {
+    // A row of fixed height: its place is known before layout.
+    self.rows.place(row.key, index as f32 * row_height, Spring::SNAPPY, now);
+}
+let list = div().flex().flex_col().children(self.rows.frame(now).map(|row| {
+    moving |= row.moving();
+    div()
+        .h(px(row_height))
+        .relative()
+        .top(px(row.offset))
+        .opacity(row.progress)
+        .child(row.content.label.clone())
+}));
+if moving {
+    window.request_animation_frame();
+}
+```
+
+Only the place moves: GPUI cannot scale a `div`, so a row whose size changes takes its new size at once.
+
 ## Motion as text
 
 `Trace::of(&motion, from, step)` reads a motion at regular times until it settles. Printing it gives one row per step:
@@ -173,7 +219,7 @@ The engine is not where a frame's time goes. Measured in a real app, a frame of 
 
 ## What it does not do yet
 
-- Animate layout: an item of a `PresenceList` that moves to a new place jumps there.
+- Animate a change of size: an item that grows or shrinks takes its new size at once.
 - Shared elements.
 - Sequences, stagger, keyframes.
 - Gestures and drag.

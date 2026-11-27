@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use ginga::{Easing, Motion, Spring, Transition, Tween};
+use ginga::{Easing, InOut, Motion, PresenceList, Spring, Transition, Tween};
 
 struct Counting;
 
@@ -68,6 +68,34 @@ fn reading_and_retargeting_a_motion_allocates_nothing() {
         let transition = transitions[(frame / 500) as usize % transitions.len()];
         let sample = motion.toward((side, 120.0, side / 2.0, 1.0), transition, now);
         checksum += sample.value.0;
+    }
+    let after = allocations();
+    assert!(checksum > 0.0);
+    assert_eq!(after - before, 0);
+}
+
+#[test]
+fn moving_list_items_to_new_places_allocates_nothing() {
+    let mut rows = PresenceList::new();
+    rows.sync(
+        (0..8u32).map(|key| (key, ())),
+        InOut::INSTANT,
+        Duration::ZERO,
+    );
+    let mut checksum = 0.0;
+    let before = allocations();
+    for frame in 0..10_000u32 {
+        let now = Duration::from_micros(u64::from(frame) * 8_333);
+        for key in 0..8u32 {
+            // Every 50 frames the list turns around.
+            let index = if (frame / 50).is_multiple_of(2) {
+                key
+            } else {
+                7 - key
+            };
+            rows.place(&key, index as f32 * 40.0, Spring::SNAPPY, now);
+        }
+        checksum += rows.frame(now).map(|row| row.offset.abs()).sum::<f32>();
     }
     let after = allocations();
     assert!(checksum > 0.0);

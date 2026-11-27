@@ -24,6 +24,8 @@ pub struct Spring {
     omega: f32,
     /// The damping ratio: one does not overshoot, less than one does.
     zeta: f32,
+    /// How long after the target is set the spring is released.
+    pub(crate) delay: Duration,
 }
 
 /// Why a [`Spring`] could not be built.
@@ -59,6 +61,7 @@ impl Spring {
         Self {
             omega: TAU / response,
             zeta,
+            delay: Duration::ZERO,
         }
     }
 
@@ -89,6 +92,24 @@ impl Spring {
             1.0 / (1.0 + bounce)
         };
         Ok(Self { zeta, ..self })
+    }
+
+    /// The same spring, released `delay` after the target is set. Until then
+    /// the value holds still where it was, and the spring starts from rest.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Motion, Spring};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let mut motion = Motion::at(0.0);
+    /// motion.set_target(100.0, Spring::SNAPPY.delay(ms(80)), ms(0));
+    /// assert_eq!(motion.sample(ms(79)).value, 0.0);
+    /// assert!(motion.sample(ms(100)).value > 0.0);
+    /// ```
+    #[must_use]
+    pub const fn delay(self, delay: Duration) -> Self {
+        Self { delay, ..self }
     }
 
     pub(crate) fn is_instant(self) -> bool {
@@ -177,6 +198,39 @@ pub(crate) enum Phase {
 }
 
 impl Phase {
+    /// The distance to the target of a channel released `offset` away from
+    /// its target at `velocity`. The first half of [`Phase::apply`], for a
+    /// frame that only draws: the velocity costs as much again.
+    ///
+    /// It repeats `apply`'s arithmetic, operation for operation, so the two
+    /// agree to the bit; a test checks it. Sharing the code through a helper
+    /// cost a four-channel frame 252 instructions against 165 (valgrind), so
+    /// the copy stays: change both together.
+    pub(crate) fn left(&self, offset: f32, velocity: f32) -> f32 {
+        match *self {
+            Self::Critical { w, t, decay } => (offset + (velocity + w * offset) * t) * decay,
+            Self::Under {
+                zw,
+                wd,
+                decay,
+                sin,
+                cos,
+            } => {
+                let b = (velocity + zw * offset) / wd;
+                decay * (offset * cos + b * sin)
+            }
+            Self::Over {
+                slow,
+                fast,
+                slow_decay,
+                fast_decay,
+            } => {
+                let c1 = (velocity - fast * offset) / (slow - fast);
+                c1 * slow_decay + (offset - c1) * fast_decay
+            }
+        }
+    }
+
     /// The distance to the target and the velocity of a channel released
     /// `offset` away from its target at `velocity`.
     pub(crate) fn apply(&self, offset: f32, velocity: f32) -> (f32, f32) {
@@ -257,6 +311,22 @@ mod tests {
             .fold(f32::MIN, f32::max);
         assert!(furthest > 1.0, "it overshoots by {furthest}");
         assert!(at(Spring::BOUNCY, 2.0).0.abs() < 0.01);
+    }
+
+    #[test]
+    fn the_distance_alone_is_the_distance_with_the_velocity() {
+        for spring in [Spring::SMOOTH, Spring::BOUNCY, over()] {
+            for seconds in [0.0, 0.05, 0.1, 0.2, 0.7] {
+                let phase = spring.phase(seconds);
+                for (offset, velocity) in [(-100.0, 0.0), (0.0, 900.0), (40.0, -2000.0)] {
+                    assert_eq!(
+                        phase.left(offset, velocity),
+                        phase.apply(offset, velocity).0,
+                        "{spring:?} at {seconds}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

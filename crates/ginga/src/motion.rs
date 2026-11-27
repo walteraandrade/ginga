@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use crate::{Animatable, Spring, Transition, Tween};
+use crate::{Animatable, Easing, Spring, Transition, Tween};
 
 /// A value on its way to a target.
 ///
@@ -70,11 +70,15 @@ struct State<C> {
     settled: bool,
 }
 
-/// What a reader needs. A tween's speed costs two more looks at its curve, so
-/// a frame that only draws does not ask for it.
+/// What a reader needs. A spring's speed costs as much again as its place, and
+/// a tween's two more looks at its curve, so a frame that only draws does not
+/// ask for it.
 #[derive(Clone, Copy)]
 enum Read {
+    /// The value alone. The `velocity` of the [`State`] is then zero, not the
+    /// motion's speed: do not read it.
     Value,
+    /// The value and its speed.
     ValueAndSpeed,
 }
 
@@ -107,13 +111,37 @@ impl<T: Animatable> Motion<T> {
     }
 
     /// Changes course at `now`, from the value and the speed the motion has then.
+    ///
+    /// A transition with a [delay](Transition::delay) holds the value still
+    /// where it is until the delay is over, then moves from rest.
     pub fn set_target(&mut self, target: T, transition: impl Into<Transition>, now: Duration) {
-        let state = self.state(now, Read::ValueAndSpeed);
+        let transition = transition.into();
+        let delay = transition.start_delay();
+        // Only a spring that starts now carries the speed on. A delayed motion
+        // waits still, so it starts from rest, and `Read::Value` reads no speed.
+        let read = match transition {
+            Transition::Spring(spring) if delay.is_zero() && !spring.is_instant() => {
+                Read::ValueAndSpeed
+            }
+            _ => Read::Value,
+        };
+        let state = self.state(now, read);
         self.target = target.to_channels();
-        self.drive = match transition.into() {
-            Transition::Spring(spring) if !spring.is_instant() => self.spring(spring, &state, now),
-            Transition::Tween(tween) if !tween.duration.is_zero() => self.tween(tween, &state, now),
-            _ => Drive::Rest,
+        let start = now.saturating_add(delay);
+        // Three ways to say "jump": no motion, a zero-length tween, a spring
+        // with no response. Without a delay a jump rests on the target at once;
+        // with one, it is a zero-length tween at the end of the delay.
+        let jumps = match transition {
+            Transition::Instant => true,
+            Transition::Spring(spring) => spring.is_instant(),
+            Transition::Tween(tween) => tween.duration.is_zero(),
+        };
+        self.drive = match transition {
+            _ if jumps && delay.is_zero() => Drive::Rest,
+            _ if jumps => self.tween(Tween::new(Duration::ZERO, Easing::Linear), &state, start),
+            Transition::Spring(spring) => self.spring(spring, &state, start),
+            Transition::Tween(tween) => self.tween(tween, &state, start),
+            Transition::Instant => Drive::Rest,
         };
     }
 
@@ -152,7 +180,7 @@ impl<T: Animatable> Motion<T> {
         match self.drive {
             Drive::Rest => None,
             Drive::Spring { settle, .. } => Some(settle),
-            Drive::Tween { tween, start, .. } => Some(start + tween.duration),
+            Drive::Tween { tween, start, .. } => Some(start.saturating_add(tween.duration)),
         }
     }
 
@@ -181,7 +209,7 @@ impl<T: Animatable> Motion<T> {
             start: now,
             offset,
             velocity: state.velocity,
-            settle: now + Duration::from_secs_f32(seconds),
+            settle: now.saturating_add(Duration::from_secs_f32(seconds)),
         }
     }
 
@@ -205,7 +233,30 @@ impl<T: Animatable> Motion<T> {
         match self.drive {
             Drive::Rest => resting,
             Drive::Spring { settle, .. } if now >= settle => resting,
-            Drive::Tween { tween, start, .. } if now >= start + tween.duration => resting,
+            Drive::Tween { tween, start, .. } if now >= start.saturating_add(tween.duration) => {
+                resting
+            }
+            Drive::Spring {
+                start,
+                offset,
+                velocity,
+                ..
+            } if now < start => {
+                let mut value = self.target;
+                for (place, released) in value.as_mut().iter_mut().zip(offset.as_ref()) {
+                    *place += released;
+                }
+                State {
+                    value,
+                    velocity,
+                    settled: false,
+                }
+            }
+            Drive::Tween { start, from, .. } if now < start => State {
+                value: from,
+                velocity: T::Channels::default(),
+                settled: false,
+            },
             Drive::Spring {
                 spring,
                 start,
@@ -214,17 +265,34 @@ impl<T: Animatable> Motion<T> {
                 ..
             } => {
                 let phase = spring.phase(now.saturating_sub(start).as_secs_f32());
-                let (mut value, mut velocity) = (self.target, velocity);
-                for ((place, speed), released) in value
-                    .as_mut()
-                    .iter_mut()
-                    .zip(velocity.as_mut())
-                    .zip(offset.as_ref())
-                {
-                    let (left, moving) = phase.apply(*released, *speed);
-                    *place += left;
-                    *speed = moving;
-                }
+                let mut value = self.target;
+                let velocity = match read {
+                    Read::Value => {
+                        for ((place, released), speed) in value
+                            .as_mut()
+                            .iter_mut()
+                            .zip(offset.as_ref())
+                            .zip(velocity.as_ref())
+                        {
+                            *place += phase.left(*released, *speed);
+                        }
+                        T::Channels::default()
+                    }
+                    Read::ValueAndSpeed => {
+                        let mut velocity = velocity;
+                        for ((place, speed), released) in value
+                            .as_mut()
+                            .iter_mut()
+                            .zip(velocity.as_mut())
+                            .zip(offset.as_ref())
+                        {
+                            let (left, moving) = phase.apply(*released, *speed);
+                            *place += left;
+                            *speed = moving;
+                        }
+                        velocity
+                    }
+                };
                 State {
                     value,
                     velocity,
@@ -342,6 +410,23 @@ mod tests {
     }
 
     #[test]
+    fn drawing_reads_the_same_values_as_reading_the_speed_too() {
+        let over = Spring::SMOOTH.bounce(-0.5).unwrap();
+        for spring in [Spring::SMOOTH, Spring::BOUNCY, over] {
+            let mut motion = Motion::at((0.0, 10.0, -40.0, 1.0));
+            motion.set_target((300.0, 80.0, 12.0, 0.0), spring, ms(0));
+            // A change of course mid-flight: each channel carries its own speed.
+            motion.set_target((-20.0, 200.0, 12.0, 0.5), spring, ms(90));
+            for millis in (90..1_500).step_by(7) {
+                let now = ms(millis);
+                let drawn = motion.state(now, Read::Value).value;
+                let read = motion.state(now, Read::ValueAndSpeed).value;
+                assert_eq!(drawn, read, "{spring:?} at {millis} ms");
+            }
+        }
+    }
+
+    #[test]
     fn a_spring_picks_up_the_speed_of_the_tween_it_interrupts() {
         let mut motion = Motion::at(0.0);
         motion.set_target(100.0, linear(200), ms(0));
@@ -386,7 +471,19 @@ mod tests {
                 },
                 "{transition:?}"
             );
+            assert_eq!(motion.settles_at(), None, "{transition:?} rests at once");
         }
+    }
+
+    #[test]
+    fn a_delay_too_long_to_add_holds_the_value_and_does_not_panic() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, Spring::SMOOTH.delay(Duration::MAX), ms(10));
+        let sample = motion.sample(ms(1_000));
+        assert_eq!(sample.value, 0.0);
+        assert!(!sample.settled);
+        motion.set_target(100.0, linear(200).delay(Duration::MAX), ms(10));
+        assert_eq!(motion.sample(ms(1_000)).value, 0.0);
     }
 
     #[test]
@@ -410,6 +507,125 @@ mod tests {
             }
         );
         assert_eq!(motion.target(), 40.0);
+    }
+
+    #[test]
+    fn a_delayed_tween_holds_still_then_runs_its_time() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, linear(200).delay(ms(50)), ms(1_000));
+        assert_eq!(
+            motion.sample(ms(1_049)),
+            Sample {
+                value: 0.0,
+                settled: false
+            }
+        );
+        assert_eq!(motion.sample(ms(1_100)).value, 25.0);
+        assert_eq!(motion.settles_at(), Some(ms(1_250)));
+        assert!(motion.sample(ms(1_250)).settled);
+    }
+
+    #[test]
+    fn a_delayed_spring_waits_where_it_is_and_starts_from_rest() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, Spring::SMOOTH, ms(0));
+        let caught = motion.sample(ms(80)).value;
+        motion.set_target(-50.0, Spring::SMOOTH.delay(ms(100)), ms(80));
+        // The spring is kept as an offset from its target, so the value it
+        // holds is `caught` to within rounding, and the same all through.
+        let held = motion.sample(ms(80)).value;
+        assert!((held - caught).abs() < 1e-4, "{held} holds {caught}");
+        for millis in [80, 120, 179, 180] {
+            assert_eq!(motion.sample(ms(millis)).value, held, "at {millis} ms");
+            assert!(!motion.sample(ms(millis)).settled, "waiting is not settled");
+            assert_eq!(motion.velocity(ms(millis)), [0.0]);
+        }
+        assert!(motion.sample(ms(200)).value < caught);
+        let settle = motion.settles_at().unwrap();
+        assert!(settle > ms(180), "settles at {settle:?}, after the delay");
+        assert_eq!(motion.sample(settle).value, -50.0);
+    }
+
+    #[test]
+    fn a_delayed_motion_reads_the_same_in_any_order() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, linear(100).delay(ms(50)), ms(1_000));
+        let times = [1_100, 1_049, 1_075, 1_020, 1_100, 1_049];
+        let values: Vec<_> = times.iter().map(|&t| motion.sample(ms(t)).value).collect();
+        assert_eq!(values, [50.0, 0.0, 25.0, 0.0, 50.0, 0.0]);
+    }
+
+    #[test]
+    fn a_new_course_during_a_delay_starts_from_the_held_value() {
+        let mut motion = Motion::at(0.0);
+        motion.set_target(100.0, linear(100), ms(0));
+        motion.set_target(-100.0, linear(100).delay(ms(100)), ms(50));
+        // Halfway through the wait, a new target with no delay.
+        motion.set_target(150.0, linear(100), ms(100));
+        assert_eq!(motion.sample(ms(100)).value, 50.0);
+        assert_eq!(motion.sample(ms(150)).value, 100.0);
+        assert_eq!(motion.sample(ms(200)).value, 150.0);
+    }
+
+    #[test]
+    fn a_delayed_instant_jumps_when_the_delay_is_over() {
+        let mut motion = Motion::at(0.0);
+        let late = Transition::Instant.delay(ms(30));
+        motion.set_target(1.0, late, ms(0));
+        assert_eq!(motion.sample(ms(29)).value, 0.0);
+        assert!(!motion.sample(ms(29)).settled);
+        assert_eq!(
+            motion.sample(ms(30)),
+            Sample {
+                value: 1.0,
+                settled: true
+            }
+        );
+        let mut motion = Motion::at(0.0);
+        motion.set_target(1.0, Spring::new(Duration::ZERO).delay(ms(30)), ms(0));
+        assert_eq!(motion.sample(ms(29)).value, 0.0);
+        assert_eq!(motion.sample(ms(30)).value, 1.0);
+    }
+
+    #[test]
+    fn staggered_items_each_start_one_step_after_the_one_before() {
+        let step = ms(40);
+        let mut items = [Motion::at(0.0); 5];
+        for (n, item) in (0..).zip(&mut items) {
+            item.set_target(100.0, linear(100).delay(step * n), ms(0));
+        }
+        let traces: Vec<crate::Trace> = items
+            .iter()
+            .map(|item| crate::Trace::of(item, ms(0), ms(20)))
+            .collect();
+        let starts: Vec<Duration> = traces
+            .iter()
+            .map(|trace| {
+                trace
+                    .rows()
+                    .iter()
+                    .find(|row| row.values[0] > 0.0)
+                    .unwrap()
+                    .at
+            })
+            .collect();
+        assert_eq!(starts, [ms(20), ms(60), ms(100), ms(140), ms(180)]);
+        assert_eq!(
+            traces[2].to_string(),
+            "\
+ms           value
+0            0.000
+20           0.000
+40           0.000
+60           0.000
+80           0.000
+100         20.000
+120         40.000
+140         60.000
+160         80.000
+180        100.000  settled
+"
+        );
     }
 
     #[test]

@@ -289,6 +289,15 @@ mod tests {
     }
 
     #[test]
+    fn a_delayed_way_in_is_entering_with_nothing_shown_until_it_starts() {
+        let mut presence = Presence::absent();
+        presence.show("row", fade().delay(ms(40)), ms(0));
+        assert_eq!(life(&mut presence, 20), Some(("row", Phase::Entering, 0.0)));
+        assert_eq!(life(&mut presence, 90), Some(("row", Phase::Entering, 0.5)));
+        assert_eq!(life(&mut presence, 140), Some(("row", Phase::Present, 1.0)));
+    }
+
+    #[test]
     fn a_spring_carries_its_speed_through_a_change_of_mind() {
         let mut presence = Presence::absent();
         presence.show("panel", Spring::SNAPPY, ms(0));

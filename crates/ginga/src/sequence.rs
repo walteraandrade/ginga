@@ -157,8 +157,8 @@ impl Sequence {
 ///
 /// A motion given a new target before its end has a new end: the old one
 /// never comes, and it answers `true` once for the new one instead. A target
-/// taken at once, as under reduced motion, ends when it is set, and is
-/// answered on the next check. A motion only placed, with
+/// taken at once, as under reduced motion, ends when it is set, or when its
+/// delay ends, and is answered on the next check. A motion only placed, with
 /// [`Motion::jump_to`], has no end and is not reported.
 ///
 /// Use one for each thing waited for: two ends at the same time are one end

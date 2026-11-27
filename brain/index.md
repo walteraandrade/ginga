@@ -31,6 +31,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[decisions/2026-11-27-a-sequence-is-a-schedule]]: a sequence is a schedule of delays, and an end is reported once by the app (#34).
 - [[decisions/2026-11-27-two-goals-performance-then-agents]]: performance first, then ease of use for AI agents (#51).
 - [[decisions/2026-11-27-variants-are-a-handle-passed-by-hand]]: a parent's name reaches its children through a handle the view passes by hand (#31).
+- [[decisions/2026-11-27-reduced-motion-keeps-delays]]: reduced motion keeps a transition's delay, then goes at once (#62).
 - [[decisions/2026-11-27-a-frame-cap-is-per-set-of-keyframes]]: `at_most_every` caps one set of keyframes, not a view (#65).
 - [[decisions/2026-11-27-files-for-contributors]]: CONTRIBUTING, code of conduct, security policy and issue forms, pointing at `AGENTS.md` and this folder (#48).
 

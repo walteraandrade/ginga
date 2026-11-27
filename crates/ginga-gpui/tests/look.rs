@@ -189,7 +189,7 @@ fn on_first_appearance_it_takes_its_look_unless_it_starts_from_one(cx: &mut Test
 #[gpui::test]
 fn the_apps_default_transitions_fill_in_what_the_element_leaves_out(cx: &mut TestAppContext) {
     cx.update(|cx| {
-        ginga_gpui::set_default_transitions(Tween::new(ms(100), Easing::Linear), cx);
+        ginga_gpui::set_default_look_transitions(Tween::new(ms(100), Easing::Linear), cx);
     });
     let (window, drawn) = open(cx, Look::new().size(100., 100.), None, false);
     change(&window, cx, |cards| {
@@ -210,6 +210,21 @@ fn under_reduced_motion_it_takes_each_look_at_once(cx: &mut TestAppContext) {
     let (window, drawn) = open(cx, Look::new().width(100.), None, false);
     change(&window, cx, |cards| cards.look = Look::new().width(200.));
     assert_eq!(last(&drawn).size.width, px(200.));
+    assert_eq!(after(16, &window, cx), 0);
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_values_own_transition_moves_at_once_too(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        cx.set_reduce_motion(true);
+        ginga_gpui::set_default_look_transitions(Tween::new(ms(100), Easing::Linear), cx);
+    });
+    let (window, drawn) = open(cx, Look::new().size(100., 100.), None, false);
+    change(&window, cx, |cards| {
+        cards.transitions = Transitions::new().height(glide());
+        cards.look = Look::new().size(200., 200.);
+    });
+    assert_eq!(last(&drawn).size, size(px(200.), px(200.)));
     assert_eq!(after(16, &window, cx), 0);
 }
 

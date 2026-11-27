@@ -307,7 +307,7 @@ Each value of a look can move on its own clock. A single `Transition`, `Spring` 
 | offset, width, height, radius | `Spring::SNAPPY` |
 | opacity, background, text and border color | a 150 ms tween, `Easing::Out` |
 
-A value's own transition wins over the whole look's (`.all(..)`), which wins over the defaults it is laid over with `.or(defaults)`, which win over the table. A view keeps its defaults in a constant and lays each look's over them; an app sets its own once with `ginga_gpui::set_default_transitions(transitions, cx)`.
+A value's own transition wins over the whole look's (`.all(..)`), which wins over the defaults it is laid over with `.or(defaults)`, which win over the table. The layers hold whatever order the calls come in. A view keeps its defaults in a field or a function and lays each look's over them. An app sets its own once for every declared look with `ginga_gpui::set_default_look_transitions(transitions, cx)`; a `ginga_gpui::Motion` takes the transition it is given and nothing else.
 
 ```rust
 use std::time::Duration;

@@ -147,8 +147,10 @@ const FADE: Tween = Tween::new(Duration::from_millis(150), Easing::Out);
 /// The values of a look, in one table: each one's name, the motion that
 /// moves it, how it goes to that motion and back, and the transition it has
 /// when nothing else is said. Everything that goes through each value of a
-/// [`LookMotion`] or of a [`Transitions`] is written from this table, so a
-/// value added here is added everywhere.
+/// [`LookMotion`] or of a [`Transitions`] is written from this table: the
+/// motion, the transitions, `at`, `set_target` and `sample`. A new value also
+/// needs its field and builder on [`Look`], a line in `Look::finite` and its
+/// trace columns, which are written by hand.
 macro_rules! values {
     ($($field:ident: $repr:ty = $to:expr, $from:expr, $default:expr, $kind:literal;)*) => {
         /// A [`Look`] on its way to another: one [`Motion`] for each value it names.
@@ -210,8 +212,23 @@ macro_rules! values {
         /// ```
         #[derive(Debug, Clone, Copy, Default)]
         pub struct Transitions {
+            /// The values' own transitions.
+            own: Layer,
+            /// The transition for the whole look.
             all: Option<Transition>,
+            /// The defaults laid under these with [`or`](Self::or), already
+            /// resolved value by value.
+            under: Layer,
+        }
+
+        /// One transition, or none, for each value.
+        #[derive(Debug, Clone, Copy, Default)]
+        struct Layer {
             $($field: Option<Transition>,)*
+        }
+
+        impl Layer {
+            const EMPTY: Self = Self { $($field: None,)* };
         }
 
         impl Transitions {
@@ -219,8 +236,9 @@ macro_rules! values {
             #[must_use]
             pub const fn new() -> Self {
                 Self {
+                    own: Layer::EMPTY,
                     all: None,
-                    $($field: None,)*
+                    under: Layer::EMPTY,
                 }
             }
 
@@ -235,15 +253,17 @@ macro_rules! values {
                 #[doc = concat!("The transition for the ", $kind, ".")]
                 #[must_use]
                 pub fn $field(mut self, transition: impl Into<Transition>) -> Self {
-                    self.$field = Some(transition.into());
+                    self.own.$field = Some(transition.into());
                     self
                 }
             )*
 
             /// These transitions over `defaults`: for each value, its own
             /// transition here, then the one for the whole look here, then
-            /// what `defaults` gives it. Set a view's or an app's defaults once
-            /// and give each look only what differs.
+            /// what `defaults` gives it. Keep a set of defaults once and give
+            /// each look only what differs. The order holds whatever order the
+            /// calls come in: an [`all`](Self::all) after `or` still wins over
+            /// the defaults.
             ///
             /// ```
             /// use std::time::Duration;
@@ -260,18 +280,20 @@ macro_rules! values {
             /// assert_eq!(now.width, Some(0.0)); // the app's: a spring, on its way
             /// ```
             #[must_use]
-            pub const fn or(self, defaults: Transitions) -> Self {
-                // `Option::or` is not const yet.
-                const fn first(one: Option<Transition>, other: Option<Transition>) -> Option<Transition> {
-                    match one {
-                        Some(transition) => Some(transition),
-                        None => other,
-                    }
-                }
+            pub fn or(self, defaults: Transitions) -> Self {
                 Self {
-                    all: first(self.all, defaults.all),
-                    $($field: first(first(self.$field, self.all), defaults.$field),)*
+                    under: Layer {
+                        $($field: self.under.$field.or(defaults.named(|layer| layer.$field)),)*
+                    },
+                    ..self
                 }
+            }
+
+            /// The transition this names for one value, layer by layer: its
+            /// own, the whole look's, then the defaults under it. The one place
+            /// that says the order.
+            fn named(&self, value: impl Fn(&Layer) -> Option<Transition>) -> Option<Transition> {
+                value(&self.own).or(self.all).or(value(&self.under))
             }
         }
 
@@ -307,7 +329,7 @@ macro_rules! values {
                     &mut self.$field,
                     was.$field.map($to),
                     look.$field.map($to),
-                    transitions.$field.or(transitions.all).unwrap_or($default),
+                    transitions.named(|layer| layer.$field).unwrap_or($default),
                     now,
                 );)*
                 self.target = look;
@@ -340,15 +362,6 @@ values! {
     background: Color = |value| value, |value| value, Transition::Tween(FADE), "background color";
     text_color: Color = |value| value, |value| value, Transition::Tween(FADE), "text color";
     border_color: Color = |value| value, |value| value, Transition::Tween(FADE), "border color";
-}
-
-impl Transitions {
-    /// The transition for the width and the height.
-    #[must_use]
-    pub fn size(self, transition: impl Into<Transition>) -> Self {
-        let transition = transition.into();
-        self.width(transition).height(transition)
-    }
 }
 
 impl From<Transition> for Transitions {
@@ -759,34 +772,114 @@ ms               x           y     opacity
 
     #[test]
     fn with_no_transition_sizes_spring_and_opacity_and_colors_fade() {
+        let white = Color::hex(0xff_ffff);
         let mut card = LookMotion::at(
             Look::new()
                 .offset(0.0, 0.0)
-                .size(100.0, 100.0)
+                .size(0.0, 0.0)
                 .radius(0.0)
                 .opacity(0.0)
-                .background(Color::TRANSPARENT),
+                .background(Color::TRANSPARENT)
+                .text_color(Color::TRANSPARENT)
+                .border_color(Color::TRANSPARENT),
         );
         let shown = Look::new()
-            .offset(40.0, 40.0)
-            .size(200.0, 200.0)
-            .radius(8.0)
+            .offset(100.0, 100.0)
+            .size(100.0, 100.0)
+            .radius(100.0)
             .opacity(1.0)
-            .background(Color::hex(0xff_ffff));
+            .background(white)
+            .text_color(white)
+            .border_color(white);
         card.set_target(shown, Transitions::new(), ms(0));
-        // The fades are 150 ms tweens: exactly there at 150 ms.
-        let at_150 = card.sample(ms(150)).value;
-        assert_eq!(at_150.opacity, Some(1.0));
-        assert_eq!(at_150.background, Some(Color::hex(0xff_ffff)));
-        // The offset, the size and the radius are the snappy spring.
+        // Each value against a motion of its own with the default it should have.
         let mut spring = Motion::at(0.0);
-        spring.set_target(40.0, Spring::SNAPPY, ms(0));
-        assert_eq!(at_150.offset.unwrap().0, spring.sample(ms(150)).value);
-        assert!(at_150.width.unwrap() < 200.0 && at_150.radius.unwrap() < 8.0);
-        assert!(
-            !card.sample(ms(150)).settled,
-            "the spring is still on its way"
+        spring.set_target(100.0, Spring::SNAPPY, ms(0));
+        let mut fade = Motion::at(0.0);
+        fade.set_target(1.0, FADE, ms(0));
+        let mut color = Motion::at(Color::TRANSPARENT);
+        color.set_target(white, FADE, ms(0));
+        for at in [ms(30), ms(60), ms(120)] {
+            let (look, spring, fade, color) = (
+                card.sample(at).value,
+                spring.sample(at).value,
+                fade.sample(at).value,
+                Some(color.sample(at).value),
+            );
+            assert_eq!(look.offset, Some((spring, spring)), "at {at:?}");
+            assert_eq!(
+                (look.width, look.height, look.radius),
+                (Some(spring), Some(spring), Some(spring))
+            );
+            assert_eq!(look.opacity, Some(fade));
+            assert_eq!(
+                (look.background, look.text_color, look.border_color),
+                (color, color, color)
+            );
+        }
+        // The fades are 150 ms tweens: exactly there at 150 ms.
+        let at_150 = card.sample(ms(150));
+        assert_eq!(at_150.value.opacity, Some(1.0));
+        assert_eq!(at_150.value.border_color, Some(white));
+        assert!(!at_150.settled, "the spring is still on its way");
+    }
+
+    #[test]
+    fn an_all_after_or_still_wins_over_the_defaults() {
+        let slow = Tween::new(ms(1_000), Easing::Linear);
+        let fast = Tween::new(ms(100), Easing::Linear);
+        let start = Look::new().width(0.0);
+        let end = Look::new().width(100.0);
+        for transitions in [
+            Transitions::new()
+                .all(fast)
+                .or(Transitions::new().width(slow)),
+            Transitions::new()
+                .or(Transitions::new().width(slow))
+                .all(fast),
+            Transitions::new()
+                .all(slow)
+                .or(Transitions::new())
+                .all(fast),
+        ] {
+            let mut card = LookMotion::at(start);
+            card.set_target(end, transitions, ms(0));
+            assert_eq!(
+                card.sample(ms(50)).value.width,
+                Some(50.0),
+                "{transitions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn three_layers_each_give_the_values_they_name() {
+        let linear = |millis| Tween::new(ms(millis), Easing::Linear);
+        // An element over a view over an app, each naming a value and an all.
+        let element = Transitions::new().width(linear(100));
+        let view = Transitions::new().opacity(linear(200)).radius(linear(400));
+        let app = Transitions::new()
+            .all(linear(1_000))
+            .radius(Transition::Instant);
+        let mut card = LookMotion::at(Look::new().width(0.0).opacity(0.0).radius(0.0).height(0.0));
+        card.set_target(
+            Look::new()
+                .width(100.0)
+                .opacity(1.0)
+                .radius(100.0)
+                .height(100.0),
+            element.or(view).or(app),
+            ms(0),
         );
+        let now = card.sample(ms(50)).value;
+        assert_eq!(now.width, Some(50.0), "the element's own");
+        assert_eq!(now.opacity, Some(0.25), "the view's");
+        assert_eq!(
+            now.radius,
+            Some(12.5),
+            "the view's, over the app's own for it"
+        );
+        assert_eq!(now.height, Some(5.0), "the app's all");
     }
 
     #[test]

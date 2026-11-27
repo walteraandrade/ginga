@@ -8,14 +8,14 @@ use gpui::{
     IntoElement, LayoutId, ParentElement, Pixels, Position, Rgba, Styled, Window, px,
 };
 
-use crate::{Animate, Clock};
+use crate::{Animate, Clock, reduced};
 
 /// Declares on any styled element how it should look now; see [`Looked`].
 pub trait LookExt: Styled + IntoElement + 'static {
     /// The element takes `look`, and gets there with `transitions` whenever
     /// `look` changes: one [`Transition`] for every value, or a
     /// [`Transitions`] that gives values their own. What they leave out
-    /// comes from [`set_default_transitions`], then from ginga's defaults.
+    /// comes from [`set_default_look_transitions`], then from ginga's defaults.
     ///
     /// Its motion is kept under `id`, so the view needs no field for it. The
     /// motion lasts while the element is drawn in each frame; to keep it
@@ -124,7 +124,13 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
             clock: Clock::default(),
         });
         let now = moving.clock.now(cx);
-        let transitions = if cx.reduce_motion() {
+        // The transitions are read only when the look changes, so they are
+        // laid over the app's only then, not on every frame.
+        let transitions = if moving.motion.target() == self.look {
+            Transitions::new()
+        } else if reduced(cx) {
+            // Every value at once: a value's own transition would otherwise
+            // win over a single `Instant` for the whole look.
             Transition::Instant.into()
         } else {
             let app = cx.try_global::<AppTransitions>().map(|app| app.0);
@@ -147,12 +153,12 @@ impl Global for AppTransitions {}
 /// its own transitions leave out. Set them once, as the app starts:
 ///
 /// ```ignore
-/// ginga_gpui::set_default_transitions(
+/// ginga_gpui::set_default_look_transitions(
 ///     Transitions::new().offset(Spring::BOUNCY).opacity(Tween::new(ms(200), Easing::Out)),
 ///     cx,
 /// );
 /// ```
-pub fn set_default_transitions(transitions: impl Into<Transitions>, cx: &mut App) {
+pub fn set_default_look_transitions(transitions: impl Into<Transitions>, cx: &mut App) {
     cx.set_global(AppTransitions(transitions.into()));
 }
 

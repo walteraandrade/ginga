@@ -5,7 +5,7 @@ use std::{cell::RefCell, rc::Rc};
 use ginga::{Look, LookMotion, Transition};
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, ParentElement, Pixels, Styled, Window, px,
+    LayoutId, ParentElement, Pixels, Position, Styled, Window, px,
 };
 
 use crate::{Clock, unless_reduced};
@@ -74,10 +74,11 @@ enum Keep {
 
 /// An element with a declared look. Made by [`LookExt::look`].
 ///
-/// A value the look names replaces the element's own style for it: the offset
-/// places the element `relative`ly, moved by `left` and `top`, so give an
-/// absolutely placed element its place as the offset instead. A value the look
-/// does not name is left as the element's own style.
+/// A value the look names replaces the element's own style for it. The offset
+/// moves the element by `left` and `top`: from its place in the layout, made
+/// `relative`, or for an `absolute` element, from its parent's corner, so give
+/// an absolutely placed element its place as the offset. A value the look does
+/// not name is left as the element's own style.
 ///
 /// It asks for frames only while the look moves, and takes each new look at
 /// once when the desktop asks for reduced motion.
@@ -109,9 +110,10 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
     }
 
     /// This frame's look: moves the motion in `moving` toward the declared
-    /// look, and asks for a frame while it moves.
-    fn frame(&self, moving: &mut Option<Moving>, window: &mut Window, cx: &App) -> Look {
-        let moving = moving.get_or_insert_with(|| Moving {
+    /// look, or starts one when there is none, and asks for a frame while it
+    /// moves.
+    fn frame(&self, moving: Option<Moving>, window: &mut Window, cx: &App) -> (Look, Moving) {
+        let mut moving = moving.unwrap_or_else(|| Moving {
             motion: LookMotion::at(self.from.unwrap_or(self.look)),
             clock: Clock::default(),
         });
@@ -121,14 +123,17 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         if !sample.settled {
             window.request_animation_frame();
         }
-        sample.value
+        (sample.value, moving)
     }
 }
 
 /// `element` with each value that `look` names.
 fn styled<E: Styled>(mut element: E, look: Look) -> E {
     if let Some((x, y)) = look.offset {
-        element = element.relative().left(px(x)).top(px(y));
+        if element.style().position != Some(Position::Absolute) {
+            element = element.relative();
+        }
+        element = element.left(px(x)).top(px(y));
     }
     if let Some(opacity) = look.opacity {
         element = element.opacity(opacity.clamp(0., 1.));
@@ -185,15 +190,13 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
     ) -> (LayoutId, AnyElement) {
         let look = match (&self.keep, id) {
             (Keep::Owned(state), _) => {
-                let state = state.clone();
-                self.frame(&mut state.0.borrow_mut(), window, cx)
+                let mut slot = state.0.borrow_mut();
+                let (look, moving) = self.frame(slot.take(), window, cx);
+                *slot = Some(moving);
+                look
             }
             (Keep::Id(_), Some(id)) => {
-                window.with_element_state(id, |moving: Option<Option<Moving>>, window| {
-                    let mut moving = moving.flatten();
-                    let look = self.frame(&mut moving, window, cx);
-                    (look, moving)
-                })
+                window.with_element_state(id, |moving, window| self.frame(moving, window, cx))
             }
             (Keep::Id(_), None) => unreachable!("an element with an id is laid out with one"),
         };
@@ -230,7 +233,7 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AbsoluteLength, DefiniteLength, Length, Position, Styled, div};
+    use gpui::{AbsoluteLength, DefiniteLength, Length, div};
 
     use super::*;
 
@@ -262,6 +265,15 @@ mod tests {
             style.corner_radii.top_left,
             Some(AbsoluteLength::Pixels(px(6.)))
         );
+    }
+
+    #[test]
+    fn an_absolute_element_stays_absolute_and_the_offset_is_its_place() {
+        let mut element = styled(div().absolute(), Look::new().offset(100., 50.));
+        let style = element.style();
+        assert_eq!(style.position, Some(Position::Absolute));
+        assert_eq!(pixels(style.inset.left), Some(px(100.)));
+        assert_eq!(pixels(style.inset.top), Some(px(50.)));
     }
 
     #[test]

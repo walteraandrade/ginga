@@ -129,7 +129,7 @@ impl<T> Presence<T> {
     }
 
     /// `content` on its way out with `exit`, from fully here: a thing that is
-    /// only seen leaving, such as a ghost of what was just removed.
+    /// only seen leaving, such as a copy of what was just removed.
     ///
     /// ```
     /// use std::time::Duration;
@@ -200,6 +200,7 @@ impl<T> Presence<T> {
     }
 
     /// The content should be on screen: it was shown and not hidden since.
+    /// The same as `wanted().is_some()`.
     #[must_use]
     pub fn is_wanted(&self) -> bool {
         self.wanted
@@ -239,17 +240,6 @@ impl<T> Presence<T> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn wanted_is_the_shown_content_until_it_is_hidden() {
-        let fade = Tween::new(Duration::from_millis(100), crate::Easing::Linear);
-        let mut toast = Presence::absent();
-        assert_eq!(toast.wanted(), None);
-        toast.show("Saved", fade, Duration::ZERO);
-        assert_eq!(toast.wanted(), Some(&"Saved"));
-        toast.hide(fade, Duration::from_millis(200));
-        assert_eq!(toast.wanted(), None, "hidden, though still leaving");
-        assert!(toast.sample(Duration::from_millis(250)).is_some());
-    }
     use crate::{Easing, Spring, Tween};
 
     fn ms(millis: u64) -> Duration {
@@ -258,6 +248,26 @@ mod tests {
 
     fn fade() -> Tween {
         Tween::new(ms(100), Easing::Linear)
+    }
+
+    #[test]
+    fn wanted_is_the_shown_content_until_it_is_hidden() {
+        let mut toast = Presence::absent();
+        assert_eq!(toast.wanted(), None);
+        toast.show("Saved", fade(), ms(0));
+        assert_eq!(toast.wanted(), Some(&"Saved"));
+        toast.hide(fade(), ms(200));
+        assert_eq!(toast.wanted(), None, "hidden, though still leaving");
+        assert!(toast.sample(ms(250)).is_some());
+        toast.show("Saved again", fade(), ms(250));
+        assert_eq!(toast.wanted(), Some(&"Saved again"), "turned around");
+        for toast in [
+            Presence::absent(),
+            Presence::present(1),
+            Presence::leaving(1, fade(), ms(0)),
+        ] {
+            assert_eq!(toast.is_wanted(), toast.wanted().is_some());
+        }
     }
 
     fn life<T: Copy>(presence: &mut Presence<T>, now: u64) -> Option<(T, Phase, f32)> {

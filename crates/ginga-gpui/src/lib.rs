@@ -346,8 +346,10 @@ impl<T> Presence<T> {
         }
     }
 
-    /// `content` on its way out with `exit` from this frame, from fully
-    /// here: a thing that is only seen leaving. Under reduced motion it is
+    /// `content` on its way out with `exit` from now, from fully here: a
+    /// thing that is only seen leaving, made where it goes, such as in an
+    /// event handler. Its way out counts from this call, not from the frame
+    /// that first draws it. Under reduced motion it is
     /// gone at once.
     #[must_use]
     pub fn leaving(content: T, exit: impl Into<Transition>, cx: &App) -> Self {
@@ -387,15 +389,17 @@ impl<T> Presence<T> {
     }
 
     /// What [`frame`](Self::frame) would hand back now, read from `&self`
-    /// with no window: for an event handler, or a draw from `&self`
-    /// methods. It asks for no frame and lets go of nothing, so draw with
-    /// `frame` once per render.
+    /// with no window: for an event handler, between frames. It asks for no
+    /// frame and lets go of nothing. While rendering, call `frame` once and
+    /// hand on the [`Shown`] it returns: a second read of the time in one
+    /// render can disagree with the first.
     #[must_use]
     pub fn sample(&self, cx: &App) -> Option<Shown<'_, T>> {
         self.presence.sample(self.clock.peek(cx))
     }
 
     /// The content should be on screen: it was shown and not hidden since.
+    /// The same as `wanted().is_some()`.
     #[must_use]
     pub fn is_wanted(&self) -> bool {
         self.presence.is_wanted()

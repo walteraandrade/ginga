@@ -86,7 +86,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 ## Things that come and go
 
-**Presence** (`Presence`). Something you show and hide that stays drawable while it leaves: it keeps its content until its way out is over. It never decides what leaving looks like; it gives a phase and a progress, and the view draws them. `ginga_gpui::Presence` is the same for a GPUI view.
+**Presence** (`Presence`). Something you show and hide that stays drawable while it leaves: it keeps its content until its way out is over. It never decides what leaving looks like; it gives a phase and a progress, and the view draws them. `ginga_gpui::Presence` is the same for a GPUI view. Its **wanted** content (`wanted()`) is what was shown and not hidden since: from `hide` on there is none, though the content is still drawn while it leaves. *Not the phase*: an exiting presence is drawn but not wanted. `Presence::leaving` makes one that is only seen leaving.
 
 **Content.** What a presence or a list presence shows. While it leaves, it is what it was when it was hidden.
 

@@ -198,6 +198,8 @@ A `Presence` is something you show and hide. Hiding does not drop it: the presen
 | `presence.show(content, enter, now)` | Show it, or change what is shown. |
 | `presence.hide(exit, now)` | Start the way out. |
 | `presence.frame(now)` | Each frame: what to draw, with its phase and progress. |
+| `Presence::leaving(content, exit, now)` | Something only seen leaving: on its way out from fully here. |
+| `presence.wanted()` | The content that should be on screen; `None` from `hide` on, while it still leaves. |
 
 ```rust
 use std::time::Duration;

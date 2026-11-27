@@ -259,7 +259,7 @@ fn a_presence_is_read_without_a_window_as_its_frame_would_be(cx: &mut TestAppCon
     assert_eq!(
         next_frame(&window, cx),
         1,
-        "reading asked for no extra frame"
+        "the arriving toast asked for its one frame"
     );
     assert_eq!(
         last(&drawn),
@@ -278,19 +278,44 @@ fn a_presence_is_read_without_a_window_as_its_frame_would_be(cx: &mut TestAppCon
 #[gpui::test]
 fn a_presence_made_leaving_starts_fully_here_on_its_way_out(cx: &mut TestAppContext) {
     let (window, drawn) = open_toaster(cx);
-    window
-        .update(cx, |toaster, _, cx| {
-            toaster.toast = Presence::leaving(Rc::new(()), glide(), cx);
-            cx.notify();
-        })
-        .unwrap();
+    let alive = Rc::new(());
+    make_leaving(&window, alive.clone(), cx);
     cx.run_until_parked();
     assert_eq!(last(&drawn), Some((Phase::Exiting, 1.0)));
-    assert!(read_toast(&window, cx).0.is_some());
-    assert!(!read_toast(&window, cx).1, "a ghost is never wanted");
+    assert_eq!(
+        read_toast(&window, cx),
+        (Some((Phase::Exiting, 1.0)), false),
+        "sampled as drawn, and never wanted"
+    );
     cx.executor().advance_clock(ms(200));
     assert_eq!(next_frame(&window, cx), 1);
     assert_eq!(last(&drawn), None, "gone once its way out is over");
+    assert_eq!(Rc::strong_count(&alive), 1, "the content is dropped");
+    assert_eq!(next_frame(&window, cx), 0, "and no frame is asked for");
+}
+
+#[gpui::test]
+fn a_presence_made_leaving_counts_its_way_out_from_when_it_was_made(cx: &mut TestAppContext) {
+    let (window, drawn) = open_toaster(cx);
+    make_leaving(&window, Rc::new(()), cx);
+    cx.executor().advance_clock(ms(100));
+    assert_eq!(read_toast(&window, cx).0, Some((Phase::Exiting, 0.5)));
+    next_frame(&window, cx);
+    assert_eq!(
+        last(&drawn),
+        Some((Phase::Exiting, 0.5)),
+        "drawn first halfway out"
+    );
+}
+
+/// Replaces the toast with one that only leaves, without drawing it.
+fn make_leaving(window: &WindowHandle<Toaster>, content: Rc<()>, cx: &mut TestAppContext) {
+    window
+        .update(cx, |toaster, _, cx| {
+            toaster.toast = Presence::leaving(content, glide(), cx);
+            cx.notify();
+        })
+        .unwrap();
 }
 
 #[gpui::test]

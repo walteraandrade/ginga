@@ -184,6 +184,15 @@ ms           value
 
 The format is stable: put it in a test and a change in motion shows up as a diff.
 
+A `LookMotion` (below) is written down the same way, with a column for each value its look names:
+
+```text
+ms               x           y     opacity
+0            0.000       0.000       0.000
+50          20.000      10.000       0.500
+100         40.000      20.000       1.000  settled
+```
+
 ## In a GPUI view
 
 Keep the motion next to the state it animates:
@@ -206,6 +215,23 @@ impl Render for Panel {
 `toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once when the desktop asks for reduced motion.
 
 When the logic of a motion lives in a crate that knows nothing about GPUI, that crate keeps a `ginga::Motion` and takes the time as an argument; the view supplies it with `ginga_gpui::Clock`.
+
+## A look on an element
+
+Or declare on the element how it should look, and it gets there by itself. A `Look` names any of an offset from the element's own place, an opacity, a width and height and a corner radius; a value it does not name stays the element's own style.
+
+```rust,ignore
+let look = if self.open {
+    Look::new().size(320., 200.).opacity(1.)
+} else {
+    Look::new().size(160., 100.).opacity(0.6)
+};
+div().bg(rgb(0x2a2f3a)).look("card", look, Spring::SNAPPY)
+```
+
+When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transition)`. Like `toward`, it asks for frames only while it moves and moves at once under reduced motion.
+
+In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
 
 ## Motion that redraws little
 

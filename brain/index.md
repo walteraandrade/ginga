@@ -33,6 +33,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/bouncy-spring-bench-and-code-layout]]: why the bouncy one-channel spring benchmarks slow (#6).
 - [[codebase/what-a-cached-view-saves]]: render, layout and paint, not the scene's trip to the GPU.
 - [[codebase/recording-a-gallery-page]]: how a recording drives the gallery, and why it must never block the main thread.
+- [[codebase/a-look-on-an-element]]: where an element's look motion lives, and how each value is applied.
 
 ## Measurements
 

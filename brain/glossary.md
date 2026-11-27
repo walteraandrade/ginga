@@ -58,6 +58,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Row** (`Row`). One line of a trace: a time, the value of each channel, and whether it is settled.
 
+**Traceable** (`Traceable`). What a trace can write down: a motion, or a look motion with a named column for each value.
+
 ## Things that come and go
 
 **Presence** (`Presence`). Something you show and hide that stays drawable while it leaves: it keeps its content until its way out is over. It never decides what leaving looks like; it gives a phase and a progress, and the view draws them. `ginga_gpui::Presence` is the same for a GPUI view.
@@ -113,3 +115,11 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 **Stale pane.** A cached view that shows old state because it changed without being notified. The risk an island brings.
 
 **Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. Every feature has a page. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+
+## Looks
+
+**Look** (`Look`). How a thing should look: an offset from its own place, an opacity, a width, a height and a corner radius, each optional. A value a look does not name is left to whoever draws; on an element, it stays the element's own style.
+
+**Look motion** (`LookMotion`). A look on its way to another, one motion for each value. A value the last look named moves from where it is; a value it did not name has no place to start from and takes its new value at once.
+
+**Declared look** (`LookExt::look`, `Looked`). A look written on a GPUI element, with the transition that gets it there. Its look motion is kept with the element's id while the element is drawn each frame, or in a `LookState` the view owns.

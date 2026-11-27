@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     rc::Rc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use gpui::{
@@ -18,12 +18,16 @@ use gpui::{
 /// `record` script's screen must be at least as large.
 const WIDTH: f32 = 960.;
 const HEIGHT: f32 = 600.;
-/// How long a recording waits for the window before it presses Play.
-const SETTLE: Duration = Duration::from_millis(1_500);
-/// How long a recording grabs frames after it first presses Play.
+/// How long a recording waits for the window's first frame, and then for
+/// ffmpeg's first frame, before it gives up.
+const FIRST_FRAME: Duration = Duration::from_secs(30);
+/// How long ffmpeg grabs frames. Play is pressed once its first frame is
+/// written, so the page at rest is the first frame.
 const RECORDED: Duration = Duration::from_secs(2);
 /// When a recording presses Play again, so the way back is recorded too.
 const AGAIN: Duration = Duration::from_secs(1);
+/// How often a recording checks what it waits for.
+const POLL: Duration = Duration::from_millis(10);
 /// Frames a second in a recording.
 const FPS: u32 = 30;
 
@@ -91,10 +95,13 @@ impl Page {
 struct Gallery {
     pages: Vec<Page>,
     chosen: usize,
+    /// Frames drawn, so a recording knows when the window is on screen.
+    drawn: u32,
 }
 
 impl Render for Gallery {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.drawn += 1;
         let chosen = self.pages[self.chosen].clone();
         let list = self.pages.iter().enumerate().map(|(index, page)| {
             let here = index == self.chosen;
@@ -180,7 +187,13 @@ fn open(cx: &mut App, chosen: Option<&str>) -> Entity<Gallery> {
         ..WindowOptions::default()
     };
     let window = cx
-        .open_window(options, |_, cx| cx.new(|_| Gallery { pages, chosen }))
+        .open_window(options, |_, cx| {
+            cx.new(|_| Gallery {
+                pages,
+                chosen,
+                drawn: 0,
+            })
+        })
         .expect("a window opens; to record, run under a display such as xvfb-run");
     window
         .update(cx, |_, _, cx| cx.entity())
@@ -196,7 +209,11 @@ fn record(name: String, folder: PathBuf) {
         let gallery = open(cx, Some(&name));
         let timer = cx.background_executor().clone();
         cx.spawn(async move |cx| {
-            timer.timer(SETTLE).await;
+            let waited = Instant::now();
+            while cx.update(|cx| gallery.read(cx).drawn) == 0 {
+                assert!(waited.elapsed() < FIRST_FRAME, "the window drew no frame");
+                timer.timer(POLL).await;
+            }
             fs::create_dir_all(&folder).expect("the record folder can be made");
             for old in fs::read_dir(&folder).into_iter().flatten().flatten() {
                 // An old contact sheet goes too, so a failed run leaves none behind.
@@ -224,8 +241,12 @@ fn record(name: String, folder: PathBuf) {
                 .arg(folder.join("frame-%03d.png"))
                 .spawn()
                 .expect("ffmpeg grabs the screen; install it");
-            // ffmpeg takes a moment to start grabbing.
-            timer.timer(Duration::from_millis(200)).await;
+            let first = folder.join("frame-001.png");
+            let waited = Instant::now();
+            while !first.exists() {
+                assert!(waited.elapsed() < FIRST_FRAME, "ffmpeg grabbed no frame");
+                timer.timer(POLL).await;
+            }
             // ffmpeg is waited for off the main thread, which keeps drawing.
             let grabbed = timer.spawn(async move { grab.wait() });
             for pause in [Duration::ZERO, AGAIN] {

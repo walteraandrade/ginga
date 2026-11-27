@@ -1,0 +1,35 @@
+name: Feature
+description: Something ginga should do that it can't yet.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ginga keeps its API small: a new call has to show that the ones in the README can't do the job. Please read the [principles](https://github.com/walteraandrade/ginga/blob/main/brain/principles.md) and the README's "What it does not do yet" first.
+  - type: textarea
+    id: what-to-build
+    attributes:
+      label: What to build
+      description: The behavior, from the point of view of whoever uses the crates. One thin slice that can be shown working on its own.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why the calls that exist don't do it
+      description: What you tried with the calls in the README, and where it falls short.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How we'll know it works. Values at given times, or a trace, where it can be.
+      placeholder: |
+        - [ ] ...
+  - type: textarea
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      description: Issues that must land first, if any.
+      placeholder: "None"

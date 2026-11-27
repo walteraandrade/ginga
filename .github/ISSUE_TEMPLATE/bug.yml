@@ -1,0 +1,53 @@
+name: Bug
+description: A motion, a call or the adapter does something it should not.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. A motion is a pure function of time, so most bugs can be shown as text: a `Trace` of the motion, and the values you expected at those times.
+  - type: dropdown
+    id: crate
+    attributes:
+      label: Crate
+      options:
+        - ginga (the engine)
+        - ginga-gpui (the GPUI adapter)
+        - Both, or not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The crate version, or the commit of `main` you built.
+      placeholder: "0.1.0, or 77c2dad"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you called, with what values and at what times, and what came back.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: The smallest code that shows it
+      description: |
+        Ideally a test, or a `Trace`:
+        `println!("{}", Trace::of(&motion, start, Duration::from_millis(16)));`
+        A `Tween` with `Easing::Linear` gives exact numbers.
+      render: rust
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Rust version (`rustc --version`) and operating system. For the adapter, also the GPUI version your app uses.

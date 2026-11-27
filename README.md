@@ -535,7 +535,7 @@ cargo test -p ginga-gpui                                  # the adapter on GPUI'
 
 The engine needs Rust 1.87 or newer and the adapter Rust 1.95, the oldest that builds its GPUI. CI checks each on that version, on every pull request.
 
-Rules for changes are in [AGENTS.md](AGENTS.md).
+How to contribute is in [CONTRIBUTING.md](CONTRIBUTING.md), and the rules for changes are in [AGENTS.md](AGENTS.md). Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md); report a security problem as [SECURITY.md](SECURITY.md) says.
 
 ## License
 

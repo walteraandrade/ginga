@@ -28,6 +28,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 ## Codebase
 
 - [[codebase/gpui-pin-and-the-orphan-rule]]: one GPUI version, and why GPUI types move through stand-ins.
+- [[codebase/testing-the-adapter]]: GPUI's test platform: no display, a clock the test moves, exact values.
 - [[codebase/no-alloc-counts-one-thread]]: the allocation test counts the test's own thread only.
 - [[codebase/bouncy-spring-bench-and-code-layout]]: why the bouncy one-channel spring benchmarks slow (#6).
 

@@ -1,11 +1,11 @@
 ---
-name: round-two
-description: Answer the review on a pull request. Wait for comments, check each one against the code, AGENTS.md and brain/, fix what holds with one commit per fix and reply with the commit's link, and reply with the reason to what does not hold. Use after a roundtable, or when asked to answer, address or babysit a PR's review comments.
+name: vigil
+description: Keep watch over a pull request until it merges. Wait for review comments, check each one against the code, AGENTS.md and brain/, fix what holds with one commit per fix and reply with the commit's link, and reply with the reason to what does not hold. Use after a roundtable, or when asked to watch, look after, babysit or answer the review of a PR.
 ---
 
-# Round two
+# Vigil
 
-The roundtable comments; round two is the author's answer. It waits for comments on one pull request, checks each one, and answers every one on the PR:
+The roundtable comments once; the vigil stays with the PR. It keeps watch over one pull request until it merges or closes, and every comment that lands on it gets checked and answered on the PR:
 
 - **It holds**: fix it in its own commit, push, and reply with the link to that commit.
 - **It does not hold**: change nothing, and reply with why, backed by something the reviewer can check.
@@ -31,24 +31,24 @@ git switch <head> && git merge --ff-only origin/<head>
 
 Stop and tell the user if the PR is closed or merged, if the head branch is in a fork you cannot push to, or if the local branch has commits the remote lacks.
 
-### 2. Wait for comments
+### 2. Keep watch
 
-Pick one way to wait, and only one per PR:
+Tell the user once that you are watching the PR, and until when: its merge or close, or their word to stop. Then pick one way to wait, and only one per PR:
 
 - **`subscribe_pr_activity` is in your tools** (Claude Code on the web, projects): call it for the PR and end the turn. Each comment or review wakes you.
 - **Otherwise**: run [scripts/wait-for-comments](scripts/wait-for-comments) with the Monitor tool (timeout 3,600,000 ms), or with Bash in the background:
 
   ```sh
-  .claude/skills/round-two/scripts/wait-for-comments <pr> [--since <UTC time>]
+  .claude/skills/vigil/scripts/wait-for-comments <pr> [--since <UTC time>]
   ```
 
-  It asks GitHub once a minute and exits `0` when something waits for an answer and no new comment has arrived for a minute, so a review lands as one batch. It exits `3` when the PR is merged or closed, `2` after an hour with nothing new, and `1` on an error. Its output lists what waits. Leave out `--since` the first time.
+  It asks GitHub once a minute and exits `0` when something waits for an answer and no new comment has arrived for a minute, so a review lands as one batch. It exits `3` when the PR is merged or closed, `2` after an hour with nothing new (start it again, without a word), and `1` on an error. Its output lists what waits. Leave out `--since` the first time.
 
 Do not write another polling loop, and do not `sleep` in a turn.
 
 A comment **waits for an answer** when:
 
-- it is in a review thread that is not resolved and whose last comment is not a round-two reply; or
+- it is in a review thread that is not resolved and whose last comment is not a vigil reply; or
 - it is a review's body or a comment on the PR's conversation, newer than the last batch you answered, and asks something of the PR. A CI summary or a bot's status line asks nothing: skip it without a reply.
 
 A thread already answered by hand, without the marker, counts as answered: do not answer it twice. If the script keeps listing it, add the marker to that reply by editing it.
@@ -104,6 +104,8 @@ When every fix of the batch is committed, run the checks under "Before you finis
 git push origin <head>
 ```
 
+If a CI check fails on a commit you pushed, it is yours: fix it like a comment that holds, before you answer anything.
+
 Never force-push, rebase a pushed branch, merge, approve, or change a test so it stops checking something. If the PR's Summary or Evidence no longer says what the code does, update the PR body. A change in motion gets a `Trace` before and after there.
 
 ### 6. Answer on the PR
@@ -115,25 +117,25 @@ Every reply is short and ends with the marker that tells the next batch it was a
 ```
 Fixed in [`<short sha>`](https://github.com/<owner>/<repo>/commit/<full sha>). <What changed, in one or two sentences, and the test that now fails without it.>
 
-<!-- round-two -->
+<!-- vigil -->
 ```
 
 ```
 Not changing this: <why, in two or three sentences>. <The evidence: the rule quoted, the decision file, the test that already covers it, or the command and its output.>
 
-<!-- round-two -->
+<!-- vigil -->
 ```
 
 ```
 Out of scope for #<issue>: <why>. <What it would take.> I can open an issue for it.
 
-<!-- round-two -->
+<!-- vigil -->
 ```
 
 ```
 This waits for @<repo owner>: <the choice, and the options>.
 
-<!-- round-two -->
+<!-- vigil -->
 ```
 
 For a choice of design, name the option you took ("Option A, done in …"). Write to the reviewer, in the repo's words, as plainly as the comment was written.
@@ -143,13 +145,13 @@ Then:
 - Resolve the thread of every comment that was fixed.
 - Leave a declined, out-of-scope or waiting thread open, so the reviewer or the user can push back.
 
-### 7. Report and wait again
+### 7. Report and keep watching
 
 Tell the user, in a few lines: how many comments were fixed, declined, out of scope or waiting for them, each with its link, and what waits for them first. Stay quiet when a batch had nothing to answer.
 
-Then go back to step 2. With the script, pass `--since` the time this batch started, so a comment written while you worked is not missed. Stop when the PR is merged or closed, when the user says stop, or when the script exits `2` (say so in one line). With `subscribe_pr_activity`, unsubscribe when you stop.
+Then go back to step 2. With the script, pass `--since` the time this batch started, so a comment written while you worked is not missed. The vigil ends when the PR is merged or closed, or when the user says stop; say so in one line. After a full day with nothing new, tell the user the PR is quiet and stop. With `subscribe_pr_activity`, unsubscribe when the vigil ends.
 
-## What round two never does
+## What vigil never does
 
 - Merge, approve, close the PR, or request changes.
 - Force-push, rewrite history, or push to a branch other than the PR's head.

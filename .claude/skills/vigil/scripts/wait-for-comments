@@ -5,7 +5,7 @@
 #                          [--timeout <seconds>] [--interval <seconds>]
 #
 # A comment waits for an answer when it is in an unresolved review thread
-# whose last comment has no round-two marker, or when it is a review body or
+# whose last comment has no vigil marker, or when it is a review body or
 # a conversation comment newer than --since that has no marker.
 #
 # Exits 0 when something waits and nothing new arrived for one interval,
@@ -61,15 +61,15 @@ filter='"'"$since"'" as $since
     ( $p.reviewThreads.nodes[]
       | select(.isResolved | not)
       | .comments.nodes[0]
-      | select(.body | contains("<!-- round-two") | not)
+      | select(.body | contains("<!-- vigil") | not)
       | "thread  \(.url)  \(.path):\(.line // "outdated")" ),
     ( $p.reviews.nodes[]
       | select(.body != "" and .submittedAt > $since)
-      | select(.body | contains("<!-- round-two") | not)
+      | select(.body | contains("<!-- vigil") | not)
       | "review  \(.url)" ),
     ( $p.comments.nodes[]
       | select(.createdAt > $since)
-      | select(.body | contains("<!-- round-two") | not)
+      | select(.body | contains("<!-- vigil") | not)
       | "comment \(.url)" )'
 
 pending() {

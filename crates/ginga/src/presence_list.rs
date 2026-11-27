@@ -58,6 +58,31 @@ struct Entry<K, T> {
     position: Option<Motion<Place>>,
 }
 
+impl<K, T> Entry<K, T> {
+    /// The item as drawn at `now`, or `None` once its way out is over.
+    fn shown(&self, now: Duration) -> Option<ShownItem<'_, K, T>> {
+        let amount = self.amount.sample(now);
+        let phase = match (self.wanted, amount.settled) {
+            (true, true) => Phase::Present,
+            (true, false) => Phase::Entering,
+            (false, false) => Phase::Exiting,
+            (false, true) => return None,
+        };
+        let (offset, travelling) = self.position.as_ref().map_or((0.0, false), |position| {
+            let drawn = position.sample(now);
+            (drawn.value.0 - position.target().0, !drawn.settled)
+        });
+        Some(ShownItem {
+            key: &self.key,
+            content: &self.content,
+            phase,
+            progress: amount.value,
+            offset,
+            travelling,
+        })
+    }
+}
+
 /// A place along a list, in pixels or any unit where a tenth is too small to see.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Place(f32);
@@ -122,27 +147,9 @@ impl<K, T> PresenceList<K, T> {
 
     /// The items to draw at `now`, in order, without changing anything.
     pub fn sample(&self, now: Duration) -> impl Iterator<Item = ShownItem<'_, K, T>> {
-        self.entries.iter().filter_map(move |entry| {
-            let amount = entry.amount.sample(now);
-            let phase = match (entry.wanted, amount.settled) {
-                (true, true) => Phase::Present,
-                (true, false) => Phase::Entering,
-                (false, false) => Phase::Exiting,
-                (false, true) => return None,
-            };
-            let (offset, travelling) = entry.position.as_ref().map_or((0.0, false), |position| {
-                let drawn = position.sample(now);
-                (drawn.value.0 - position.target().0, !drawn.settled)
-            });
-            Some(ShownItem {
-                key: &entry.key,
-                content: &entry.content,
-                phase,
-                progress: amount.value,
-                offset,
-                travelling,
-            })
-        })
+        self.entries
+            .iter()
+            .filter_map(move |entry| entry.shown(now))
     }
 
     /// The items to draw at `now`, in order. This is the one call a frame
@@ -152,20 +159,22 @@ impl<K, T> PresenceList<K, T> {
         self.sample(now)
     }
 
-    /// Tells the list where its items are laid out now: `places` are places
-    /// along the list, such as each item's top in pixels, in the order
-    /// [`PresenceList::frame`] gives the items at `now`, leaving ones included.
+    /// Tells the list where its items are laid out now. `place` is asked, for
+    /// each item [`PresenceList::frame`] gives at `now` and in that order,
+    /// leaving ones included, its index and the item, and answers its place
+    /// along the list, such as its top in pixels. Places are told apart to a
+    /// tenth: a move smaller than that is no motion, so use a unit where a
+    /// tenth is too small to see.
     ///
     /// When an item's place changes, it travels there with `transition` from
     /// where it is drawn, keeping its speed, and [`ShownItem::offset`] says how
     /// far it still is. The first place told for an item is where it is: it
-    /// does not travel. A place that is not a finite number is ignored, and so
-    /// are places beyond the last item; items beyond the last place keep the
-    /// one they had.
+    /// does not travel. A place that is not a finite number is ignored.
     ///
-    /// A place that changes on every frame, such as below a row whose height
-    /// follows its progress, makes the item chase it: a tween starts over at
-    /// each change. A spring follows it smoothly, keeping its speed.
+    /// A place can follow the items before it, such as below a row whose
+    /// height follows its progress: `place` can keep a running total. A place
+    /// that changes on every frame makes the item chase it: a tween starts
+    /// over at each change, a spring follows it smoothly, keeping its speed.
     ///
     /// ```
     /// use std::time::Duration;
@@ -176,24 +185,27 @@ impl<K, T> PresenceList<K, T> {
     /// let mut rows = PresenceList::new();
     ///
     /// rows.sync([("a", ()), ("b", ())], InOut::INSTANT, ms(0));
-    /// rows.place_all([0.0, 40.0], glide, ms(0));
+    /// rows.place_all(|index, _| index as f32 * 40.0, glide, ms(0));
     ///
     /// // "b" moves to the top.
     /// rows.sync([("b", ()), ("a", ())], InOut::INSTANT, ms(1_000));
-    /// rows.place_all([0.0, 40.0], glide, ms(1_000));
+    /// rows.place_all(|index, _| index as f32 * 40.0, glide, ms(1_000));
     ///
     /// let offsets: Vec<_> = rows.frame(ms(1_050)).map(|row| (*row.key, row.offset)).collect();
     /// assert_eq!(offsets, [("b", 20.0), ("a", -20.0)]);
     /// ```
     pub fn place_all(
         &mut self,
-        places: impl IntoIterator<Item = f32>,
+        mut place: impl FnMut(usize, &ShownItem<'_, K, T>) -> f32,
         transition: impl Into<Transition>,
         now: Duration,
     ) {
         let transition = transition.into();
         self.sweep(now);
-        for (entry, at) in self.entries.iter_mut().zip(places) {
+        for (index, entry) in self.entries.iter_mut().enumerate() {
+            let Some(at) = entry.shown(now).map(|item| place(index, &item)) else {
+                continue;
+            };
             if !at.is_finite() {
                 continue;
             }
@@ -350,9 +362,7 @@ mod tests {
 
     /// Tells `rows` that its items are laid out 40 apart, in their order now.
     fn lay_out(rows: &mut PresenceList<u32, String>, transition: impl Into<Transition>, now: u64) {
-        let count = rows.sample(ms(now)).count();
-        let places = (0..count).map(|index| index as f32 * 40.0);
-        rows.place_all(places, transition, ms(now));
+        rows.place_all(|index, _| index as f32 * 40.0, transition, ms(now));
     }
 
     /// Where each item is drawn at `now`, by key: its place, 40 times its index
@@ -506,7 +516,11 @@ ms        3       1       2
         lay_out(&mut rows, glide(), 0);
         list(&[2], 1_000, &mut rows);
         // 1 is leaving, still drawn first; 2 moves up to the top, 1 is placed below it.
-        rows.place_all([40.0, 0.0], glide(), ms(1_000));
+        rows.place_all(
+            |_, row| if *row.key == 1 { 40.0 } else { 0.0 },
+            glide(),
+            ms(1_000),
+        );
         assert_eq!(offsets(&mut rows, 1_050), "1:-20 2:20");
         assert_eq!(drawn(&mut rows, 1_100), "2");
         assert_eq!(offsets(&mut rows, 1_100), "2:0");
@@ -525,11 +539,15 @@ ms        3       1       2
     }
 
     #[test]
-    fn places_that_are_not_finite_or_beyond_the_list_are_ignored() {
+    fn places_that_are_not_finite_are_ignored() {
         let mut rows = PresenceList::new();
         list(&[1, 2], 0, &mut rows);
-        rows.place_all([0.0, 40.0], glide(), ms(0));
-        rows.place_all([f32::NAN, f32::INFINITY, 80.0], glide(), ms(1_000));
+        lay_out(&mut rows, glide(), 0);
+        rows.place_all(
+            |index, _| [f32::NAN, f32::INFINITY][index],
+            glide(),
+            ms(1_000),
+        );
         assert_eq!(offsets(&mut rows, 1_000), "1:0 2:0");
         assert!(rows.frame(ms(1_000)).all(|row| !row.moving()));
     }

@@ -80,7 +80,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Sync** (`PresenceList::sync`). Telling a list presence what it holds now, in order. The first sync only fills the list: nothing arrives.
 
-**Place** (`PresenceList::place_all`). Where an item of a list presence is laid out along the list, such as its top in pixels. The view tells the places of all drawn items, in order; when an item's place changes, it travels there instead of jumping. The first place told for an item is where it is: no travel.
+**Place** (`PresenceList::place_all`). Where an item of a list presence is laid out along the list, such as its top in pixels. The view gives `place_all` a function that answers each drawn item's place from its index and the item. Places are told apart to a tenth. When an item's place changes, it travels there instead of jumping. The first place told for an item is where it is: no travel.
 
 **Offset** (`ShownItem::offset`). How far from its place to draw an item: where it is drawn minus where it is laid out. `0.0` unless its place changed; then it heads for `0.0`. The engine animates the offset, never the position, so a list of any layout can use it.
 

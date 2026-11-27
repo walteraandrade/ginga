@@ -88,11 +88,14 @@ fn moving_list_items_to_new_places_allocates_nothing() {
         let now = Duration::from_micros(u64::from(frame) * 8_333);
         // Every 50 frames the list turns around: the first item is placed last.
         let turned = !(frame / 50).is_multiple_of(2);
-        let places = (0..8u8).map(|index| {
-            let index = if turned { 7 - index } else { index };
-            f32::from(index) * 40.0
-        });
-        rows.place_all(places, Spring::SNAPPY, now);
+        rows.place_all(
+            |index, _| {
+                let index = if turned { 7 - index } else { index };
+                f32::from(u8::try_from(index).unwrap()) * 40.0
+            },
+            Spring::SNAPPY,
+            now,
+        );
         checksum += rows.frame(now).map(|row| row.offset.abs()).sum::<f32>();
     }
     let after = allocations();

@@ -26,6 +26,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Response.** The pace of a spring, as a `Duration`: about how long the motion feels. *Not the duration*: a spring has none. The last fraction of the distance keeps settling a little after the response, and a spring's real end is when it is settled.
 
+**Stiffness, damping and mass** (`Spring::from_stiffness`). A spring as physics gives it, the way Motion and react-spring take it (react-spring's *tension* is the stiffness, its *friction* the damping). The same spring as a response and a bounce: response = 2π·√(mass / stiffness); the damping ratio ζ = damping / (2·√(stiffness·mass)) is 1 − bounce up to one, and 1 / (1 + bounce) past it. No damping does not build: such a spring never stops.
+
 **Bounce.** How far a spring passes its target before it comes back: `0.0` not at all, `0.3` playfully, a negative bounce slower and flatter. Strictly between `-1.0` and `1.0`; anything else does not build (`SpringError`).
 
 **Tween** (`Tween`). A transition with a fixed duration and an easing. A tween that changes course starts over from where the value is.

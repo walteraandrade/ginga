@@ -33,6 +33,16 @@ pub struct Spring {
 pub enum SpringError {
     /// The bounce is not a number strictly between `-1.0` and `1.0`.
     BounceOutOfRange(f32),
+    /// A stiffness, damping and mass that make no spring: stiffness and mass
+    /// must be finite and more than zero, damping finite and more than zero.
+    NotASpring {
+        /// The stiffness given.
+        stiffness: f32,
+        /// The damping given.
+        damping: f32,
+        /// The mass given.
+        mass: f32,
+    },
 }
 
 impl fmt::Display for SpringError {
@@ -42,6 +52,16 @@ impl fmt::Display for SpringError {
                 f,
                 "spring bounce must be more than -1.0 and less than 1.0, got {bounce}; \
                  use 0.0 for no overshoot and about 0.3 for a playful one"
+            ),
+            Self::NotASpring {
+                stiffness,
+                damping,
+                mass,
+            } => write!(
+                f,
+                "no spring has stiffness {stiffness}, damping {damping} and mass {mass}; \
+                 each must be finite and more than zero (with no damping a spring never stops), \
+                 such as stiffness 100.0, damping 10.0 and mass 1.0"
             ),
         }
     }
@@ -92,6 +112,55 @@ impl Spring {
             1.0 / (1.0 + bounce)
         };
         Ok(Self { zeta, ..self })
+    }
+
+    /// A spring given as a stiffness, a damping and a mass, the way Motion,
+    /// react-spring (tension, friction and mass), `SwiftUI`'s
+    /// `interpolatingSpring` and physics give it. It is the same spring as a
+    /// response and a bounce, and costs the same: the response is
+    /// `2π·√(mass / stiffness)`, and the damping ratio
+    /// `damping / (2·√(stiffness·mass))` is `1 − bounce` up to one and
+    /// `1 / (1 + bounce)` past it.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Motion, Spring};
+    ///
+    /// let ms = Duration::from_millis;
+    /// // Motion's default spring: a ratio of 0.5, so a bounce of 0.5.
+    /// let spring = Spring::from_stiffness(100.0, 10.0, 1.0)?;
+    /// let mut x = Motion::at(0.0);
+    /// x.set_target(100.0, spring, ms(0));
+    /// assert!(x.sample(ms(300)).value > 100.0); // past its target, on the way back
+    /// # Ok::<(), ginga::SpringError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`SpringError::NotASpring`] when a value is not finite or not more
+    /// than zero, or when together they make a spring too fast to compute.
+    pub fn from_stiffness(stiffness: f32, damping: f32, mass: f32) -> Result<Self, SpringError> {
+        let positive = |value: f32| value.is_finite() && value > 0.0;
+        let omega = (stiffness / mass).sqrt();
+        let zeta = damping / (2.0 * (stiffness * mass).sqrt());
+        if positive(stiffness)
+            && positive(damping)
+            && positive(mass)
+            && positive(omega)
+            && positive(zeta)
+        {
+            Ok(Self {
+                omega,
+                zeta,
+                delay: Duration::ZERO,
+            })
+        } else {
+            Err(SpringError::NotASpring {
+                stiffness,
+                damping,
+                mass,
+            })
+        }
     }
 
     /// The same spring, released `delay` after the target is set. Until then
@@ -280,6 +349,53 @@ mod tests {
 
     fn over() -> Spring {
         Spring::SMOOTH.bounce(-0.5).unwrap()
+    }
+
+    #[test]
+    fn a_spring_from_stiffness_moves_as_the_same_response_and_bounce() {
+        // (stiffness, damping, mass) and the response in seconds and bounce they make.
+        let cases = [
+            ((100.0, 10.0, 1.0), (TAU / 10.0, 0.5)),  // a ratio of 0.5
+            ((400.0, 40.0, 1.0), (TAU / 20.0, 0.0)),  // critical
+            ((100.0, 40.0, 1.0), (TAU / 10.0, -0.5)), // a ratio of 2
+            ((200.0, 20.0, 2.0), (TAU / 10.0, 0.5)),  // a heavier mass, the same spring
+        ];
+        for ((stiffness, damping, mass), (response, bounce)) in cases {
+            let given = Spring::from_stiffness(stiffness, damping, mass).unwrap();
+            let same = Spring::new(Duration::from_secs_f32(response))
+                .bounce(bounce)
+                .unwrap();
+            for step in 0..60 {
+                let seconds = step as f32 / 40.0;
+                let (a, b) = (at(given, seconds), at(same, seconds));
+                assert!(
+                    (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-2,
+                    "{stiffness}, {damping}, {mass} at {seconds} s: {a:?} against {b:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn values_that_make_no_spring_do_not_build() {
+        let not = [
+            (0.0, 10.0, 1.0),
+            (-100.0, 10.0, 1.0),
+            (100.0, 0.0, 1.0), // no damping: it would never stop
+            (100.0, -10.0, 1.0),
+            (100.0, 10.0, 0.0),
+            (f32::NAN, 10.0, 1.0),
+            (100.0, f32::INFINITY, 1.0),
+            (1e38, 10.0, 1e-38), // too fast to compute
+        ];
+        for (stiffness, damping, mass) in not {
+            let error = Spring::from_stiffness(stiffness, damping, mass).unwrap_err();
+            assert!(matches!(error, SpringError::NotASpring { .. }), "{error:?}");
+            assert!(
+                error.to_string().contains("such as stiffness 100.0"),
+                "{error}"
+            );
+        }
     }
 
     #[test]

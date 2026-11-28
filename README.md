@@ -488,6 +488,33 @@ present("toast", self.saved.then_some("Saved"), ways, |text| {
 
 Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once. `.on_gone(|content, window, cx| ..)` is called with each content once it is gone, after the frame that finds it gone: to drop what the view kept for it, or to move the focus. An instant way out, or one that reduced motion makes instant, is over on the frame that starts it; content wanted again on its way out is not gone.
 
+### Gliding to a new place
+
+`.glides(id, transition)` makes an element travel to where layout puts it, instead of jumping there: a card in a wrapping row when one before it goes, a panel's content when a sidebar opens, a row when the one above it grows. It is drawn where it was in the frame of the move and heads for its new place, keeping its speed if the place changes again on the way.
+
+```rust,ignore
+div().flex().flex_wrap().children(self.cards.iter().map(|card| {
+    div().w(px(120.)).h(px(72.)).child(card.title.clone()).glides(("card", card.id), Spring::SNAPPY)
+}))
+```
+
+Only what is painted moves, and where the pointer finds it: layout is not touched, so nothing is laid out again while it glides and the elements around it take their places at once. A frame of a glide costs one sample of its motion and a frame request. A move is a change of its place in the window's layout: a scroll, an offset that a look or a drag paints it with, and a glide of an element around it are not moves, so an element that glides inside another that glides moves with it and glides only by how its place inside changes. A change of the window's size is not a move either. Its size is not moved: it takes its new size at once. Its first frame is in place, and under reduced motion it is in its new place at once, after its delay. The rows of GPUI's `list` and `uniform_list` are each laid out on their own: use `PresenceList::place_all` there. A cached view, a `deferred` element and an `anchored` one are laid out or drawn on their own too, so a glide inside one does not see it move: put the glide on the cached view, or around it. `.glides(..)` goes on any element, a look or another wrapper of ginga's included.
+
+### Opening to its own height
+
+`.opened(id, progress)` gives an element `progress` of its own height, as an accordion opens: at `0.0` it takes no room, at `1.0` it is the element as it is, and part of the way open the rest is cut off and takes no clicks. Its own height is measured as it is laid out, at the width it has, so wrapped text opens to the height it wraps to. The progress comes from whatever moves it, such as a presence:
+
+```rust,ignore
+let answer = self.answer.frame(window, cx).map(|shown| {
+    div().p_2().child(*shown.content).opened("answer", shown.progress)
+});
+div().child(question).children(answer)
+```
+
+It is held in a box that takes its place in the parent: its margins, its width, its share of a flex row and its position are the box's, so it is laid out the same at every progress, and its margins stay around it, closed too. A progress past `0.0..=1.0`, such as a bouncy spring's, is held to it. It keeps the height it measured last under its id: the first frame drawn part of the way open, and a frame where the content's height changes part of the way open, draw the height before and ask for the next frame. A height given as a share of the parent's, such as `h_full`, has no height of its own to open to. Part of the way open, only what is above or below the box is cut, so a shadow at its sides stays; closed, nothing of it is drawn, so it takes no clicks, no focus and no keys, and it asks for no frame.
+
+What it costs is layout and rendering: while it opens, its parent is laid out again on each frame, and cached views in it or moved by it render again on each frame, since a cached view is reused only at the same place, size and cut. A cached view beside its parent does not. Fully open and still, it asks for nothing. [The measurement](https://github.com/walteraandrade/ginga/blob/main/docs/measurements/2026-11-28-accordion/README.md).
+
 ### One thing in two places
 
 `.shared(key, transition)` says that elements in different places are one thing. When one of a key appears as another of it goes, it does not appear in its place: it travels there from where the other was, its place and its size changing together. A tab's mark slides to the next tab; a row opens into a card.
@@ -602,7 +629,7 @@ Measured on its own, with a heavy view of 2,400 boxes and a dot that never stops
 
 ## Watch it move
 
-The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list whose items come and go, a look, colors, a transition for each value, keyframes, derived values and sequences, a look while hovered, pressed or focused, ways in and out, a shared element, a drag, and an island. Each page is driven by a few lines that can be copied. It runs on Linux.
+The gallery is an example app with a page for each thing ginga does: a value toward a target with a spring and a tween, a presence, a list whose items come and go, an accordion, a look, colors, a transition for each value, keyframes, derived values and sequences, a look while hovered, pressed or focused, ways in and out, a shared element, cards that glide to their new places, a drag, and an island. Each page is driven by a few lines that can be copied. It runs on Linux.
 
 ```sh
 cargo run -p ginga-gpui --example gallery                  # open it
@@ -648,6 +675,7 @@ ginga takes ideas that work elsewhere and fits them to its two goals ([What it i
 | --- | --- | --- |
 | [Motion](https://motion.dev) (formerly Framer Motion) | You say the target and the library takes care of the way there. The value and its speed live outside the drawing (`MotionValue`). What leaves stays on screen until its way out is over (`AnimatePresence`). | `Motion::toward`, `Presence`, `PresenceList` |
 | Motion's `animate`, `whileHover`, `layoutId`, variants and drag | A look declared on the element; a look for a moment; one thing in two places; a parent's name that its children follow, one after another; a drag that is thrown and springs back. | `.look(..)`, `.hover(..)`, `.pressed(..)`, `.focused(..)`, `.shared(..)`, `.leads(..)` and `.follows(..)`, `.draggable(..)` |
+| Motion's `layout`, gpui-motion's `with_flip` and gpui-ce-motion's `LayoutGroup` | An element whose place layout changes travels there, painted, with layout untouched. | `.glides(..)` |
 | [lilt](https://github.com/ejjonny/lilt), for iced | Time is an argument. There is no tick. | `toward(target, transition, now)`, `sample(now)` |
 | [SwiftUI](https://developer.apple.com/xcode/swiftui/) | A spring described first by its duration and its bounce, rather than by mass and stiffness. A spring that is interrupted keeps its speed. | `Spring::new(response)`, `.bounce(..)` |
 | Motion, react-spring and SwiftUI's `interpolatingSpring` | A spring given as a stiffness, a damping and a mass, as specs and other code give it. | `Spring::physical(..)` |
@@ -657,7 +685,7 @@ ginga takes ideas that work elsewhere and fits them to its two goals ([What it i
 | gpui-ce-motion | The state has an owner in plain sight: it lives in your view. Its `Target`, a closed list of properties, is the model for a look. | a `Motion` is a field of your view, and the engine keeps no state of its own; `Look` |
 | [react-spring](https://www.react-spring.dev) and [Svelte](https://svelte.dev) | A rule for rest (a precision) to stop asking for frames. | `Animatable::PRECISION` |
 | [GSAP](https://gsap.com) | Time as an object: the timeline. | `Sequence` |
-| [FLIP](https://aerotwist.com/blog/flip-your-animations/), by Paul Lewis | Measure before, measure after, and animate the difference. | `PresenceList::place_all`, `.shared(..)` |
+| [FLIP](https://aerotwist.com/blog/flip-your-animations/), by Paul Lewis | Measure before, measure after, and animate the difference. | `PresenceList::place_all`, `.shared(..)`, `.glides(..)` |
 | Flutter's `Hero` and Compose's `SharedTransitionLayout` | An element flies between two places. | `.shared(..)` |
 
 ## Contributing

@@ -5,8 +5,8 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use ginga_gpui::{Easing, Look, LookExt, LookState, Trace, Transitions, Tween};
 use gpui::{
-    Bounds, Context, IntoElement, ParentElement, Pixels, Render, Styled, TestAppContext, Window,
-    WindowHandle, canvas, div, point, px, size,
+    AppContext, Bounds, Context, IntoElement, ParentElement, Pixels, Render, Styled,
+    TestAppContext, Window, WindowHandle, canvas, div, point, px, size,
 };
 
 fn ms(millis: u64) -> Duration {
@@ -318,4 +318,60 @@ fn a_look_the_view_owns_can_be_written_down(cx: &mut TestAppContext) {
 fn a_look_state_no_element_drew_has_nothing_to_write_down(cx: &mut TestAppContext) {
     let state = LookState::default();
     assert!(cx.update(|cx| state.inspect(cx)).is_none());
+}
+
+/// A child view that reads its parent's look while it is rendered, which
+/// GPUI does while it lays the parent out.
+struct Reader {
+    state: LookState,
+    read: Rc<RefCell<Vec<Option<Look>>>>,
+}
+
+impl Render for Reader {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let read = self.state.inspect(cx).map(|(motion, _)| motion.target());
+        self.read.borrow_mut().push(read);
+        div()
+    }
+}
+
+struct Parent {
+    state: LookState,
+    reader: gpui::Entity<Reader>,
+}
+
+impl Render for Parent {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .child(self.reader.clone())
+            .look_with(&self.state, Look::new().width(100.), glide())
+    }
+}
+
+#[gpui::test]
+fn a_child_reads_the_look_while_it_is_laid_out(cx: &mut TestAppContext) {
+    let state = LookState::default();
+    let read = Rc::new(RefCell::new(Vec::new()));
+    let window = cx.open_window(size(px(400.), px(300.)), {
+        let (state, read) = (state.clone(), read.clone());
+        move |_, cx| Parent {
+            reader: cx.new(|_| Reader {
+                state: state.clone(),
+                read,
+            }),
+            state,
+        }
+    });
+    cx.run_until_parked();
+    window
+        .update(cx, |parent, _, cx| {
+            parent.reader.update(cx, |_, cx| cx.notify());
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(
+        read.borrow().as_slice(),
+        [Some(Look::new().width(100.)), Some(Look::new().width(100.))],
+        "this frame's motion, from the first frame on"
+    );
 }

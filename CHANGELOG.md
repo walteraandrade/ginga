@@ -4,6 +4,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 
 ## Unreleased
 
+- README: "Coming from Motion, SwiftUI or Compose", a table from their everyday tools to ginga, with recipes: steps, several stops, a stagger backward or from the centre, the scroll position, an icon that turns, writing motion down, reduced motion on purpose, and pause, seek, speed and reverse. The gallery's turn page.
 - `Opened::height_glides(transition)`: the height an opened element opens to glides to its content's new height, keeping its speed, instead of jumping; under reduced motion it is taken at once.
 - A `Sequence` step can be a `LookMotion` as well as a `Motion`: `then`, `with` and `at` take any `Retarget`. `Sequence::without_motion`, and in the adapter `ginga_gpui::sequence(now, cx)`, a sequence that under reduced motion puts each step at its target after its own delay.
 - `Variant::set_in_order(name, order, ..)`, in the engine and the adapter: the order of the parent and its children for one change, so a menu opens parent first and closes children first. `set` keeps the order given to `order`.

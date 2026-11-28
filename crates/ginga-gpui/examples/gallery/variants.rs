@@ -1,6 +1,7 @@
 //! Variants: a menu opens, and its rows follow it one after another. On the
-//! left the menu goes first and its rows after it; on the right the rows go
-//! first and the menu after them.
+//! left the menu goes first and its rows after it; in the middle the rows go
+//! first and the menu after them; on the right the menu opens first and
+//! closes last, with the order given to each change.
 
 use std::time::Duration;
 
@@ -18,6 +19,7 @@ enum Menu {
 pub struct Menus {
     parent_first: Variant<Menu>,
     children_first: Variant<Menu>,
+    each_way: Variant<Menu>,
 }
 
 impl Menus {
@@ -30,6 +32,7 @@ impl Menus {
         Self {
             parent_first: menu(Order::ParentFirst),
             children_first: menu(Order::ChildrenFirst),
+            each_way: menu(Order::Together),
         }
     }
 
@@ -42,6 +45,12 @@ impl Menus {
             // Renders again the views that drew the menu; no notify needed.
             menu.set(next, cx);
         }
+        // The lines to copy: open with the panel first, close with the rows first.
+        let (next, order) = match self.each_way.name() {
+            Menu::Closed => (Menu::Open, Order::ParentFirst),
+            Menu::Open => (Menu::Closed, Order::ChildrenFirst),
+        };
+        self.each_way.set_in_order(next, order, cx);
     }
 }
 
@@ -94,5 +103,6 @@ impl Render for Menus {
             .gap(px(32.))
             .child(menu("menu first", &self.parent_first))
             .child(menu("rows first", &self.children_first))
+            .child(menu("each way", &self.each_way))
     }
 }

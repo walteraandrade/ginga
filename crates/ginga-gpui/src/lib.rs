@@ -40,6 +40,7 @@ pub use ginga::{
 pub use glide::{GlideExt, Glides};
 pub use keyframes::Keyframes;
 pub use look::{LookExt, LookState, Looked, WithLook, color, set_default_look_transitions};
+pub use opened::{OpenExt, Opened};
 pub use presence_list::PresenceList;
 pub use present::{Present, present};
 pub use shared::{Shared, SharedExt};
@@ -50,6 +51,7 @@ mod drag;
 mod glide;
 mod keyframes;
 mod look;
+mod opened;
 mod presence_list;
 mod present;
 mod shared;

@@ -6,6 +6,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 
 - `LookState::inspect(cx)`: a declared look's engine motion and this frame's time, to write it down with `Trace::of`.
 - `.glides(id, transition)` (`GlideExt`, `Glides`): an element travels to where layout puts it, painted, with layout untouched; scrolls, painted offsets and a glide around it are not moves.
+- `.opened(id, progress)` (`OpenExt`, `Opened`): an element that takes `progress` of its own height, measured as it is laid out, as an accordion opens; what is past the open part is cut off and takes no clicks.
 - `Spring::physical(stiffness, damping, mass)`: a spring given as Motion, react-spring and SwiftUI's `interpolatingSpring` give it, and `SpringError::NotASpring` for values that make none.
 - Variants: a parent's name that its children follow one after another, before or after the parent (`Variant`, `Order`, `ginga_gpui::Variant`, `.leads(..)`, `.follows(..)`). `Transitions::delay` and `LookMotion::settles_at`.
 - `Keyframes::behind(lag)`, in the engine and the adapter: keyframes that play behind others of the same loop, partway through a round from their start; a count of rounds waits on the first stop until the lag is over. `ginga_gpui::Keyframes::starting_at`, kept by `restart`.

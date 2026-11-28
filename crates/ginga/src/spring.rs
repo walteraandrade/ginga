@@ -142,6 +142,11 @@ impl Spring {
     /// `damping / (2·√(stiffness·mass))` is `1 − bounce` up to one and
     /// `1 / (1 + bounce)` past it.
     ///
+    /// The order is Motion's and react-spring's: `SwiftUI` names mass first.
+    /// A damping far below `2·√(stiffness·mass)` rings for long, and a
+    /// spring still ringing a minute after it was released is put on its
+    /// target there, as any spring is.
+    ///
     /// ```
     /// use std::time::Duration;
     /// use ginga::{Motion, Spring};
@@ -151,7 +156,7 @@ impl Spring {
     /// let spring = Spring::physical(100.0, 10.0, 1.0)?;
     /// let mut x = Motion::at(0.0);
     /// x.set_target(100.0, spring, ms(0));
-    /// assert!(x.sample(ms(300)).value > 100.0); // past its target, on the way back
+    /// assert!(x.sample(ms(300)).value > 100.0); // past its target
     /// # Ok::<(), ginga::SpringError>(())
     /// ```
     ///

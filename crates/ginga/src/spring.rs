@@ -230,7 +230,7 @@ impl Spring {
             }
         } else {
             let root = w * (z * z - 1.0).sqrt();
-            let (slow, fast) = (-z * w + root, -z * w - root);
+            let (slow, fast) = overdamped_roots(w, z, root);
             Phase::Over {
                 slow,
                 fast,
@@ -254,7 +254,7 @@ impl Spring {
             after(offset.hypot(b), z * w)
         } else {
             let root = w * (z * z - 1.0).sqrt();
-            let (slow, fast) = (-z * w + root, -z * w - root);
+            let (slow, fast) = overdamped_roots(w, z, root);
             let c1 = (velocity - fast * offset) / (slow - fast);
             after(c1.abs() + (offset - c1).abs(), -slow)
         };
@@ -264,6 +264,16 @@ impl Spring {
             LONGEST_SETTLE
         }
     }
+}
+
+/// The two rates an overdamped spring dies out at. The slow one is
+/// `-w / (z + sqrt(z² - 1))`, the same as `-z·w + root` but without
+/// subtracting two numbers that are nearly equal: for a large damping ratio
+/// that difference rounds to zero in an `f32`, and the spring would never move.
+fn overdamped_roots(w: f32, z: f32, root: f32) -> (f32, f32) {
+    let fast = -z * w - root;
+    let slow = -w / (z + (z * z - 1.0).sqrt());
+    (slow, fast)
 }
 
 /// A spring at one instant, ready to be applied to any number of channels.
@@ -443,6 +453,20 @@ mod tests {
                 "{message}"
             );
         }
+    }
+
+    #[test]
+    fn a_heavily_damped_spring_creeps_and_settles_in_its_own_time() {
+        // stiffness / damping = 1 s: it covers 1 - 1/e of the way in about a second.
+        let spring = Spring::physical(100.0, 100.0, 1e-6).unwrap();
+        let mut motion = crate::Motion::at(0.0);
+        motion.set_target(100.0, spring, Duration::ZERO);
+        let at_one = motion.sample(Duration::from_secs(1)).value;
+        assert!((at_one - 63.2).abs() < 0.5, "at 1 s: {at_one}");
+        // Within a thousandth of 100 after ln(100 / 0.001) time constants,
+        // not at the 60 s cap.
+        let settles = motion.settles_at().unwrap().as_secs_f32();
+        assert!((settles - 11.5).abs() < 0.1, "settles at {settles} s");
     }
 
     #[test]

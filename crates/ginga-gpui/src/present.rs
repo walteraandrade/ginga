@@ -125,23 +125,22 @@ impl<T: PartialEq + 'static> Present<T> {
         self
     }
 
-    /// The ways to use this frame: none for a look that is not given. Under
-    /// reduced motion a way that fades keeps its transition, and its offset
-    /// is left out when it is drawn; a way that only moves has no motion,
-    /// after its delay.
-    fn ways(&self, reduced: bool) -> InOut {
-        let way = |look: Option<Look>, transition: Transition| {
-            if !moves(look) {
-                Transition::Instant
-            } else if reduced && !fades(look) {
-                transition.without_motion()
-            } else {
-                transition
-            }
+    /// The ways in and out as they are used this frame: see [`way`].
+    fn ways(&self, reduced: bool) -> Ways {
+        let (arrive_from, enter) = way(self.arrive_from, self.ways.enter, reduced);
+        let (leave_to, exit) = way(self.leave_to, self.ways.exit, reduced);
+        // Content that turns around comes back from its leaving look, so
+        // under reduced motion that look says whether the way back fades.
+        let back = if reduced {
+            way(self.leave_to, self.ways.enter, true).1
+        } else {
+            enter
         };
-        InOut {
-            enter: way(self.arrive_from, self.ways.enter),
-            exit: way(self.leave_to, self.ways.exit),
+        Ways {
+            arrive_from,
+            leave_to,
+            transitions: InOut { enter, exit },
+            back,
         }
     }
 
@@ -156,25 +155,10 @@ impl<T: PartialEq + 'static> Present<T> {
         swapped_out: bool,
         came_back: Option<u64>,
         focus: Option<FocusHandle>,
-        reduced: bool,
+        ways: &Ways,
     ) -> WithLook<gpui::Stateful<gpui::Div>> {
         let coming_back = came_back == Some(shown.content.number);
-        // Under reduced motion a way in or out that fades only fades: it is
-        // drawn where it is laid out. One that only moves keeps its offset
-        // and has no motion, so it waits there for its delay, as before.
-        let way = |look: Option<Look>| {
-            look.map(|look| {
-                if reduced && fades(Some(look)) {
-                    Look {
-                        offset: None,
-                        ..look
-                    }
-                } else {
-                    look
-                }
-            })
-        };
-        let (arrive_from, leave_to) = (way(self.arrive_from), way(self.leave_to));
+        let (arrive_from, leave_to) = (ways.arrive_from, ways.leave_to);
         let look = match shown.phase {
             Phase::Present => Look::new(),
             Phase::Entering if coming_back => {
@@ -208,9 +192,41 @@ impl<T: PartialEq + 'static> Present<T> {
     }
 }
 
-/// A way in or out with this look fades: it names an opacity.
-fn fades(look: Option<Look>) -> bool {
-    look.is_some_and(|look| look.opacity.is_some_and(f32::is_finite))
+/// The ways in and out of one frame: their looks and their transitions.
+struct Ways {
+    arrive_from: Option<Look>,
+    leave_to: Option<Look>,
+    transitions: InOut,
+    /// The way in for content that turns around on its way out.
+    back: Transition,
+}
+
+/// A way in or out as it is used this frame: its look and its transition.
+/// A look that moves nothing is no way, and is instant. Under reduced
+/// motion a way that fades keeps its transition and loses its offset, so it
+/// fades where it is laid out; a way that only moves keeps its look and has
+/// no motion, so it waits there for its delay. The one place that says what
+/// a way is under reduced motion.
+fn way(look: Option<Look>, transition: Transition, reduced: bool) -> (Option<Look>, Transition) {
+    match look {
+        _ if !moves(look) => (look, Transition::Instant),
+        Some(look) if reduced && fades(look) => (
+            Some(Look {
+                offset: None,
+                ..look
+            }),
+            transition,
+        ),
+        _ if reduced => (look, transition.without_motion()),
+        _ => (look, transition),
+    }
+}
+
+/// A way in or out with this look fades: it names an opacity that is not
+/// the full one content is at when it is there.
+fn fades(look: Look) -> bool {
+    look.opacity
+        .is_some_and(|opacity| opacity.is_finite() && opacity != 1.0)
 }
 
 /// A way in or out with this look moves something: only an offset and an
@@ -253,7 +269,7 @@ struct Kept<T> {
 
 impl<T: PartialEq> Kept<T> {
     /// Shows `content`, numbered as it was if it is held.
-    fn show(&mut self, content: T, ways: InOut, now: std::time::Duration) {
+    fn show(&mut self, content: T, ways: &Ways, now: std::time::Duration) {
         let held = self
             .slot
             .sample(now)
@@ -262,15 +278,18 @@ impl<T: PartialEq> Kept<T> {
             .find(|shown| shown.content.content == content)
             .map(|shown| (shown.content.number, shown.phase));
         // Shown again on its way out: it turns around.
+        let mut transitions = ways.transitions;
         if let Some((number, Phase::Exiting)) = held {
             self.came_back = Some(number);
+            transitions.enter = ways.back;
         }
         // Held content keeps the one it has: the slot does not replace it.
         let number = self.next;
         if held.is_none() {
             self.next += 1;
         }
-        self.slot.show(Numbered { number, content }, ways, now);
+        self.slot
+            .show(Numbered { number, content }, transitions, now);
     }
 }
 
@@ -304,6 +323,7 @@ impl<T: PartialEq + 'static> Element for Present<T> {
         let id = id.expect("an element with an id is laid out with one");
         let reduced = reduced(cx);
         let ways = self.ways(reduced);
+        let transitions = ways.transitions;
         let content = self.content.take();
         let (mut element, gone) = window.with_element_state(id, |kept: Option<Kept<T>>, window| {
             let mut kept = kept.unwrap_or_else(|| Kept {
@@ -316,8 +336,8 @@ impl<T: PartialEq + 'static> Element for Present<T> {
             kept.slot.set_swap(self.swap);
             let now = kept.clock.now(cx);
             match content {
-                Some(content) => kept.show(content, ways, now),
-                None => kept.slot.hide(ways.exit, now),
+                Some(content) => kept.show(content, &ways, now),
+                None => kept.slot.hide(transitions.exit, now),
             }
             // Empty, and so not allocated, unless something is gone.
             let mut gone = Vec::new();
@@ -366,7 +386,7 @@ impl<T: PartialEq + 'static> Element for Present<T> {
                     swapped_out,
                     came_back,
                     focus(shown.content.number),
-                    reduced,
+                    &ways,
                 )
             };
             let leaving = [first, second]
@@ -437,5 +457,43 @@ mod tests {
         )));
         assert!(!moves(Some(Look::new().opacity(f32::NAN))));
         assert!(!moves(None));
+    }
+
+    /// `Transition` has no `PartialEq`; its debug form names every part.
+    fn assert_same(seen: (Option<Look>, Transition), wanted: (Option<Look>, Transition)) {
+        assert_eq!(format!("{seen:?}"), format!("{wanted:?}"));
+    }
+
+    #[test]
+    fn under_reduced_motion_a_way_that_fades_keeps_its_opacity_and_transition_and_loses_its_offset()
+    {
+        let fade = Transition::from(ginga::Tween::new(
+            core::time::Duration::from_millis(100),
+            ginga::Easing::Linear,
+        ));
+        let rise = Look::new().offset(0., 40.).opacity(0.);
+        assert_same(way(Some(rise), fade, false), (Some(rise), fade));
+        assert_same(
+            way(Some(rise), fade, true),
+            (Some(Look::new().opacity(0.)), fade),
+        );
+    }
+
+    #[test]
+    fn under_reduced_motion_a_way_that_only_moves_or_names_full_opacity_has_no_motion() {
+        let fade = Transition::from(ginga::Tween::new(
+            core::time::Duration::from_millis(100),
+            ginga::Easing::Linear,
+        ));
+        for look in [
+            Look::new().offset(0., 40.),
+            Look::new().offset(0., 40.).opacity(1.),
+        ] {
+            assert_same(
+                way(Some(look), fade, true),
+                (Some(look), fade.without_motion()),
+            );
+        }
+        assert_same(way(None, fade, true), (None, Transition::Instant));
     }
 }

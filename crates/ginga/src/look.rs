@@ -267,7 +267,7 @@ const FADE: Tween = Tween::new(Duration::from_millis(150), Easing::Out);
 /// needs its field and builder on [`Look`], a line in `Look::finite` and its
 /// trace columns, which are written by hand.
 macro_rules! values {
-    ($($field:ident: $repr:ty = $to:expr, $from:expr, $default:expr, $kind:literal;)*) => {
+    ($($field:ident: $repr:ty = $to:expr, $from:expr, $default:expr, $fades:literal, $kind:literal;)*) => {
         /// A [`Look`] on its way to another: one [`Motion`] for each value it names.
         ///
         /// Hand it the look a thing should have now, each frame, as with a
@@ -466,12 +466,45 @@ macro_rules! values {
                 least.unwrap_or_default()
             }
 
-            /// Every value resolved, defaults included, then changed by `f`:
-            /// the one place that resolves them all.
+        /// The timings under reduced motion: a fade is kept, a movement is not.
+        /// The opacity and the three colors keep their transitions. The offset,
+        /// the size and the radius hold still for their own delay and are then
+        /// at their target at once, as [`without_motion`](Self::without_motion)
+        /// makes every value. Defaults are included, as there.
+        ///
+        /// ```
+        /// use std::time::Duration;
+        /// use ginga::{Easing, Look, LookMotion, Transitions, Tween};
+        ///
+        /// let ms = Duration::from_millis;
+        /// let rise = Transitions::new().all(Tween::new(ms(100), Easing::Linear));
+        /// let mut toast = LookMotion::at(Look::new().offset(0.0, 16.0).opacity(0.0));
+        /// toast.set_target(Look::new().offset(0.0, 0.0).opacity(1.0), rise.for_reduced_motion(), ms(0));
+        /// assert_eq!(toast.sample(ms(50)).value, Look::new().offset(0.0, 0.0).opacity(0.5));
+        /// ```
+            #[must_use]
+            pub fn for_reduced_motion(self) -> Self {
+                self.each_marked(|transition, fades| {
+                    if fades {
+                        transition
+                    } else {
+                        transition.without_motion()
+                    }
+                })
+            }
+
+            /// Every value resolved, defaults included, then changed by `f`.
             fn each(self, f: impl Fn(Transition) -> Transition) -> Self {
+                self.each_marked(|transition, _| f(transition))
+            }
+
+            /// Every value resolved, defaults included, then changed by `f`,
+            /// which is told whether the value is a fade (marked in the
+            /// `values!` table): the one place that resolves them all.
+            fn each_marked(self, f: impl Fn(Transition, bool) -> Transition) -> Self {
                 Self {
                     own: Layer {
-                        $($field: Some(f(self.named(|layer| layer.$field).unwrap_or($default))),)*
+                        $($field: Some(f(self.named(|layer| layer.$field).unwrap_or($default), $fades)),)*
                     },
                     all: None,
                     under: Layer::EMPTY,
@@ -568,48 +601,14 @@ macro_rules! values {
 }
 
 values! {
-    offset: Pixels<2> = |(x, y)| Pixels([x, y]), |Pixels([x, y])| (x, y), Transition::Spring(Spring::SNAPPY), "offset";
-    opacity: f32 = |value| value, |value| value, Transition::Tween(FADE), "opacity";
-    width: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "width";
-    height: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "height";
-    radius: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "radius of the corners";
-    background: Color = |value| value, |value| value, Transition::Tween(FADE), "background color";
-    text_color: Color = |value| value, |value| value, Transition::Tween(FADE), "text color";
-    border_color: Color = |value| value, |value| value, Transition::Tween(FADE), "border color";
-}
-
-impl Transitions {
-    /// The timings under reduced motion: a fade is kept, a movement is not.
-    /// The opacity and the three colors keep their transitions. The offset,
-    /// the size and the radius hold still for their own delay and are then
-    /// at their target at once, as [`without_motion`](Self::without_motion)
-    /// makes every value. Defaults are included, as there.
-    ///
-    /// ```
-    /// use std::time::Duration;
-    /// use ginga::{Easing, Look, LookMotion, Transitions, Tween};
-    ///
-    /// let ms = Duration::from_millis;
-    /// let rise = Transitions::new().all(Tween::new(ms(100), Easing::Linear));
-    /// let mut toast = LookMotion::at(Look::new().offset(0.0, 16.0).opacity(0.0));
-    /// toast.set_target(Look::new().offset(0.0, 0.0).opacity(1.0), rise.for_reduced_motion(), ms(0));
-    /// assert_eq!(toast.sample(ms(50)).value, Look::new().offset(0.0, 0.0).opacity(0.5));
-    /// ```
-    #[must_use]
-    pub fn for_reduced_motion(self) -> Self {
-        let moving = self.each(|transition| transition);
-        let still = self.without_motion();
-        Self {
-            own: Layer {
-                opacity: moving.own.opacity,
-                background: moving.own.background,
-                text_color: moving.own.text_color,
-                border_color: moving.own.border_color,
-                ..still.own
-            },
-            ..still
-        }
-    }
+    offset: Pixels<2> = |(x, y)| Pixels([x, y]), |Pixels([x, y])| (x, y), Transition::Spring(Spring::SNAPPY), false, "offset";
+    opacity: f32 = |value| value, |value| value, Transition::Tween(FADE), true, "opacity";
+    width: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), false, "width";
+    height: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), false, "height";
+    radius: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), false, "radius of the corners";
+    background: Color = |value| value, |value| value, Transition::Tween(FADE), true, "background color";
+    text_color: Color = |value| value, |value| value, Transition::Tween(FADE), true, "text color";
+    border_color: Color = |value| value, |value| value, Transition::Tween(FADE), true, "border color";
 }
 
 impl From<Transition> for Transitions {

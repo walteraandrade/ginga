@@ -52,6 +52,8 @@ enum Ways {
     Move,
     /// Move, and fade from and to unseen too.
     MoveAndFade,
+    /// Arrive moving only, and leave moving and fading.
+    MoveInFadeOut,
 }
 
 /// The contents a stage found gone.
@@ -95,17 +97,24 @@ impl Render for Stage {
                 .ok();
             }
         });
-        let unseen = if self.ways == Ways::MoveAndFade {
-            Look::new().opacity(0.)
-        } else {
-            Look::new()
+        let unseen = |fades: bool| {
+            if fades {
+                Look::new().opacity(0.)
+            } else {
+                Look::new()
+            }
+        };
+        let (fades_in, fades_out) = match self.ways {
+            Ways::MoveAndFade => (true, true),
+            Ways::MoveInFadeOut => (false, true),
+            Ways::Instant | Ways::Move => (false, false),
         };
         let shown = if self.ways == Ways::Instant {
             shown
         } else {
             shown
-                .arrive_from(Look::new().offset(0., 40.).or(unseen))
-                .leave_to(Look::new().offset(0., -40.).or(unseen))
+                .arrive_from(Look::new().offset(0., 40.).or(unseen(fades_in)))
+                .leave_to(Look::new().offset(0., -40.).or(unseen(fades_out)))
         };
         div()
             .size_full()
@@ -518,4 +527,64 @@ fn under_reduced_motion_a_way_that_fades_keeps_its_fade_where_it_is(cx: &mut Tes
     assert_eq!(stage.gone().len(), 0);
     assert_eq!(stage.after(50), [], "gone when the fade is over");
     assert_eq!(stage.gone(), ["toast"]);
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_way_that_fades_waits_its_delay_in_place_and_turns_around_there(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let mut stage = open_with(cx, Some("toast"), Swap::Sync, Ways::MoveAndFade, ms(60));
+    assert_eq!(
+        stage.after(0),
+        [("toast", 0.)],
+        "it waits in its place, not 40 px down"
+    );
+    assert_eq!(stage.after(110), [("toast", 0.)], "fading in at 110 ms");
+    assert!(
+        stage.cx.update(Window::simulate_next_frame) > 0,
+        "the fade, after its delay, asks for frames"
+    );
+    stage.after(50);
+    assert_eq!(
+        stage.cx.update(Window::simulate_next_frame),
+        0,
+        "settled at 160 ms"
+    );
+    stage.want(None);
+    assert_eq!(stage.after(80), [("toast", 0.)], "fading out where it is");
+    stage.want(Some("toast"));
+    assert_eq!(
+        stage.after(16),
+        [("toast", 0.)],
+        "wanted again, it turns around where it is"
+    );
+    assert_eq!(stage.gone().len(), 0);
+}
+
+#[gpui::test]
+fn under_reduced_motion_content_turning_around_fades_back_when_its_way_out_fades(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let mut stage = open_with(
+        cx,
+        Some("toast"),
+        Swap::Sync,
+        Ways::MoveInFadeOut,
+        Duration::ZERO,
+    );
+    assert_eq!(
+        stage.last(),
+        [("toast", 0.)],
+        "its way in only moves: at once"
+    );
+    stage.want(None);
+    assert_eq!(stage.after(50), [("toast", 0.)], "half faded out, in place");
+    stage.want(Some("toast"));
+    assert_eq!(stage.after(16), [("toast", 0.)]);
+    assert!(
+        stage.cx.update(Window::simulate_next_frame) > 0,
+        "it fades back from where its fade out was, not at once"
+    );
 }

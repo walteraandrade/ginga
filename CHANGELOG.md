@@ -4,7 +4,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 
 ## Unreleased
 
-- Reduced motion keeps fades: a look's opacity and colors keep their transitions while its offset, size and radius go at once after their delay (`Transitions::for_reduced_motion`), and a `present` way that names an opacity fades where the content is laid out. Before, every value went at once, so a toast popped in and out.
+- Reduced motion keeps fades: a look's opacity and colors keep their transitions while its offset, size and radius go at once after their delay (`Transitions::for_reduced_motion`), and a `present` way that names an opacity other than 1 fades where the content is laid out. Before, every value went at once, so a toast popped in and out.
 - README: "Coming from Motion, SwiftUI or Compose", a table from their everyday tools to ginga, with recipes: steps, several stops, a stagger backward or from the centre, the scroll position, an icon that turns, writing motion down, reduced motion on purpose, and pause, seek, speed and reverse. The gallery's turn page.
 - `Opened::height_glides(transition)`: the height an opened element opens to glides to its content's new height, keeping its speed, instead of jumping; under reduced motion it is taken at once.
 - A `Sequence` step can be a `LookMotion` as well as a `Motion`: `then`, `with` and `at` take any `Retarget`. `Sequence::without_motion`, and in the adapter `ginga_gpui::sequence(now, cx)`, a sequence that under reduced motion puts each step at its target after its own delay.

@@ -102,6 +102,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Cover** (`CoverExt::cover`, `Covered`). What a presence draws, covered while the content leaves: a child over it takes the pointer, and a keyboard focus inside it is taken away. Nothing wraps it, so its layout does not change. `present` covers its leaving content the same way.
 
+**Opened** (`OpenExt::opened`, `Opened`). An element that takes a *progress* of its own height, measured as it is laid out, as an accordion opens: closed it takes no room, part of the way open what is past the open part is cut off and takes no clicks, fully open it is the element as it is. *Not a look's size*: a look names the size; an opened element opens to whatever height its content has.
+
 **Present.** The phase of something shown and still. *Not settled*: see *settled*.
 
 **Progress.** How much of something shown is here: `0.0` gone, `1.0` fully here. A view draws it as opacity, scale, height or anything else. A bouncy spring passes both ends a little.
@@ -127,6 +129,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 **Offset** (`ShownItem::offset`). How far from its place to draw an item: where it is drawn minus where it is laid out. `0.0` unless its place changed; then it heads for `0.0`. The engine animates the offset, never the position, so a list of any layout can use it.
 
 **Travelling** (checked by `ShownItem::moving`). An item is on its way to its place: its offset is not settled. *Not the offset*: an offset can pass `0.0` while it travels, so `moving()` checks this.
+
+**Glide** (`GlideExt::glides`, `Glides`). An element travelling to where layout puts it: when its place in the window's layout changes, it is painted where it was and heads for the new place, layout untouched. Its place is taken without what is painted on top of layout (a scroll, a look's offset, a drag) and from the gliding element around it, so none of those is a move. *Not travel*: that is a list item's, toward a place the app tells. *Not a shared element*: one element moves, not two of one key.
 
 **Shared element** (`SharedExt::shared`, `Shared`) and **traveller**. Elements in different spots that declare one key are one thing. The one that appears while another of its key has just gone is the *traveller*: drawn above the rest, it moves and resizes from the other's bounds to its own *destination*, the bounds layout gives it, which is kept empty at its size meanwhile. *Not a list's place or travelling*: those are `PresenceList::place_all`'s, for items along one list. See [[codebase/a-shared-element]].
 
@@ -154,7 +158,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Drag** (`ginga_gpui::Drag`, `.draggable`). The pointer takes an element and it follows exactly, with no spring between them. Let go, it is *thrown*: it keeps the pointer's speed, which a *trail* measures, and coasts. A pointer still for 50 ms before it lets go sets the element down instead. `DragState` holds where the element is; `throw` lets it go without a pointer.
 
-**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), the transitions page with a transition for each value (#27), the compose page with maps and sequences (#34), the gestures page with hover, pressed and focused looks (#29), the ways page with ways in and out (#28), the shared page with shared elements (#33), the variants page with variants (#31), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
+**Gallery** and **page**. The adapter's example app (`examples/gallery`): a list of pages on one side, the chosen page on the other. A page shows one thing ginga does and has a Play button. A new feature adds a page; the four first pages cover what existed when the gallery came, the look page came with the look (#25), the color page with colors (#26), the pulse page with keyframes (#30), the drag page with coasting and drag (#32), the transitions page with a transition for each value (#27), the compose page with maps and sequences (#34), the gestures page with hover, pressed and focused looks (#29), the ways page with ways in and out (#28), the shared page with shared elements (#33), the variants page with variants (#31), the layout page with glides (#80), the accordion page with an opened element (#81), and a delay (stagger) and a list's travel (`place_all`) have none yet. `cargo test -p ginga-gpui` plays every page on GPUI's test platform and checks that it moves and then settles. *Recording* a page runs it in a virtual display and keeps its frames; see [[codebase/recording-a-gallery-page]].
 
 ## Looks
 

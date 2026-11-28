@@ -60,11 +60,16 @@ impl Page {
 
     /// Every page, in the order of the list on the left. A new page is one
     /// more line here, and a module in `main.rs`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one entry per page; the list grows with the gallery"
+    )]
     pub fn all(cx: &mut App) -> Vec<Page> {
         use crate::{
-            color::Button, compose::Compose, drag::Throw, gestures::Buttons, island::IslandPage,
-            list::Rows, look::Card, presence::Toast, pulse::Pulse, shared::Shared, toward::Toward,
-            transitions::Arrive, variants::Menus, ways::Ways,
+            accordion::Accordion, color::Button, compose::Compose, drag::Throw, gestures::Buttons,
+            island::IslandPage, layout::Layout, list::Rows, look::Card, presence::Toast,
+            pulse::Pulse, shared::Shared, toward::Toward, transitions::Arrive, variants::Menus,
+            ways::Ways,
         };
         vec![
             Page::new(
@@ -98,10 +103,22 @@ impl Page {
                 Rows::play,
             ),
             Page::new(
+                "layout",
+                "Cards in a wrapping row glide to their new places when the first one goes or comes back.",
+                cx.new(|_| Layout::new()),
+                Layout::play,
+            ),
+            Page::new(
                 "look",
                 "A card declares its look; clicked, it changes size and fades.",
                 cx.new(|_| Card::new()),
                 Card::play,
+            ),
+            Page::new(
+                "accordion",
+                "Questions open and close: each answer's height goes from nothing to its own.",
+                cx.new(|_| Accordion::new()),
+                Accordion::play,
             ),
             Page::new(
                 "variants",

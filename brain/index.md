@@ -50,6 +50,8 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/ways-in-and-out-on-an-element]]: how `present` keeps drawing a thing on its way out, and swaps content in a slot.
 - [[codebase/a-variant-on-an-element]]: how `.leads` and `.follows` delay a look, and how a parent waits for its children.
 - [[codebase/a-shared-element]]: how two elements of one key hand a motion over, and why the first frame only measures.
+- [[codebase/a-glide-on-an-element]]: where a gliding element's place comes from, so a scroll is not a move, and why a glide inside a glide does not move twice.
+- [[codebase/an-opened-element]]: how `.opened` lays out in a box at every progress and measures its own height a frame behind.
 
 ## Measurements
 
@@ -59,6 +61,7 @@ They stay in `docs/measurements/`, with their scripts and patches:
 - [The AI caret in an island](../docs/measurements/2026-11-26-ai-caret-island/README.md): an island keeps the heavy pane from rendering.
 - [The island on its own](../docs/measurements/2026-11-27-island-alone/README.md): a synthetic heavy view, measured in a virtual display: the island more than halves the main thread's frame.
 - [The tray's marks in an island](../docs/measurements/2026-11-27-tray-marks/README.md): most frames of a Review skip the pane; a Refine still renders it, and two loops on their own beats draw more frames. The workspace above the islands renders on every frame.
+- [The accordion](../docs/measurements/2026-11-28-accordion/README.md): what renders again while an element opens, and what `.opened` adds to a frame.
 
 ## How to write here
 

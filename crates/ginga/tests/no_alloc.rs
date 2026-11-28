@@ -361,8 +361,20 @@ fn switching_a_variant_and_following_it_allocates_nothing() {
         let mut rows = [LookMotion::at(hidden); 4];
         for frame in 0..5_000u64 {
             let now = Duration::from_micros(frame * 8_333);
-            // Every 53 frames the menu switches, and the schedule starts again.
-            if menu.set((frame / 53).is_multiple_of(2), now) {
+            // Every 53 frames the menu switches, and the schedule starts again;
+            // every other round each change gives its own order.
+            let open = (frame / 53).is_multiple_of(2);
+            let switched = if (frame / 106).is_multiple_of(2) {
+                menu.set(open, now)
+            } else {
+                let order = if open {
+                    Order::ParentFirst
+                } else {
+                    Order::ChildrenFirst
+                };
+                menu.set_in_order(open, order, now)
+            };
+            if switched {
                 let look = if menu.name() { shown } else { hidden };
                 let set_panel = |menu: &mut Variant<bool>, panel: &mut LookMotion| {
                     panel.set_target(look, transitions.delay(menu.parent_delay(now)), now);

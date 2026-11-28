@@ -104,10 +104,34 @@ impl<N: Copy + PartialEq + 'static> Variant<N> {
     /// Shows `name` from this frame. A new name renders again every view that
     /// drew an element of this variant; the same name changes nothing.
     pub fn set(&self, name: N, cx: &mut App) {
+        self.show(cx, |variant, now| variant.set(name, now));
+    }
+
+    /// Shows `name` from this frame, as [`set`](Self::set) does, with the
+    /// parent and its children in `order` for this change only: a menu that
+    /// opens with [`Order::ParentFirst`] and closes with
+    /// [`Order::ChildrenFirst`]. The order given to [`order`](Self::order)
+    /// stays the one for `set`.
+    ///
+    /// ```ignore
+    /// // On a click:
+    /// let (name, order) = match self.menu.name() {
+    ///     Menu::Hidden => (Menu::Shown, Order::ParentFirst),
+    ///     Menu::Shown => (Menu::Hidden, Order::ChildrenFirst),
+    /// };
+    /// self.menu.set_in_order(name, order, cx);
+    /// ```
+    pub fn set_in_order(&self, name: N, order: Order, cx: &mut App) {
+        self.show(cx, |variant, now| variant.set_in_order(name, order, now));
+    }
+
+    /// Changes the name with `set` at this frame's time and, if it changed,
+    /// renders again every view that drew an element of this variant.
+    fn show(&self, cx: &mut App, set: impl FnOnce(&mut ginga::Variant<N>, Duration) -> bool) {
         let mut views = {
             let mut state = self.0.borrow_mut();
             let now = state.clock.now(cx);
-            if !state.variant.set(name, now) {
+            if !set(&mut state.variant, now) {
                 return;
             }
             state.changes += 1;

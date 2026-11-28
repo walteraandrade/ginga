@@ -25,3 +25,5 @@ How `ginga_gpui::present` draws a thing until its way out is over, and the traps
 `cover` (`Covered`) does the same for what a `Presence` draws, without element state: it makes a focus handle each frame while the content leaves, and checks it in `window.defer`, which runs after `Window::draw` swaps in the frame it just built, so the check reads this frame's focus tree with no frame of lag. It decorates the element instead of wrapping it, so the layout is the same in every phase (a wrapper gave an `absolute` element a cover of zero height).
 
 Related: [[codebase/a-look-on-an-element]], [[glossary]] (slot, swap, mix, arriving look).
+
+**Gone.** `on_gone` needs no content from the slot, which drops it: `Kept` keeps the numbers of the contents drawn last frame (`drawn`, at most three), and each one not drawn this frame is gone. A content drawn once stays drawn until it is gone, since what a `Swap::Wait` holds back unseen was never drawn, so a number missing is a way out that is over, including an instant one, which never shows as leaving. The callbacks are deferred with `window.defer`, so they run after the frame, outside the element state (#82).

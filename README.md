@@ -481,7 +481,7 @@ present("toast", self.saved.then_some("Saved"), ways, |text| {
 .leave_to(Look::new().opacity(0.))
 ```
 
-Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once.
+Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once. `.on_gone(|window, cx| ..)` is called once for each content whose way out is over, on the frame that finds it gone: to drop what the view kept for it, or to move the focus. An instant way out, or one that reduced motion makes instant, is over on the frame that starts it; content wanted again on its way out is not gone.
 
 ### One thing in two places
 

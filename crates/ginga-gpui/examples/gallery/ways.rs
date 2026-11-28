@@ -1,6 +1,6 @@
 //! Ways in and out declared on the element: a toast rises in and fades out,
 //! and two titles swap, one crossing the old and the new, one waiting for
-//! the old to go.
+//! the old to go. Each time the toast is gone, a count goes up.
 
 use std::time::Duration;
 
@@ -13,6 +13,8 @@ pub struct Ways {
     saved: bool,
     /// Which title is shown: none until Play, as what is there arrives.
     title: Option<usize>,
+    /// How many times the toast's way out was over.
+    gone: u32,
 }
 
 impl Ways {
@@ -20,6 +22,7 @@ impl Ways {
         Self {
             saved: false,
             title: None,
+            gone: 0,
         }
     }
 
@@ -55,7 +58,7 @@ fn title(swap: Swap, title: Option<&'static str>) -> impl IntoElement {
 }
 
 impl Render for Ways {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let ways = InOut::new(
             Spring::SNAPPY,
             Tween::new(Duration::from_millis(200), Easing::In),
@@ -79,8 +82,24 @@ impl Render for Ways {
                             .child(*text)
                     })
                     .arrive_from(Look::new().offset(0., 24.).opacity(0.))
-                    .leave_to(Look::new().opacity(0.)),
+                    .leave_to(Look::new().opacity(0.))
+                    // Once its way out is over: here, a count.
+                    .on_gone({
+                        let view = cx.entity().downgrade();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.gone += 1;
+                                cx.notify();
+                            })
+                            .ok();
+                        }
+                    }),
                 ),
+            )
+            .child(
+                div()
+                    .text_color(rgb(0x009b_a1a6))
+                    .child(format!("Gone {} times", self.gone)),
             )
     }
 }

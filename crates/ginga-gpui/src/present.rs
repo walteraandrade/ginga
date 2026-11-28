@@ -1,6 +1,8 @@
 //! Ways in and out declared on an element: it arrives from one look, leaves
 //! to another, and is drawn until its way out is over.
 
+use std::rc::Rc;
+
 use ginga::{InOut, Look, Phase, Shown, Slot, Swap, Transition};
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, FocusHandle, GlobalElementId, InspectorElementId,
@@ -52,8 +54,12 @@ where
         arrive_from: None,
         leave_to: None,
         swap: Swap::Sync,
+        on_gone: None,
     }
 }
+
+/// What is called when content that was leaving is gone.
+type OnGone = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// An element with ways in and out: made by [`present`].
 pub struct Present<T> {
@@ -64,9 +70,32 @@ pub struct Present<T> {
     arrive_from: Option<Look>,
     leave_to: Option<Look>,
     swap: Swap,
+    on_gone: Option<OnGone>,
 }
 
 impl<T: PartialEq + 'static> Present<T> {
+    /// Calls `gone` once for each content whose way out is over, on the
+    /// frame that finds it gone, after the frame is drawn: to drop what the
+    /// view kept for it, or to move the focus. A way out that is instant,
+    /// or that reduced motion makes instant, is over on the frame that
+    /// starts it. Content wanted again on its way out is not gone, and
+    /// neither is content that was there when this element stopped being
+    /// drawn.
+    ///
+    /// ```ignore
+    /// let view = cx.entity().downgrade();
+    /// present("toast", self.saved.then_some("Saved"), ways, |text| div().child(*text))
+    ///     .leave_to(Look::new().opacity(0.))
+    ///     .on_gone(move |_, cx| {
+    ///         view.update(cx, |this, cx| this.undo = None).ok();
+    ///     })
+    /// ```
+    #[must_use]
+    pub fn on_gone(mut self, gone: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_gone = Some(Rc::new(gone));
+        self
+    }
+
     /// The look content arrives from: its offset and its opacity, which go
     /// to no offset and fully opaque as it arrives (see [`Look::mix`]). Any
     /// other value the look names is left out: the element's own size and
@@ -196,6 +225,42 @@ struct Kept<T> {
     /// A focus handle for each content on its way out, to tell whether the
     /// focus is inside it.
     focus: Vec<(u64, FocusHandle)>,
+    /// The numbers of the contents drawn last frame: one of them not drawn
+    /// this frame, and not shown again, is gone.
+    drawn: [Option<u64>; 3],
+}
+
+impl<T: PartialEq> Kept<T> {
+    /// Shows `content`, numbered as it was if it is held.
+    fn show(&mut self, content: T, ways: InOut, now: std::time::Duration) {
+        let held = self
+            .slot
+            .sample(now)
+            .into_iter()
+            .flatten()
+            .find(|shown| shown.content.content == content)
+            .map(|shown| (shown.content.number, shown.phase));
+        // Shown again on its way out: it turns around.
+        if let Some((number, Phase::Exiting)) = held {
+            self.came_back = Some(number);
+        }
+        let number = held.map_or(self.next, |(number, _)| number);
+        if held.is_none() {
+            self.next += 1;
+        }
+        self.slot.show(Numbered { number, content }, ways, now);
+    }
+}
+
+/// How many of the contents drawn `before` are gone: not drawn `now`. A
+/// content drawn once is drawn until it is gone, since what a swap holds
+/// back unseen is always content not drawn yet.
+fn gone(before: [Option<u64>; 3], now: [Option<u64>; 3]) -> usize {
+    before
+        .into_iter()
+        .flatten()
+        .filter(|number| !now.contains(&Some(*number)))
+        .count()
 }
 
 impl<T: PartialEq + 'static> IntoElement for Present<T> {
@@ -228,41 +293,30 @@ impl<T: PartialEq + 'static> Element for Present<T> {
         let id = id.expect("an element with an id is laid out with one");
         let ways = self.ways(cx);
         let content = self.content.take();
-        let mut element = window.with_element_state(id, |kept: Option<Kept<T>>, window| {
+        let (mut element, gone) = window.with_element_state(id, |kept: Option<Kept<T>>, window| {
             let mut kept = kept.unwrap_or_else(|| Kept {
                 slot: Slot::new(self.swap),
                 clock: Clock::default(),
                 next: 0,
                 came_back: None,
                 focus: Vec::new(),
+                drawn: [None; 3],
             });
             kept.slot.set_swap(self.swap);
             let now = kept.clock.now(cx);
             match content {
-                Some(content) => {
-                    let held = kept
-                        .slot
-                        .sample(now)
-                        .into_iter()
-                        .flatten()
-                        .find(|shown| shown.content.content == content)
-                        .map(|shown| (shown.content.number, shown.phase));
-                    // Shown again on its way out: it turns around.
-                    if let Some((number, Phase::Exiting)) = held {
-                        kept.came_back = Some(number);
-                    }
-                    let number = held.map_or(kept.next, |(number, _)| number);
-                    if held.is_none() {
-                        kept.next += 1;
-                    }
-                    kept.slot.show(Numbered { number, content }, ways, now);
-                }
+                Some(content) => kept.show(content, ways, now),
                 None => kept.slot.hide(ways.exit, now),
             }
             let shown = kept.slot.frame(now);
             if shown.iter().flatten().any(Shown::moving) {
                 window.request_animation_frame();
             }
+            let drawn = shown
+                .each_ref()
+                .map(|shown| shown.as_ref().map(|shown| shown.content.number));
+            let gone = gone(kept.drawn, drawn);
+            kept.drawn = drawn;
             let [first, second, here] = shown;
             if here
                 .as_ref()
@@ -311,8 +365,14 @@ impl<T: PartialEq + 'static> Element for Present<T> {
                 .children(leaving)
                 .children(here)
                 .into_any_element();
-            (element, kept)
+            ((element, gone), kept)
         });
+        if let Some(on_gone) = &self.on_gone {
+            for _ in 0..gone {
+                let on_gone = on_gone.clone();
+                window.defer(cx, move |window, cx| on_gone(window, cx));
+            }
+        }
         (element.request_layout(window, cx), element)
     }
 

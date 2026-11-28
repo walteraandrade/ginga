@@ -4,6 +4,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 
 ## Unreleased
 
+- `Present::on_gone`: called once for each content whose way out is over, on the frame that finds it gone, instant ways out and reduced motion included.
 - `LookState::inspect(cx)`: a declared look's engine motion and this frame's time, to write it down with `Trace::of`.
 - `Spring::physical(stiffness, damping, mass)`: a spring given as Motion, react-spring and SwiftUI's `interpolatingSpring` give it, and `SpringError::NotASpring` for values that make none.
 - Variants: a parent's name that its children follow one after another, before or after the parent (`Variant`, `Order`, `ginga_gpui::Variant`, `.leads(..)`, `.follows(..)`). `Transitions::delay` and `LookMotion::settles_at`.

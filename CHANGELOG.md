@@ -4,6 +4,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 
 ## Unreleased
 
+- `Opened::height_glides(transition)`: the height an opened element opens to glides to its content's new height, keeping its speed, instead of jumping; under reduced motion it is taken at once.
 - `Present::on_gone(|content, window, cx| ..)`: called with each content once it is gone, after the frame that finds it gone, instant ways out and reduced motion included. `Slot::take_gone`, in the engine: what was seen and let go, once each; content a wait dropped unseen is not gone. Content that waited while what was leaving came back is now dropped at once, unseen, instead of leaving.
 - `LookState::inspect(cx)`: a declared look's engine motion and this frame's time, to write it down with `Trace::of`.
 - `.glides(id, transition)` (`GlideExt`, `Glides`): an element travels to where layout puts it, painted, with layout untouched; scrolls, painted offsets and a glide around it are not moves.

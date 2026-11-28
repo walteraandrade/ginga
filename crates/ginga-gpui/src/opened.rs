@@ -3,11 +3,15 @@
 
 use std::mem;
 
+use ginga::Transition;
+
 use gpui::{
     AnyElement, App, Bounds, ContentMask, Display, Element, ElementId, FlexDirection,
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Length, Pixels, Refineable, Style,
     StyleRefinement, Styled, Window, point, px, size,
 };
+
+use crate::{Clock, unless_reduced};
 
 /// A move of the box, in pixels, shorter than this asks for no frame: a new
 /// height of the content that moves the box less is drawn on the next frame
@@ -37,6 +41,7 @@ pub trait OpenExt: Styled + IntoElement + 'static {
         Opened {
             id: id.into(),
             progress,
+            glide: None,
             element: Some(self),
         }
     }
@@ -67,14 +72,41 @@ impl<E: Styled + IntoElement + 'static> OpenExt for E {}
 pub struct Opened<E> {
     id: ElementId,
     progress: f32,
+    /// How the height it opens to heads for a new height of the content.
+    glide: Option<Transition>,
     element: Option<E>,
 }
 
+impl<E> Opened<E> {
+    /// When its content's own height changes, the height it opens to heads
+    /// for the new one with `transition`, from where it is and keeping its
+    /// speed, instead of taking it at once: a toast whose text grows, a
+    /// panel whose rows change. Open all the way, give it a progress of
+    /// `1.0`. The frame that finds the change draws the height before; what
+    /// is above or below the box is cut while it glides. Under reduced
+    /// motion the new height is taken after the transition's delay, at once.
+    ///
+    /// ```ignore
+    /// div().p_2().child(self.message.clone())
+    ///     .opened("toast", 1.)
+    ///     .height_glides(Spring::SNAPPY)
+    /// ```
+    #[must_use]
+    pub fn height_glides(mut self, transition: impl Into<Transition>) -> Self {
+        self.glide = Some(transition.into());
+        self
+    }
+}
+
 /// What an opened element keeps under its id: its own height, as last
-/// measured.
+/// measured, and the height it opens to, when that glides.
 #[derive(Clone, Copy, Default)]
 struct Kept {
     height: Option<Pixels>,
+    clock: Clock,
+    /// The height it opens to, heading for the content's own: once it has
+    /// been measured, and only when its height glides.
+    glide: Option<ginga::Motion<f32>>,
 }
 
 /// What an opened element carries from layout to prepaint. `pub` in a
@@ -86,6 +118,8 @@ pub struct OpenedLayout {
     content: LayoutId,
     /// How much of it is open, held to `0.0..=1.0`.
     progress: f32,
+    /// The box is not as tall as the content: what is past it is cut.
+    cut: bool,
 }
 
 impl<E: Styled + IntoElement + 'static> IntoElement for Opened<E> {
@@ -134,9 +168,14 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         cx: &mut App,
     ) -> (LayoutId, OpenedLayout) {
         let id = id.expect("an opened element has an id");
-        let kept = window.with_element_state(id, |kept: Option<Kept>, _| {
-            let kept = kept.unwrap_or_default();
-            (kept, kept)
+        let (kept, gliding) = window.with_element_state(id, |kept: Option<Kept>, _| {
+            let mut kept = kept.unwrap_or_default();
+            let now = kept.clock.now(cx);
+            let gliding = self
+                .glide
+                .and(kept.glide)
+                .map(|glide| px(glide.sample(now).value));
+            ((kept, gliding), kept)
         });
         let mut element = self.element.take().expect("an element is laid out once");
         let progress = if self.progress.is_nan() {
@@ -144,7 +183,7 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         } else {
             self.progress.clamp(0.0, 1.0)
         };
-        let partly = progress < 1.0;
+        let partly = progress < 1.0 || gliding.is_some();
         let outer = place_in_parent(element.style());
         // The content keeps its own height in the box: a column that does
         // not shrink it, so the box cuts it instead of squeezing it.
@@ -156,8 +195,8 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         style.display = Display::Flex;
         style.flex_direction = FlexDirection::Column;
         if partly {
-            let height = kept.height.map_or(0.0, f32::from) * progress;
-            style.size.height = Length::from(px(height));
+            let open_to = gliding.or(kept.height).map_or(0.0, f32::from);
+            style.size.height = Length::from(px(open_to * progress));
         }
         let layout = window.request_layout(style, [content], cx);
         (
@@ -166,6 +205,7 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
                 element,
                 content,
                 progress,
+                cut: partly,
             },
         )
     }
@@ -184,23 +224,39 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         // Closed, nothing of it is drawn: it takes no clicks, no focus and
         // no keys, and draws nothing deferred.
         if layout.progress > 0.0 {
-            window.with_content_mask(cut(bounds, layout.progress), |window| {
+            window.with_content_mask(cut(bounds, layout.cut), |window| {
                 layout.element.prepaint(window, cx);
             });
         }
         let progress = layout.progress;
-        let moved = window.with_element_state(id, |kept: Option<Kept>, _| {
+        let glide = self.glide.map(|transition| unless_reduced(transition, cx));
+        let next_frame = window.with_element_state(id, |kept: Option<Kept>, _| {
             let mut kept = kept.unwrap_or_default();
             let before = kept.height.map_or(0.0, f32::from);
-            let now = f32::from(measured);
+            let height = f32::from(measured);
             kept.height = Some(measured);
-            // How far the box would move with the new height.
-            let moved = (now - before).abs() * progress;
-            (moved, kept)
+            let Some(transition) = glide else {
+                kept.glide = None;
+                // Part of the way open, the box was laid out at the height
+                // before: the next frame lays it out at the new one, if that
+                // moves it.
+                let moved = (height - before).abs() * progress;
+                return (progress < 1.0 && moved >= LEAST_CHANGE, kept);
+            };
+            let now = kept.clock.now(cx);
+            let motion = kept.glide.get_or_insert(ginga::Motion::at(height));
+            // The box was laid out at the height before: a change that
+            // moves it is drawn from the next frame, even one taken at once.
+            let moves = (height - motion.target()).abs() * progress >= LEAST_CHANGE;
+            if moves {
+                motion.set_target(height, transition, now);
+            } else if motion.target() != height {
+                // Too small a change to move the box: it is taken at once.
+                motion.jump_to(height);
+            }
+            (moves || !motion.sample(now).settled, kept)
         });
-        // Part of the way open, the box was laid out at the height before:
-        // the next frame lays it out at the new one, if that moves it.
-        if progress < 1.0 && moved >= LEAST_CHANGE {
+        if next_frame {
             window.request_animation_frame();
         }
     }
@@ -216,7 +272,7 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         cx: &mut App,
     ) {
         if layout.progress > 0.0 {
-            window.with_content_mask(cut(bounds, layout.progress), |window| {
+            window.with_content_mask(cut(bounds, layout.cut), |window| {
                 layout.element.paint(window, cx);
             });
         }
@@ -227,10 +283,10 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
 /// height is cut, so a shadow or a focus ring at the sides stays.
 const SIDES: f32 = 100_000.;
 
-/// The cut of a box part of the way open: what is above or below the box
-/// is cut off. Fully open, nothing is cut.
-fn cut(bounds: Bounds<Pixels>, progress: f32) -> Option<ContentMask<Pixels>> {
-    (progress < 1.0).then(|| ContentMask {
+/// The cut of a box not as tall as its content: what is above or below the
+/// box is cut off.
+fn cut(bounds: Bounds<Pixels>, cut: bool) -> Option<ContentMask<Pixels>> {
+    cut.then(|| ContentMask {
         bounds: Bounds {
             origin: point(bounds.origin.x - px(SIDES), bounds.origin.y),
             size: size(bounds.size.width + px(2. * SIDES), bounds.size.height),

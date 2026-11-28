@@ -120,6 +120,14 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
     /// with it, on every frame. Draw a capped loop in a view of its own, such
     /// as an [`Island`](crate::Island). A cap of zero is no cap: the loop asks
     /// for every frame.
+    ///
+    /// So the cap belongs to one set of keyframes, not to the view, as GPUI's
+    /// `Animation::with_max_fps` belongs to one animated element. Two capped
+    /// sets in one view keep a timer each: started on one frame with one
+    /// `every`, they stay in step and the view is drawn once per `every`;
+    /// started apart, as after a `restart`, the view can be drawn up to once
+    /// per set in each `every`. To draw several things at one capped rate,
+    /// call `frame` on one set and draw them all with its value.
     #[must_use]
     pub fn at_most_every(mut self, every: Duration) -> Self {
         self.every = (!every.is_zero()).then_some(every);

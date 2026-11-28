@@ -293,15 +293,14 @@ In a GPUI list of rows of one height, a row's place is its index times the heigh
 ```rust,ignore
 const ROW: f32 = 40.;
 
-let transition = ginga_gpui::unless_reduced(Spring::SNAPPY, cx);
-self.rows.place_all(|index, _| index as f32 * ROW, transition, now);
+// `rows` is a `ginga_gpui::PresenceList`: it reads the frame's clock, asks
+// for the next frame while a row moves, and applies reduced motion.
+self.rows.place_all(|index, _| index as f32 * ROW, Spring::SNAPPY, cx);
 
-let mut moving = false;
 let rows: Vec<_> = self
     .rows
-    .frame(now)
+    .frame(window, cx)
     .map(|row| {
-        moving |= row.moving();
         div()
             .h(px(ROW))
             .relative()
@@ -310,9 +309,6 @@ let rows: Vec<_> = self
             .child(row.content.label.clone())
     })
     .collect();
-if moving {
-    window.request_animation_frame();
-}
 div().flex().flex_col().children(rows)
 ```
 
@@ -361,7 +357,7 @@ impl Render for Panel {
 }
 ```
 
-`toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once when the desktop asks for reduced motion. A delay is timing, not motion, so it is kept: under reduced motion a delayed value holds still until its delay is over, then is at its target at once (`Transition::without_motion`, and `Transitions::without_motion` for a look). A `ginga_gpui::Motion` moves `f32` and GPUI's `Pixels`, `Point<Pixels>`, `Size<Pixels>`, `Bounds<Pixels>`, `Rgba` and `Hsla`; another GPUI type gets an `Animate` impl. `motion.inspect(cx)` hands back the engine's motion and this frame's time, to write it down with `Trace::of`. `ginga_gpui::Presence` is a `Presence` read on the frame's clock: `show(content, enter, cx)`, `hide(exit, cx)` and `frame(window, cx)`. An event handler with no window reads `wanted()`, the content that should be on screen, and `sample(cx)`, what `frame` would hand back; `Presence::leaving(content, exit, cx)` makes a thing that is only seen leaving.
+`toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once when the desktop asks for reduced motion. A delay is timing, not motion, so it is kept: under reduced motion a delayed value holds still until its delay is over, then is at its target at once (`Transition::without_motion`, and `Transitions::without_motion` for a look). A `ginga_gpui::Motion` moves `f32` and GPUI's `Pixels`, `Point<Pixels>`, `Size<Pixels>`, `Bounds<Pixels>`, `Rgba` and `Hsla`; another GPUI type gets an `Animate` impl. `motion.inspect(cx)` hands back the engine's motion and this frame's time, to write it down with `Trace::of`. `ginga_gpui::Presence` is a `Presence` read on the frame's clock: `show(content, enter, cx)`, `hide(exit, cx)` and `frame(window, cx)`. `shown.cover(element)` (`CoverExt`) draws what `frame` gave covered while it leaves: it takes no clicks, and the keyboard focus is taken from inside it, as `present` does. An event handler with no window reads `wanted()`, the content that should be on screen, and `sample(cx)`, what `frame` would hand back; `Presence::leaving(content, exit, cx)` makes a thing that is only seen leaving. `ginga_gpui::PresenceList` is a `PresenceList` on the same clock: `sync(items, in_out, cx)`, `place_all(place, transition, cx)` and `frame(window, cx)`, which asks for the next frame while any item arrives, leaves or travels, and applies reduced motion to each way and each travel to a new place; `sample(cx)` is what `frame` would hand back, for an event handler with no window.
 
 When the logic of a motion lives in a crate that knows nothing about GPUI, that crate keeps a `ginga::Motion` and takes the time as an argument; the view supplies it with `ginga_gpui::Clock`.
 
@@ -400,7 +396,7 @@ let half = fill.sample(ms(50)).value.background.unwrap();
 assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);
 ```
 
-When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and, under reduced motion, takes each value at once after that value's delay.
+When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and, under reduced motion, takes each value at once after that value's delay. A look the view already has, such as one mixed by a presence's progress (`from.mix(Look::new(), shown.progress)`), is applied as it is with `.with_look(look)`: the same mapping, with no motion and no element state.
 
 In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
 
@@ -543,7 +539,7 @@ Like a look's, the offset moves what is painted and where the pointer finds the 
 
 ## A loop in a view
 
-`ginga_gpui::Keyframes` are keyframes a view owns. They start on the first frame that draws them, or `starting_at(d)` after it, `restart(cx)` plays them again, `behind(lag)` plays them `lag` behind copies without it, partway through a round from the first frame, so staggered dots share one loop, and they rest where they end under reduced motion (`rest()`: a loop on its first stop). A slow loop need not be drawn at the display's rate: `.at_most_every(d)` asks for the next frame no sooner than `d` after this one. It holds back only its own requests, so draw the loop in a view of its own, such as an `Island`, or another motion in the view draws it on every frame anyway.
+`ginga_gpui::Keyframes` are keyframes a view owns. They start on the first frame that draws them, or `starting_at(d)` after it, `restart(cx)` plays them again, `behind(lag)` plays them `lag` behind copies without it, partway through a round from the first frame, so staggered dots share one loop, and they rest where they end under reduced motion (`rest()`: a loop on its first stop). A slow loop need not be drawn at the display's rate: `.at_most_every(d)` asks for the next frame no sooner than `d` after this one. It holds back only its own requests, so draw the loop in a view of its own, such as an `Island`, or another motion in the view draws it on every frame anyway. The cap is per set of keyframes, not per view, as GPUI's `Animation::with_max_fps` is per element: two capped sets in one view that started apart can draw the view up to once each per `d`, so values that should share a rate share one set.
 
 ```rust,ignore
 // Built once:

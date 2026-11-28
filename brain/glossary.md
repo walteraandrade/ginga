@@ -42,7 +42,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Round.** One pass of keyframes from the first stop to the last. `times(n)` plays `n`, `forever()` never stops; *mirrored* rounds go back and forth, and a *pause* holds still between them. Keyframes that repeat forever are never settled, and their *settles at* is `None`.
 
-**Frame cap** (`ginga_gpui::Keyframes::at_most_every`). Asking for the next frame no sooner than a set time after this one, with a timer instead of a frame request, so a slow loop is drawn at a lower rate than the display's.
+**Frame cap** (`ginga_gpui::Keyframes::at_most_every`). Asking for the next frame no sooner than a set time after this one, with a timer instead of a frame request, so a slow loop is drawn at a lower rate than the display's. It caps one set of keyframes, not a view, as GPUI's `Animation::with_max_fps` caps one element (#65).
 
 **Easing** (`Easing`). The shape of a tween: how progress in time becomes progress in value. `Linear`, `Out`, `OutExpo`, a CSS `Bezier`, your own `Custom` curve and others.
 
@@ -98,6 +98,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Phase** (`Phase`). Where something shown is in its life: `Entering`, `Present` or `Exiting`. Something `Exiting` is still drawn but should no longer take clicks or the focus.
 
+**Cover** (`CoverExt::cover`, `Covered`). What a presence draws, covered while the content leaves: a child over it takes the pointer, and a keyboard focus inside it is taken away. Nothing wraps it, so its layout does not change. `present` covers its leaving content the same way.
+
 **Present.** The phase of something shown and still. *Not settled*: see *settled*.
 
 **Progress.** How much of something shown is here: `0.0` gone, `1.0` fully here. A view draws it as opacity, scale, height or anything else. A bouncy spring passes both ends a little.
@@ -110,13 +112,15 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Arriving look** and **leaving look** (`ginga_gpui::Present::arrive_from`, `leave_to`). The look a thing presented with `present` arrives from and leaves to, mixed into its own by its progress. Without one, that way is instant.
 
-**List presence** (`PresenceList`). A presence for a list with keys. `sync` tells it what the list holds now: a new key arrives, a missing key leaves and keeps its place until it is gone, and a key that comes back turns around.
+**List presence** (`PresenceList`). A presence for a list with keys. `sync` tells it what the list holds now: a new key arrives, a missing key leaves and keeps its place until it is gone, and a key that comes back turns around. `ginga_gpui::PresenceList` is the same list on a view's clock: it asks for frames and applies reduced motion itself.
 
 **Key.** What identifies an item of a list presence across syncs. Keys are unique within a list.
 
 **Sync** (`PresenceList::sync`). Telling a list presence what it holds now, in order. The first sync only fills the list: nothing arrives.
 
-**Place** (`PresenceList::place_all`). Where an item of a list presence is laid out along the list, such as its top in pixels. The view gives `place_all` a function that answers each drawn item's place from its index and the item. Places are told apart to a tenth. When an item's place changes, it travels there instead of jumping. The first place told for an item is where it is: no travel.
+**Place** (`PresenceList::place_all`). Where an item of a list presence is laid out along the list, such as its top in pixels. The view gives `place_all` a function that answers each drawn item's place from its index and the item. Places are told apart to a tenth. When an item's place changes, it travels there instead of jumping. The first place told for an item is where it is: no travel. *Not a sweep*: see **Sweep**.
+
+**Sweep.** A list presence letting go of the items whose way out is over, in `frame`, `place_all` and `sync`. The items after one may move up in the layout by the room it took; when the next place told for them is that, or is unchanged, it is not travel.
 
 **Offset** (`ShownItem::offset`). How far from its place to draw an item: where it is drawn minus where it is laid out. `0.0` unless its place changed; then it heads for `0.0`. The engine animates the offset, never the position, so a list of any layout can use it.
 
@@ -130,7 +134,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Frame.** One time GPUI draws the window. A view that moves something asks for the next frame while it moves. *Not a sample*: see *sample*.
 
-**Frame request.** Asking GPUI to draw the next frame: `window.request_animation_frame()`. `ginga_gpui::Motion` and `ginga_gpui::Presence` do it while their value moves, and stop when it is settled.
+**Frame request.** Asking GPUI to draw the next frame: `window.request_animation_frame()`. `ginga_gpui::Motion`, `ginga_gpui::Presence` and `ginga_gpui::PresenceList` do it while their value moves, and stop when it is settled.
 
 **Clock** (`ginga_gpui::Clock`). The frame's time as the `Duration` the engine counts in, from the first frame the clock saw. The engine never reads a clock; the adapter reads one and hands the time on.
 
@@ -166,4 +170,4 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Variant** (`Variant`, `Order`, `ginga_gpui::Variant`). A name a parent shows, such as `Hidden` or `Shown`, that its children follow. Each element picks its own look for the name; the variant only schedules when each starts toward it: child `n` one *step* after child `n - 1`, and the parent before them (`Order::ParentFirst`), after them (`Order::ChildrenFirst`) or with the first (`Order::Together`). In a view it is a *handle*: the view keeps it and hands it by hand to the parent (`.leads(&variant)`) and to each child (`.follows(&variant, n)`); there is no context that passes it down ([the decision](decisions/2026-11-27-variants-are-a-handle-passed-by-hand.md)).
 
-**Declared look** (`LookExt::look`, `Looked`). A look written on a GPUI element, with the transition that gets it there. Its look motion is kept with the element's id while the element is drawn each frame, or in a `LookState` the view owns.
+**Declared look** (`LookExt::look`, `Looked`). A look written on a GPUI element, with the transition that gets it there. Its look motion is kept with the element's id while the element is drawn each frame, or in a `LookState` the view owns. *Not `with_look`*: `LookExt::with_look` applies a look as it is, with no motion, for a look the view already has.

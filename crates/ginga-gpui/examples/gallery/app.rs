@@ -60,6 +60,10 @@ impl Page {
 
     /// Every page, in the order of the list on the left. A new page is one
     /// more line here, and a module in `main.rs`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one entry per page; the list grows with the gallery"
+    )]
     pub fn all(cx: &mut App) -> Vec<Page> {
         use crate::{
             accordion::Accordion, color::Button, compose::Compose, drag::Throw, gestures::Buttons,

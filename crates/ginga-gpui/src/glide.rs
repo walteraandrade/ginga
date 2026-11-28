@@ -9,8 +9,9 @@ use gpui::{
 
 use crate::{Animate, Clock, look::prepaint_at, unless_reduced};
 
-/// A move in the layout shorter than this, in pixels, is not a move: GPUI
-/// snaps what it adds to a place to the pixel.
+/// A move in the layout shorter than this, in pixels, is not a move: the
+/// place is exact, and this only absorbs float error in what is subtracted
+/// from it.
 const STILL: f32 = 0.5;
 
 /// Declares on any styled element that it glides to where layout puts it;
@@ -24,7 +25,7 @@ pub trait GlideExt: Styled + IntoElement + 'static {
     /// ```ignore
     /// // Cards in a wrapping row: one that is added or removed reflows the others.
     /// div().flex().flex_wrap().children(self.cards.iter().map(|card| {
-    ///     div().id(card.id).w(px(120.)).h(px(80.)).glides(("card", card.id), Spring::SNAPPY)
+    ///     div().w(px(120.)).h(px(80.)).glides(("card", card.id), Spring::SNAPPY)
     /// }))
     /// ```
     fn glides(self, id: impl Into<ElementId>, transition: impl Into<Transition>) -> Glides<Self> {
@@ -59,7 +60,10 @@ impl<E: Styled + IntoElement + 'static> GlideExt for E {}
 /// once, after the transition's delay. The rows of GPUI's `list` and
 /// `uniform_list` are each laid out on their own, so their place in the
 /// list is not a place in the window: use
-/// [`PresenceList::place_all`](crate::PresenceList::place_all) there.
+/// [`PresenceList::place_all`](crate::PresenceList::place_all) there. For
+/// the same reason, a glide in such a row, or in a `deferred` or `anchored`
+/// element, inside an element that glides, does not know the glide around
+/// it: it moves against it, instead of with it.
 pub struct Glides<E> {
     id: ElementId,
     transition: Transition,
@@ -81,9 +85,9 @@ struct Kept {
 /// The places of the gliding elements being prepainted around the one now
 /// prepainted, innermost last.
 #[derive(Default)]
-struct Around(Vec<Point<Pixels>>);
+struct GlidePlaces(Vec<Point<Pixels>>);
 
-impl Global for Around {}
+impl Global for GlidePlaces {}
 
 impl<E: Styled + IntoElement + 'static> IntoElement for Glides<E> {
     type Element = Self;
@@ -130,12 +134,12 @@ impl<E: Styled + IntoElement + 'static> Element for Glides<E> {
         let id = id.expect("a gliding element has an id");
         // Its place in the window's layout, without what is painted on top
         // of layout (a scroll, a look's offset, a drag, a glide around it).
-        let in_window = bounds.origin - window.element_offset();
+        // GPUI adds the offset snapped to the pixel, so it is taken away
+        // snapped too, and the place is exact.
+        let in_window = bounds.origin - window.pixel_snap_point(window.element_offset());
         let around = cx
-            .default_global::<Around>()
-            .0
-            .last()
-            .copied()
+            .try_global::<GlidePlaces>()
+            .and_then(|places| places.0.last().copied())
             .unwrap_or_default();
         let place = in_window - around;
         let viewport = window.viewport_size();
@@ -169,9 +173,9 @@ impl<E: Styled + IntoElement + 'static> Element for Glides<E> {
         if moving {
             window.request_animation_frame();
         }
-        cx.default_global::<Around>().0.push(in_window);
+        cx.default_global::<GlidePlaces>().0.push(in_window);
         prepaint_at(element, *layout, offset, |_, _| (), window, cx);
-        cx.default_global::<Around>().0.pop();
+        cx.global_mut::<GlidePlaces>().0.pop();
     }
 
     fn paint(

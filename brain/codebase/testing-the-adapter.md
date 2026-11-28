@@ -11,3 +11,5 @@
 **What a frame request renders.** `window.request_animation_frame()` notifies the view that asked, so that view and every view above it render again on the next frame; a view beside them renders again only if it isn't cached. The island test counts all three.
 
 **Reduced motion.** `cx.update(|cx| cx.set_reduce_motion(true))` before opening the window.
+
+**Reading a declared look.** A look kept in a `LookState` is read with `state.inspect(cx)`: its engine motion and the frame's time, for `Trace::of` or a sample, with no `canvas` probe of the laid-out bounds. A look kept with an id cannot be read; a test that needs its values keeps it in a `LookState`.

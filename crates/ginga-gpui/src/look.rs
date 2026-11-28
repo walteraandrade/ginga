@@ -95,6 +95,12 @@ impl LookState {
     /// with [`Trace::of`](ginga::Trace::of), as a test or a log would.
     /// `None` until an element has drawn with it.
     ///
+    /// The motion holds every value the element's looks have named, a hover
+    /// or pressed look's included, drawn or not: a value the look no longer
+    /// names may still be moving in it. A look kept with an id, by
+    /// [`LookExt::look`], cannot be read: keep it in a `LookState` to write
+    /// it down.
+    ///
     /// Reading it changes nothing, starts no clock and asks for no frame.
     ///
     /// ```ignore

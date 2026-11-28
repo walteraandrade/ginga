@@ -1,8 +1,7 @@
 //! A mark breathes and three dots pulse, each through its keyframes. The mark
 //! is an island of its own, so it is drawn at most about 30 times a second
-//! while the dots, beside it, are drawn on every frame. The dots are one
-//! loop, each copy a step behind the one before, and are partway through it
-//! from the first frame.
+//! while the dots, beside it, are drawn on every frame. The dots play one
+//! round, each copy a step behind the one before.
 
 use std::time::Duration;
 
@@ -53,8 +52,10 @@ impl Pulse {
                     .into_any_element()
             })
         });
-        // One loop, working until the page is closed. Each dot plays it
-        // 150 ms behind the one before, so the three stay a step apart.
+        // One round for all three, each dot 150 ms behind the one before, so
+        // they stay a step apart. Zero rounds until Play. As a loop, with
+        // `forever`, each would be partway through the round from the first
+        // frame; with a count, each waits its turn on the first stop.
         let dot = Keyframes::new([
             Stop::new(ms(0), 0.3, Easing::Linear),
             Stop::new(ms(250), 1.0, Easing::OutQuart),
@@ -62,7 +63,7 @@ impl Pulse {
             Stop::new(ms(800), 0.3, Easing::Linear),
         ])
         .expect("the stops are in order from zero")
-        .forever();
+        .times(0);
         Self {
             mark,
             dots: [0, 150, 300].map(|lag| dot.behind(ms(lag))),
@@ -76,6 +77,10 @@ impl Pulse {
             breath.restart(cx);
             cx.notify();
         });
+        for dot in &mut self.dots {
+            *dot = dot.times(2);
+            dot.restart(cx);
+        }
         cx.notify();
     }
 }

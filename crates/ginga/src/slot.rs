@@ -21,6 +21,10 @@ pub enum Swap {
 /// With [`Swap::Wait`], content shown while the new one still waits takes its
 /// place in the wait, unseen, so nothing leaves twice and nothing skips the wait.
 ///
+/// Content that was seen and is let go, its way out over or cut short, is
+/// handed back once by [`take_gone`](Self::take_gone): to drop what was kept
+/// for it. Content that waited and was never seen is not gone.
+///
 /// ```
 /// use std::time::Duration;
 /// use ginga::{Easing, InOut, Phase, Slot, Swap, Tween};
@@ -50,7 +54,13 @@ pub struct Slot<T> {
     waits_until: Option<Duration>,
     /// What swaps sent away, on their way out, the oldest first.
     leaving: [Presence<T>; 2],
+    /// What was seen and let go since the last [`take_gone`](Self::take_gone),
+    /// the oldest first.
+    gone: [Option<T>; GONE],
 }
+
+/// How many let-go contents a slot keeps: as many as one call can let go.
+const GONE: usize = 3;
 
 impl<T: PartialEq> Default for Slot<T> {
     fn default() -> Self {
@@ -67,6 +77,7 @@ impl<T: PartialEq> Slot<T> {
             current: Presence::absent(),
             waits_until: None,
             leaving: [Presence::absent(), Presence::absent()],
+            gone: [None, None, None],
         }
     }
 
@@ -93,9 +104,15 @@ impl<T: PartialEq> Slot<T> {
             .iter()
             .position(|leaving| leaving.content() == Some(&content))
         {
+            let unseen = self.waits_until.is_some_and(|until| now < until);
             core::mem::swap(&mut self.current, &mut self.leaving[index]);
             self.current.come_back(ways.enter, now);
-            self.leaving[index].hide(ways.exit, now);
+            if unseen {
+                // What waited was never seen: it does not leave, it is dropped.
+                self.leaving[index] = Presence::absent();
+            } else {
+                self.leaving[index].hide(ways.exit, now);
+            }
             self.waits_until = None;
             return;
         }
@@ -110,6 +127,8 @@ impl<T: PartialEq> Slot<T> {
                 let leaving = core::mem::take(&mut self.current);
                 if self.leaving[1].content().is_some() {
                     // A full pair: the oldest is let go.
+                    let oldest = core::mem::take(&mut self.leaving[0]);
+                    self.keep_gone(oldest.into_content());
                     self.leaving[0] = core::mem::take(&mut self.leaving[1]);
                     self.leaving[1] = leaving;
                 } else if self.leaving[0].content().is_some() {
@@ -138,6 +157,7 @@ impl<T: PartialEq> Slot<T> {
     /// waiting is gone at once, never seen.
     pub fn hide(&mut self, exit: impl Into<crate::Transition>, now: Duration) {
         if self.waits_until.is_some_and(|until| now < until) {
+            // Never seen: it is not gone, only dropped.
             self.current = Presence::absent();
             self.waits_until = None;
         }
@@ -156,10 +176,52 @@ impl<T: PartialEq> Slot<T> {
 
     /// Drops the contents whose way out is over at `now`.
     fn let_go(&mut self, now: Duration) {
-        for leaving in &mut self.leaving {
-            leaving.let_go(now);
+        for index in 0..self.leaving.len() {
+            let gone = self.leaving[index].let_go(now);
+            self.keep_gone(gone);
         }
-        self.current.let_go(now);
+        let gone = self.current.let_go(now);
+        self.keep_gone(gone);
+    }
+
+    /// Keeps `gone` for [`take_gone`](Self::take_gone); when the slot
+    /// already keeps as many as it can, the oldest is dropped.
+    fn keep_gone(&mut self, gone: Option<T>) {
+        let Some(gone) = gone else { return };
+        if self.gone[GONE - 1].is_some() {
+            self.gone.rotate_left(1);
+            self.gone[GONE - 1] = None;
+        }
+        if let Some(free) = self.gone.iter_mut().find(|kept| kept.is_none()) {
+            *free = Some(gone);
+        }
+    }
+
+    /// The oldest content that was seen and let go since it was last asked,
+    /// once each: its way out is over, or a fourth swap while two leave cut
+    /// it short. Content that waited and was never seen is not gone. Ask
+    /// after each [`show`](Self::show) and [`frame`](Self::frame) until it
+    /// gives `None`: the slot keeps the last three.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Easing, InOut, Slot, Swap, Tween};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let fade = Tween::new(ms(100), Easing::Linear);
+    /// let mut toast = Slot::new(Swap::Sync);
+    /// toast.show("Saved", InOut::new(fade, fade), ms(0));
+    /// toast.hide(fade, ms(500));
+    /// toast.frame(ms(550));
+    /// assert_eq!(toast.take_gone(), None, "still on its way out");
+    /// toast.frame(ms(600));
+    /// assert_eq!(toast.take_gone(), Some("Saved"));
+    /// assert_eq!(toast.take_gone(), None, "once");
+    /// ```
+    pub fn take_gone(&mut self) -> Option<T> {
+        let gone = self.gone[0].take();
+        self.gone.rotate_left(1);
+        gone
     }
 
     /// What to draw at `now`, as [`frame`](Self::frame) gives it, without
@@ -445,5 +507,70 @@ mod tests {
         slot.show("A", ways(), ms(250));
         assert_eq!(line(&mut slot, 300), "300  B out 0.25    -");
         assert_eq!(line(&mut slot, 400), "400  -             A in 0.50");
+    }
+
+    fn all_gone(slot: &mut Slot<&'static str>) -> Vec<&'static str> {
+        core::iter::from_fn(|| slot.take_gone()).collect()
+    }
+
+    #[test]
+    fn content_is_gone_once_when_its_way_out_is_over() {
+        let mut slot = Slot::new(Swap::Sync);
+        slot.show("one", ways(), ms(0));
+        slot.hide(Tween::new(ms(100), Easing::Linear), ms(100));
+        slot.frame(ms(199));
+        assert_eq!(all_gone(&mut slot), [] as [&str; 0]);
+        slot.frame(ms(200));
+        assert_eq!(all_gone(&mut slot), ["one"]);
+        slot.frame(ms(300));
+        assert_eq!(all_gone(&mut slot), [] as [&str; 0], "once");
+    }
+
+    #[test]
+    fn each_content_a_swap_sends_away_is_gone_in_the_order_it_went() {
+        let mut slot = Slot::new(Swap::Sync);
+        slot.show("one", ways(), ms(0));
+        slot.show("two", ways(), ms(20));
+        slot.show("three", ways(), ms(40));
+        slot.frame(ms(130));
+        assert_eq!(all_gone(&mut slot), ["one"]);
+        slot.frame(ms(140));
+        assert_eq!(all_gone(&mut slot), ["two"]);
+    }
+
+    #[test]
+    fn a_fourth_swap_while_two_leave_cuts_the_oldest_short_and_it_is_gone() {
+        let mut slot = Slot::new(Swap::Sync);
+        slot.show("one", ways(), ms(0));
+        slot.show("two", ways(), ms(10));
+        slot.show("three", ways(), ms(20));
+        slot.show("four", ways(), ms(30));
+        assert_eq!(all_gone(&mut slot), ["one"]);
+    }
+
+    #[test]
+    fn content_that_waited_and_was_never_seen_is_not_gone() {
+        let mut slot = Slot::new(Swap::Wait);
+        slot.show("one", ways(), ms(0));
+        slot.frame(ms(100));
+        slot.show("two", ways(), ms(100));
+        slot.show("three", ways(), ms(130));
+        slot.hide(Tween::new(ms(100), Easing::Linear), ms(160));
+        slot.frame(ms(400));
+        assert_eq!(all_gone(&mut slot), ["one"]);
+    }
+
+    #[test]
+    fn content_that_waited_while_what_left_came_back_is_not_gone() {
+        let mut slot = Slot::new(Swap::Wait);
+        slot.show("one", ways(), ms(0));
+        slot.show("two", ways(), ms(100));
+        slot.show("one", ways(), ms(130));
+        slot.frame(ms(400));
+        assert_eq!(all_gone(&mut slot), [] as [&str; 0]);
+        assert_eq!(
+            slot.frame(ms(400))[2].map(|shown| *shown.content),
+            Some("one")
+        );
     }
 }

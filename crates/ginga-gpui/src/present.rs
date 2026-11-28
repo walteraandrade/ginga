@@ -52,8 +52,12 @@ where
         arrive_from: None,
         leave_to: None,
         swap: Swap::Sync,
+        on_gone: None,
     }
 }
+
+/// What is called with content that was leaving, once it is gone.
+type OnGone<T> = Box<dyn FnMut(T, &mut Window, &mut App)>;
 
 /// An element with ways in and out: made by [`present`].
 pub struct Present<T> {
@@ -64,9 +68,34 @@ pub struct Present<T> {
     arrive_from: Option<Look>,
     leave_to: Option<Look>,
     swap: Swap,
+    on_gone: Option<OnGone<T>>,
 }
 
 impl<T: PartialEq + 'static> Present<T> {
+    /// Calls `gone` with each content once it is gone, on the frame that
+    /// finds it gone and after that frame is drawn: to drop what the view
+    /// kept for it, or to move the focus. Content is gone when its way out
+    /// is over, or when a fourth swap while two contents leave cuts the
+    /// oldest short. A way out that is instant, or that reduced motion makes
+    /// instant, is over on the frame that starts it. Content wanted again on
+    /// its way out is not gone. Neither is content a [`Swap::Wait`] held back
+    /// and dropped unseen, or content that was there when this element
+    /// stopped being drawn.
+    ///
+    /// ```ignore
+    /// let view = cx.entity().downgrade();
+    /// present("toast", self.toast, ways, |toast| div().child(toast.text()))
+    ///     .leave_to(Look::new().opacity(0.))
+    ///     .on_gone(move |toast, _, cx| {
+    ///         view.update(cx, |this, _| this.undo.remove(&toast)).ok();
+    ///     })
+    /// ```
+    #[must_use]
+    pub fn on_gone(mut self, gone: impl FnMut(T, &mut Window, &mut App) + 'static) -> Self {
+        self.on_gone = Some(Box::new(gone));
+        self
+    }
+
     /// The look content arrives from: its offset and its opacity, which go
     /// to no offset and fully opaque as it arrives (see [`Look::mix`]). Any
     /// other value the look names is left out: the element's own size and
@@ -198,6 +227,29 @@ struct Kept<T> {
     focus: Vec<(u64, FocusHandle)>,
 }
 
+impl<T: PartialEq> Kept<T> {
+    /// Shows `content`, numbered as it was if it is held.
+    fn show(&mut self, content: T, ways: InOut, now: std::time::Duration) {
+        let held = self
+            .slot
+            .sample(now)
+            .into_iter()
+            .flatten()
+            .find(|shown| shown.content.content == content)
+            .map(|shown| (shown.content.number, shown.phase));
+        // Shown again on its way out: it turns around.
+        if let Some((number, Phase::Exiting)) = held {
+            self.came_back = Some(number);
+        }
+        // Held content keeps the one it has: the slot does not replace it.
+        let number = self.next;
+        if held.is_none() {
+            self.next += 1;
+        }
+        self.slot.show(Numbered { number, content }, ways, now);
+    }
+}
+
 impl<T: PartialEq + 'static> IntoElement for Present<T> {
     type Element = Self;
 
@@ -228,7 +280,7 @@ impl<T: PartialEq + 'static> Element for Present<T> {
         let id = id.expect("an element with an id is laid out with one");
         let ways = self.ways(cx);
         let content = self.content.take();
-        let mut element = window.with_element_state(id, |kept: Option<Kept<T>>, window| {
+        let (mut element, gone) = window.with_element_state(id, |kept: Option<Kept<T>>, window| {
             let mut kept = kept.unwrap_or_else(|| Kept {
                 slot: Slot::new(self.swap),
                 clock: Clock::default(),
@@ -239,26 +291,12 @@ impl<T: PartialEq + 'static> Element for Present<T> {
             kept.slot.set_swap(self.swap);
             let now = kept.clock.now(cx);
             match content {
-                Some(content) => {
-                    let held = kept
-                        .slot
-                        .sample(now)
-                        .into_iter()
-                        .flatten()
-                        .find(|shown| shown.content.content == content)
-                        .map(|shown| (shown.content.number, shown.phase));
-                    // Shown again on its way out: it turns around.
-                    if let Some((number, Phase::Exiting)) = held {
-                        kept.came_back = Some(number);
-                    }
-                    let number = held.map_or(kept.next, |(number, _)| number);
-                    if held.is_none() {
-                        kept.next += 1;
-                    }
-                    kept.slot.show(Numbered { number, content }, ways, now);
-                }
+                Some(content) => kept.show(content, ways, now),
                 None => kept.slot.hide(ways.exit, now),
             }
+            // Empty, and so not allocated, unless something is gone.
+            let mut gone = Vec::new();
+            gone.extend(core::iter::from_fn(|| kept.slot.take_gone()));
             let shown = kept.slot.frame(now);
             if shown.iter().flatten().any(Shown::moving) {
                 window.request_animation_frame();
@@ -311,9 +349,20 @@ impl<T: PartialEq + 'static> Element for Present<T> {
                 .children(leaving)
                 .children(here)
                 .into_any_element();
-            (element, kept)
+            gone.extend(core::iter::from_fn(|| kept.slot.take_gone()));
+            ((element, gone), kept)
         });
-        (element.request_layout(window, cx), element)
+        let layout = element.request_layout(window, cx);
+        // After the frame, so what it changes draws the next one; and after
+        // what the contents inside defer, so a focus it moves stays moved.
+        if let Some(mut on_gone) = self.on_gone.take().filter(|_| !gone.is_empty()) {
+            window.defer(cx, move |window, cx| {
+                for gone in gone {
+                    on_gone(gone.content, window, cx);
+                }
+            });
+        }
+        (layout, element)
     }
 
     fn prepaint(

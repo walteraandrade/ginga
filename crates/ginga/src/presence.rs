@@ -171,14 +171,17 @@ impl<T> Presence<T> {
     /// What to draw at `now`, or `None` when nothing is here. This is the one
     /// call a frame needs: it also lets go of content whose way out is over.
     pub fn frame(&mut self, now: Duration) -> Option<Shown<'_, T>> {
-        self.let_go(now);
+        // A presence alone has no one to hand what it let go.
+        drop(self.let_go(now));
         self.sample(now)
     }
 
     /// Drops the content if its way out is over at `now`.
-    pub(crate) fn let_go(&mut self, now: Duration) {
+    pub(crate) fn let_go(&mut self, now: Duration) -> Option<T> {
         if !self.wanted && self.amount.sample(now).settled {
-            self.content = None;
+            self.content.take()
+        } else {
+            None
         }
     }
 
@@ -218,6 +221,11 @@ impl<T> Presence<T> {
     /// What is held to be drawn: shown, or on its way out.
     pub(crate) fn content(&self) -> Option<&T> {
         self.content.as_ref()
+    }
+
+    /// The content it holds, shown or on its way out, taken from it.
+    pub(crate) fn into_content(self) -> Option<T> {
+        self.content
     }
 
     /// Shown again with the content it holds, which is not replaced.

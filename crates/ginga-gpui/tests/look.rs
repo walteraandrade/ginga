@@ -308,10 +308,32 @@ fn a_look_the_view_owns_can_be_written_down(cx: &mut TestAppContext) {
          200        200.000  settled\n"
     );
 
-    let frames = drawn.borrow().len();
-    let _ = cx.update(|cx| state.inspect(cx));
-    cx.run_until_parked();
-    assert_eq!(drawn.borrow().len(), frames, "reading it draws nothing");
+    let again = cx.update(|cx| state.inspect(cx)).unwrap();
+    assert_eq!(again.1, now, "a second read at the same time is the same");
+    assert_eq!(
+        Trace::of(&again.0, again.1, ms(50)).to_string(),
+        Trace::of(&motion, now, ms(50)).to_string()
+    );
+    after(50, &window, cx);
+    assert_eq!(
+        last(&drawn).size.width,
+        px(150.),
+        "reading it changed nothing of the motion"
+    );
+
+    after(150, &window, cx);
+    let (motion, now) = cx.update(|cx| state.inspect(cx)).unwrap();
+    assert_eq!(now, ms(250), "the clock's time, not the motion's end");
+    assert_eq!(
+        Trace::of(&motion, now, ms(50)).to_string(),
+        "ms           width\n\
+         250        200.000  settled\n"
+    );
+    assert_eq!(
+        after(16, &window, cx),
+        0,
+        "read once settled, it asks for no frame"
+    );
 }
 
 #[gpui::test]

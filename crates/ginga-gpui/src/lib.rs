@@ -37,6 +37,7 @@ pub use ginga::{
     Mapped, Order, Phase, Sample, Sequence, SettledOnce, Shown, ShownItem, Slot, Spring,
     SpringError, Step, Stop, Swap, Trace, Transition, Transitions, Tween,
 };
+pub use glide::{GlideExt, Glides};
 pub use keyframes::Keyframes;
 pub use look::{LookExt, LookState, Looked, WithLook, color, set_default_look_transitions};
 pub use presence_list::PresenceList;
@@ -46,6 +47,7 @@ pub use variant::Variant;
 
 mod cover;
 mod drag;
+mod glide;
 mod keyframes;
 mod look;
 mod presence_list;

@@ -34,6 +34,8 @@ mod gestures;
 #[cfg(target_os = "linux")]
 mod island;
 #[cfg(target_os = "linux")]
+mod layout;
+#[cfg(target_os = "linux")]
 mod list;
 #[cfg(target_os = "linux")]
 mod look;

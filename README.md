@@ -682,6 +682,136 @@ Reading and retargeting a motion never allocates; [`tests/no_alloc.rs`](https://
 
 The engine is not where a frame's time goes. Measured in a real app, a frame of motion cost the main thread about 1.2 ms, and two engines cost the same: [the measurement](https://github.com/walteraandrade/ginga/blob/main/docs/measurements/2026-11-26-ai-caret/README.md). What a motion costs is what GPUI renders for it.
 
+## Coming from Motion, SwiftUI or Compose
+
+What you reach for elsewhere, and where it is here. A *recipe* is a few lines below the table; a *limit* is GPUI's, not ginga's.
+
+| You know | In ginga |
+| --- | --- |
+| Motion's `animate`, SwiftUI's `.animation`, Compose's `animate*AsState` | `Motion::toward(target, transition, ..)` in a view, `.look(id, look, transition)` on an element |
+| A spring, a tween, `duration`/`bounce`, `stiffness`/`damping`/`mass` | `Spring::new(response).bounce(..)`, `Spring::physical(..)`, `Tween::new(duration, easing)`, `Transition::Instant` |
+| `keyframes`, `repeat`, `repeatType: "mirror"`, `steps()` | `Keyframes` with `.times(n)`, `.forever()`, `.mirrored()`, `.pause(..)`; steps: [recipe](#steps) |
+| `useTransform`, `interpolate`, `animateColor` | `Map::new(..)?.of(&motion)`, `.clamped()`; through several stops: [recipe](#through-several-stops) |
+| Variants, `staggerChildren`, `when: "beforeChildren"`, `staggerDirection: -1` | `Variant` with `.stagger(..)`, `Order`, `set_in_order`; backward or from the centre: [recipe](#a-stagger-backward-or-from-the-centre) |
+| `AnimatePresence`, `exit`, `onExitComplete`, `mode="wait"` | `Presence`, `present(..)` with `.leave_to(..)` and `.on_gone(..)`, `Swap::Wait`, `PresenceList` |
+| `layout`, `layoutId`, `animateContentSize` | `.glides(..)`, `.shared(key, ..)`, `.opened(id, 1.).height_glides(..)` |
+| `whileHover`, `whileTap`, `whileFocus` | `.hover(..)`, `.pressed(..)`, `.focused(..)` |
+| `drag`, `dragConstraints`, `dragElastic`, a fling | `.draggable(..)` and `Coast` |
+| `useScroll`, a scroll that animates | a recipe: [scroll](#from-the-scroll-position) |
+| `useReducedMotion`, `MotionConfig reducedMotion` | the desktop's setting, read for you (`unless_reduced`); set it in a test or from an app setting: [recipe](#reduced-motion-on-purpose) |
+| `onAnimationComplete`, `.then` | `Sample::settled`, `settles_at()`, `SettledOnce` |
+| GSAP's timeline, Motion's `animate([...])` sequences | `Sequence` with `then`, `with`, `at`; pause, seek, speed, reverse: [recipe](#pause-seek-speed-reverse) |
+| `scale`, `rotate`, `transform` on a `div` | a limit: a `div` has no transform in GPUI. Change its size or its offset; an icon turns with its own transformation: [recipe](#an-icon-that-turns) |
+
+### Steps
+
+Two stops at the same time are a jump. A caret that blinks:
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Keyframes, Stop};
+
+let ms = Duration::from_millis;
+let caret = Keyframes::new([
+    Stop::new(ms(0), 1.0, Easing::Linear),
+    Stop::new(ms(500), 1.0, Easing::Linear),
+    Stop::new(ms(500), 0.0, Easing::Linear), // the jump
+    Stop::new(ms(1_000), 0.0, Easing::Linear),
+])?
+.forever();
+assert_eq!((caret.sample(ms(499)).value, caret.sample(ms(501)).value), (1.0, 0.0));
+# Ok::<(), ginga::KeyframesError>(())
+```
+
+### Through several stops
+
+A value through several stops, as `useTransform` with arrays: keyframes read at a number, as a time.
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Keyframes, Stop};
+
+let at = Duration::from_secs_f32;
+// Scroll progress 0 → 0.5 → 1 gives opacity 0 → 1 → 0.
+let fade = Keyframes::new([
+    Stop::new(at(0.0), 0.0, Easing::Linear),
+    Stop::new(at(0.5), 1.0, Easing::Linear),
+    Stop::new(at(1.0), 0.0, Easing::Linear),
+])?;
+assert_eq!(fade.sample(at(0.75)).value, 0.5);
+# Ok::<(), ginga::KeyframesError>(())
+```
+
+### A stagger backward or from the centre
+
+A child's place is a number you give, so the order is yours: backward on the way back, or out from the middle.
+
+```rust,ignore
+let n = if open { n } else { last - n };    // backward on the way back
+let n = n.abs_diff(mid);                    // from the centre out
+row.follows(&self.menu, n)
+```
+
+### From the scroll position
+
+A value from the scroll position is a `Map` of where the scroll is. A scroll that glides is a `Motion` written into the `ScrollHandle` each frame, given up when the user scrolls.
+
+```rust,ignore
+let (offset, max) = (self.scroll.offset(), self.scroll.max_offset());
+let progress = (-offset.y / max.y.max(px(1.))).clamp(0., 1.);
+let header = Map::new(0., 1., 64., 40.)?.clamped().at(progress);
+
+// A scroll that glides to `y`, until the user scrolls:
+let y = self.glide.toward(target, Spring::SMOOTH, window, cx);
+self.scroll.set_offset(point(px(0.), -y));
+```
+
+### An icon that turns
+
+A `div` cannot rotate, but an `svg` can: give its transformation a motion. The gallery's turn page does this.
+
+```rust,ignore
+let turned = self.turned.toward(if open { 0.25 } else { 0. }, Spring::SNAPPY, window, cx);
+svg().path("icons/chevron.svg").size(px(24.)).with_transformation(Transformation::rotate(radians(turned * TAU)))
+```
+
+### Writing it down
+
+A presence, a list or a slot is read with `sample(now)`, so a test writes down what it would draw:
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Presence, Tween};
+
+let ms = Duration::from_millis;
+let mut toast = Presence::absent();
+toast.show("Saved", Tween::new(ms(100), Easing::Linear), ms(0));
+let line = |t| toast.sample(ms(t)).map(|s| format!("{} {:?} {:.2}", s.content, s.phase, s.progress));
+assert_eq!(line(50).as_deref(), Some("Saved Entering 0.50"));
+```
+
+### Reduced motion on purpose
+
+The adapter reads GPUI's own setting, so an app setting or a test sets it there: `cx.set_reduce_motion(true)`. Every motion, look and presence in the adapter then keeps its delay and drops its motion.
+
+### Pause, seek, speed, reverse
+
+They are the time you pass. Nothing runs between frames, so a motion read at another time is there.
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Motion, Tween};
+
+let ms = Duration::from_millis;
+let mut bar = Motion::at(0.0);
+bar.set_target(100.0, Tween::new(ms(100), Easing::Linear), ms(0));
+let paused_at = ms(25);
+assert_eq!(bar.sample(paused_at).value, 25.0); // paused: keep reading one time
+assert_eq!(bar.sample(ms(75)).value, 75.0); // seek: read another
+assert_eq!(bar.sample(ms(25) * 2).value, 50.0); // twice as fast: 25 ms in
+assert_eq!(bar.sample(ms(100) - ms(25)).value, 75.0); // backward: 25 ms in
+```
+
 ## What it does not do yet
 
 - Animate a change of size that layout makes: an item whose content grows takes its new size at once. A size that a look names does move.

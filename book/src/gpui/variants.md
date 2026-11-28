@@ -30,7 +30,7 @@ let (name, order) = match self.menu.name() {
 self.menu.set_in_order(name, order, cx);
 ```
 
-Only a change of look that comes with a new name follows the schedule: a hover, or a change of the app's own, goes at once. The schedule's delay is added to any a transition has of its own. A parent that goes after its children waits for the ones laid out inside it, cached views of their own included; children drawn beside it do not hold it. Times count from the change of name, so a child drawn a frame late keeps its place. Under reduced motion the schedule is dropped: every element changes at once, after only its own transition's delay.
+Only a change of look that comes with a new name follows the schedule: a hover, or a change of the app's own, goes at once. The schedule's delay is added to any a transition has of its own. A parent that goes after its children waits for the ones laid out inside it, cached views of their own included; children drawn beside it do not hold it. Times count from the change of name, so a child drawn a frame late keeps its place. Under reduced motion the schedule is dropped: every element keeps only its fades, as any look does, after only its own transition's delay.
 
 In the engine, a `Variant` is the schedule alone. Each element asks for its delay and says when it will be settled, so the side that waits knows how long:
 

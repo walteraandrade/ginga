@@ -397,3 +397,24 @@ fn a_child_reads_the_look_while_it_is_laid_out(cx: &mut TestAppContext) {
         "this frame's motion, from the first frame on"
     );
 }
+
+#[gpui::test]
+fn under_reduced_motion_a_look_keeps_its_fade_and_drops_its_movement(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let from = Look::new().width(100.).offset(0., 16.).opacity(0.);
+    let (window, drawn) = open(cx, from, None, true);
+    let state = window
+        .update(cx, |cards, _, _| cards.owned.clone().unwrap())
+        .unwrap();
+    change(&window, cx, |cards| {
+        cards.look = Look::new().width(200.).offset(0., 0.).opacity(1.);
+    });
+    assert_eq!(last(&drawn).size.width, px(200.), "the size at once");
+    assert_eq!(after(100, &window, cx), 1, "the fade asks for frames");
+    let (motion, now) = cx.update(|cx| state.inspect(cx)).unwrap();
+    let halfway = motion.sample(now).value;
+    assert_eq!(halfway.offset, Some((0., 0.)), "the offset at once");
+    assert_eq!(halfway.opacity, Some(0.5), "the opacity on its tween");
+    after(100, &window, cx);
+    assert_eq!(after(16, &window, cx), 0, "settled once the fade is over");
+}

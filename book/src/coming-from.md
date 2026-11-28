@@ -142,7 +142,21 @@ assert_eq!(lines, ["one Present", "two Exiting"]);
 
 ## Reduced motion on purpose
 
-The adapter reads GPUI's own flag, `cx.reduce_motion()`. GPUI 0.3.12 starts it off and does not read the desktop's preference, so an app sets it, from its own setting or from the desktop's, and a test sets it the same way: `cx.set_reduce_motion(true)`. Every motion, look and presence in the adapter then keeps its delay and drops its motion; a variant's or a sequence's schedule and a shared element's trip are dropped whole.
+The adapter reads GPUI's own flag, `cx.reduce_motion()`. GPUI 0.3.12 starts it off and does not read the desktop's preference, so an app sets it, from its own setting or from the desktop's, and a test sets it the same way: `cx.set_reduce_motion(true)`. A look and a `present` way that fades then keep their fades: the opacity and the colors keep their transitions, and the offset, the size and the radius go at once after their delay, so a toast fades in where it is instead of sliding. The engine gives the same timings with `Transitions::for_reduced_motion`:
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Look, LookMotion, Transitions, Tween};
+
+let ms = Duration::from_millis;
+let rise = Transitions::new().all(Tween::new(ms(100), Easing::Linear));
+let mut toast = LookMotion::at(Look::new().offset(0.0, 16.0).opacity(0.0));
+toast.set_target(Look::new().offset(0.0, 0.0).opacity(1.0), rise.for_reduced_motion(), ms(0));
+// In place at once, half faded in at 50 ms.
+assert_eq!(toast.sample(ms(50)).value, Look::new().offset(0.0, 0.0).opacity(0.5));
+```
+
+Every other motion and presence keeps its delay and drops its motion; a variant's or a sequence's schedule and a shared element's trip are dropped whole.
 
 ## Pause, seek, speed, reverse
 

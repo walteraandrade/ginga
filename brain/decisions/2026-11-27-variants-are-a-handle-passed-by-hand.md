@@ -16,5 +16,5 @@
 - `Order::ChildrenFirst` needs the children to say when they end before the parent changes course. So the parent holds its change from layout to its own prepaint, after its children's. That covers children laid out inside it, and cached views of their own, which GPUI lays out in prepaint. Children drawn beside the parent do not hold it.
 - Only the first change of look after a new name follows the schedule. A hover, or any other change, goes at once and tells the schedule nothing, so it cannot move the other side's wait.
 - The schedule's delay is added to the one a transition has of its own (`Transitions::delay`), so a stagger written on a value is kept.
-- Under reduced motion every element takes its look at once, with no schedule.
+- Under reduced motion the schedule is dropped and every element keeps only its fades, as any look does (see [[decisions/2026-11-28-reduced-motion-keeps-fades]]).
 - `Transitions::delay` and `LookMotion::settles_at` came with it: the parent and the children delay a whole look and say when it ends.

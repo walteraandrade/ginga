@@ -29,7 +29,7 @@ Find what you want to do in the table, then copy the recipe. Each engine recipe 
 | make a menu's rows follow it, one after another | `Variant`, `.leads(..)`, `.follows(..)` | [A parent and its children](gpui/variants.md) |
 | drag an element, throw it, and keep it inside limits | `.draggable(&state, drag)` | [An element to drag](gpui/drag.md) |
 | keep a GPUI animation from redrawing heavy views | an `Island` | [Motion that redraws little](gpui/island.md) |
-| follow reduced motion | `ginga-gpui` follows GPUI's `reduce_motion` flag, which the app sets (`cx.set_reduce_motion(..)`); `Transition::without_motion` in the engine | [In a GPUI view](gpui/view.md), [Coming from…](coming-from.md#reduced-motion-on-purpose) |
+| follow reduced motion | `ginga-gpui` follows GPUI's `reduce_motion` flag, which the app sets (`cx.set_reduce_motion(..)`); in the engine `Transition::without_motion`, and `Transitions::for_reduced_motion` for a look that keeps its fades | [In a GPUI view](gpui/view.md), [Coming from…](coming-from.md#reduced-motion-on-purpose) |
 | scale or rotate a GPUI `div` | not possible: GPUI has no transform. Change its size or offset | [When to use ginga](when-to-use.md#do-not-use-it-for) |
 
 ## Engine recipes

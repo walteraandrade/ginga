@@ -160,6 +160,12 @@ fn running_a_look_allocates_nothing() {
         let transitions = Transitions::new()
             .opacity(Tween::new(Duration::from_millis(150), Easing::Linear))
             .or(Transitions::new().all(Spring::BOUNCY));
+        // Every other change is made under reduced motion: fades kept, movement dropped.
+        let transitions = if (frame / 74).is_multiple_of(2) {
+            transitions
+        } else {
+            transitions.for_reduced_motion()
+        };
         let sample = card.toward(look, transitions, now);
         checksum += sample.value.opacity.unwrap_or_default();
     }

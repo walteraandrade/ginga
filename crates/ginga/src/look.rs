@@ -267,7 +267,7 @@ const FADE: Tween = Tween::new(Duration::from_millis(150), Easing::Out);
 /// needs its field and builder on [`Look`], a line in `Look::finite` and its
 /// trace columns, which are written by hand.
 macro_rules! values {
-    ($($field:ident: $repr:ty = $to:expr, $from:expr, $default:expr, $kind:literal;)*) => {
+    ($($field:ident: $repr:ty = $to:expr, $from:expr, $default:expr, $fades:literal, $kind:literal;)*) => {
         /// A [`Look`] on its way to another: one [`Motion`] for each value it names.
         ///
         /// Hand it the look a thing should have now, each frame, as with a
@@ -466,12 +466,45 @@ macro_rules! values {
                 least.unwrap_or_default()
             }
 
-            /// Every value resolved, defaults included, then changed by `f`:
-            /// the one place that resolves them all.
+        /// The timings under reduced motion: a fade is kept, a movement is not.
+        /// The opacity and the three colors keep their transitions. The offset,
+        /// the size and the radius hold still for their own delay and are then
+        /// at their target at once, as [`without_motion`](Self::without_motion)
+        /// makes every value. Defaults are included, as there.
+        ///
+        /// ```
+        /// use std::time::Duration;
+        /// use ginga::{Easing, Look, LookMotion, Transitions, Tween};
+        ///
+        /// let ms = Duration::from_millis;
+        /// let rise = Transitions::new().all(Tween::new(ms(100), Easing::Linear));
+        /// let mut toast = LookMotion::at(Look::new().offset(0.0, 16.0).opacity(0.0));
+        /// toast.set_target(Look::new().offset(0.0, 0.0).opacity(1.0), rise.for_reduced_motion(), ms(0));
+        /// assert_eq!(toast.sample(ms(50)).value, Look::new().offset(0.0, 0.0).opacity(0.5));
+        /// ```
+            #[must_use]
+            pub fn for_reduced_motion(self) -> Self {
+                self.each_marked(|transition, fades| {
+                    if fades {
+                        transition
+                    } else {
+                        transition.without_motion()
+                    }
+                })
+            }
+
+            /// Every value resolved, defaults included, then changed by `f`.
             fn each(self, f: impl Fn(Transition) -> Transition) -> Self {
+                self.each_marked(|transition, _| f(transition))
+            }
+
+            /// Every value resolved, defaults included, then changed by `f`,
+            /// which is told whether the value is a fade (marked in the
+            /// `values!` table): the one place that resolves them all.
+            fn each_marked(self, f: impl Fn(Transition, bool) -> Transition) -> Self {
                 Self {
                     own: Layer {
-                        $($field: Some(f(self.named(|layer| layer.$field).unwrap_or($default))),)*
+                        $($field: Some(f(self.named(|layer| layer.$field).unwrap_or($default), $fades)),)*
                     },
                     all: None,
                     under: Layer::EMPTY,
@@ -568,14 +601,14 @@ macro_rules! values {
 }
 
 values! {
-    offset: Pixels<2> = |(x, y)| Pixels([x, y]), |Pixels([x, y])| (x, y), Transition::Spring(Spring::SNAPPY), "offset";
-    opacity: f32 = |value| value, |value| value, Transition::Tween(FADE), "opacity";
-    width: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "width";
-    height: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "height";
-    radius: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), "radius of the corners";
-    background: Color = |value| value, |value| value, Transition::Tween(FADE), "background color";
-    text_color: Color = |value| value, |value| value, Transition::Tween(FADE), "text color";
-    border_color: Color = |value| value, |value| value, Transition::Tween(FADE), "border color";
+    offset: Pixels<2> = |(x, y)| Pixels([x, y]), |Pixels([x, y])| (x, y), Transition::Spring(Spring::SNAPPY), false, "offset";
+    opacity: f32 = |value| value, |value| value, Transition::Tween(FADE), true, "opacity";
+    width: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), false, "width";
+    height: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), false, "height";
+    radius: Pixels<1> = |value| Pixels([value]), |Pixels([value])| value, Transition::Spring(Spring::SNAPPY), false, "radius of the corners";
+    background: Color = |value| value, |value| value, Transition::Tween(FADE), true, "background color";
+    text_color: Color = |value| value, |value| value, Transition::Tween(FADE), true, "text color";
+    border_color: Color = |value| value, |value| value, Transition::Tween(FADE), true, "border color";
 }
 
 impl From<Transition> for Transitions {
@@ -1186,5 +1219,75 @@ ms               x           y     opacity
         );
         let leave_to = Look::new().opacity(0.0);
         assert_eq!(own.mix(leave_to, 0.5).opacity, Some(0.5), "from opaque");
+    }
+
+    #[test]
+    fn for_reduced_motion_keeps_fades_and_drops_movement_after_each_delay() {
+        let linear = Tween::new(ms(100), Easing::Linear);
+        let late = linear.delay(ms(40));
+        let (black, white) = (Color::hex(0x00_0000), Color::hex(0xff_ffff));
+        let from = Look::new()
+            .offset(0.0, 16.0)
+            .opacity(0.0)
+            .size(0.0, 0.0)
+            .radius(0.0)
+            .background(black)
+            .text_color(black)
+            .border_color(black);
+        let to = Look::new()
+            .offset(0.0, 0.0)
+            .opacity(1.0)
+            .size(100.0, 50.0)
+            .radius(8.0)
+            .background(white)
+            .text_color(white)
+            .border_color(white);
+        let transitions = Transitions::new().all(linear).offset(late).text_color(late);
+        let mut card = LookMotion::at(from);
+        card.set_target(to, transitions.for_reduced_motion(), ms(0));
+
+        let at = |t| card.sample(ms(t)).value;
+        let grey = |part| {
+            Look::new()
+                .background(black)
+                .mix(Look::new().background(white), part)
+                .background
+        };
+        // The size and the radius have no delay: at once. The offset waits its 40 ms.
+        assert_eq!(at(0).offset, Some((0.0, 16.0)));
+        assert_eq!(
+            (at(0).width, at(0).height, at(0).radius),
+            (Some(100.0), Some(50.0), Some(8.0))
+        );
+        assert_eq!(at(39).offset, Some((0.0, 16.0)));
+        assert_eq!(at(40).offset, Some((0.0, 0.0)));
+        // The opacity and the colors fade on their tweens, the text color after its delay.
+        assert_eq!(at(50).opacity, Some(0.5));
+        assert_eq!(at(50).background, grey(0.5));
+        assert_eq!(at(50).border_color, grey(0.5));
+        assert_eq!(at(50).text_color, grey(0.1));
+        assert_eq!(at(140), to);
+        assert_eq!(card.settles_at(), Some(ms(140)));
+    }
+
+    #[test]
+    fn for_reduced_motion_keeps_the_default_fade() {
+        let mut card = LookMotion::at(Look::new().opacity(0.0).width(0.0));
+        card.set_target(
+            Look::new().opacity(1.0).width(10.0),
+            Transitions::new().for_reduced_motion(),
+            ms(0),
+        );
+        assert_eq!(
+            card.sample(ms(0)).value.width,
+            Some(10.0),
+            "the default spring is dropped"
+        );
+        let midway = card.sample(ms(75)).value.opacity.unwrap();
+        assert!(
+            midway > 0.0 && midway < 1.0,
+            "the default fade is kept: {midway}"
+        );
+        assert_eq!(card.settles_at(), Some(ms(150)));
     }
 }

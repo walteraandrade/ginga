@@ -24,7 +24,7 @@ ginga moves values in a Rust user interface: a panel that opens, a toast that co
 | Motion described on a GPUI element, with hover, press and focus states | `.look(id, look, transition)`, `.hover(..)`, `.pressed(..)`, `.focused(..)` |
 | An element that travels to where layout puts it, or between two places | `.glides(..)`, `.shared(..)` |
 | A drag | `.draggable(..)` |
-| Respect for reduced motion | `ginga-gpui` reads GPUI's `reduce_motion`, which the app sets; the engine has `Transition::without_motion` |
+| Respect for reduced motion | `ginga-gpui` reads GPUI's `reduce_motion`, which the app sets; the engine has `Transition::without_motion` and `Transitions::for_reduced_motion` |
 
 The table from a goal to the exact call, with links and complete examples, is in [Recipes](recipes.md).
 

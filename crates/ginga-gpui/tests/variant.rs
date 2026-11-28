@@ -316,3 +316,39 @@ fn reduced_motion_changes_every_element_at_once(cx: &mut TestAppContext) {
         "no schedule under reduced motion:\n{table}"
     );
 }
+
+#[gpui::test]
+fn it_opens_panel_first_and_closes_rows_first(cx: &mut TestAppContext) {
+    // Built together: each change says its own order.
+    let menu = open(cx, Order::Together, Drawn::Inside);
+    cx.update(|cx| menu.menu.set_in_order(Menu::Open, Order::ParentFirst, cx));
+    cx.run_until_parked();
+    assert_eq!(menu.table(300, cx), ROWS_AFTER_THE_PANEL);
+    cx.update(|cx| {
+        menu.menu
+            .set_in_order(Menu::Closed, Order::ChildrenFirst, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        menu.table(300, cx),
+        "  ms  panel  row0  row1  row2
+   0   100   100   100   100
+  50   100    50   100   100
+ 100   100     0    50   100
+ 150   100     0     0    50
+ 200   100     0     0     0
+ 250    50     0     0     0
+ 300     0     0     0     0
+"
+    );
+    // A plain set goes back to the order the variant was built with.
+    menu.set(Menu::Open, cx);
+    assert_eq!(
+        menu.table(100, cx),
+        "  ms  panel  row0  row1  row2
+   0     0     0     0     0
+  50    50    50     0     0
+ 100   100   100    50     0
+"
+    );
+}

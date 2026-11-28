@@ -4,6 +4,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 
 ## Unreleased
 
+- `Variant::set_in_order(name, order, ..)`, in the engine and the adapter: the order of the parent and its children for one change, so a menu opens parent first and closes children first. `set` keeps the order given to `order`.
 - `LookState::inspect(cx)`: a declared look's engine motion and this frame's time, to write it down with `Trace::of`.
 - `Spring::physical(stiffness, damping, mass)`: a spring given as Motion, react-spring and SwiftUI's `interpolatingSpring` give it, and `SpringError::NotASpring` for values that make none.
 - Variants: a parent's name that its children follow one after another, before or after the parent (`Variant`, `Order`, `ginga_gpui::Variant`, `.leads(..)`, `.follows(..)`). `Transitions::delay` and `LookMotion::settles_at`.

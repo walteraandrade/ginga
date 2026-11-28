@@ -94,7 +94,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Show** and **hide.** Starting the way in and the way out. Showing what is already shown only changes the content; showing what is leaving turns it around from where it is.
 
-**Way in** and **way out.** The motion of something arriving and of something leaving. Each is a transition, given together as an `InOut` or one at a time to `show` and `hide`. When the way out is over, the content is dropped. `present` says so with `.on_gone(..)`, once for each content, on the frame that finds it **gone**.
+**Way in** and **way out.** The motion of something arriving and of something leaving. Each is a transition, given together as an `InOut` or one at a time to `show` and `hide`. When the way out is over, the content is dropped. `Slot::take_gone` hands it back once, and `present` passes it to `.on_gone(..)` after the frame that finds it **gone**. Content cut short by a fourth swap is gone too; content a `Swap::Wait` dropped before it was seen is not.
 
 **In-out** (`InOut`). A pair of transitions: how something arrives and how it leaves. `InOut::INSTANT` arrives and leaves at once, with no delay.
 

@@ -86,7 +86,7 @@ impl Render for Ways {
                     // Once its way out is over: here, a count.
                     .on_gone({
                         let view = cx.entity().downgrade();
-                        move |_, cx| {
+                        move |_, _, cx| {
                             view.update(cx, |this, cx| {
                                 this.gone += 1;
                                 cx.notify();

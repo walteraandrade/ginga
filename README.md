@@ -506,7 +506,9 @@ let answer = self.answer.frame(window, cx).map(|shown| {
 div().child(question).children(answer)
 ```
 
-It keeps the height it measured last under its id: the first frame drawn part of the way open, and a frame where the content's height changes, draw the height before and ask for the next frame. A height given as a share of the parent's, such as `h_full`, has no height of its own to open to. What it costs is layout: while it opens, its parent is laid out again on each frame, and the views in it are rendered again, cached ones too, since a cached view is reused only at the same place and size. Fully open it adds nothing.
+It is held in a box that takes its place in the parent: its margins, its width, its share of a flex row and its position are the box's, so it is laid out the same at every progress, and its margins stay around it, closed too. A progress past `0.0..=1.0`, such as a bouncy spring's, is held to it. It keeps the height it measured last under its id: the first frame drawn part of the way open, and a frame where the content's height changes part of the way open, draw the height before and ask for the next frame. A height given as a share of the parent's, such as `h_full`, has no height of its own to open to. What is cut can still take the keyboard focus, so draw nothing once it is closed, as a presence does.
+
+What it costs is layout and rendering: while it opens, its parent is laid out again on each frame, and cached views in it or moved by it render again on each frame, since a cached view is reused only at the same place, size and cut. A cached view beside its parent does not. Fully open and still, it asks for nothing. [The measurement](https://github.com/walteraandrade/ginga/blob/main/docs/measurements/2026-11-28-accordion/README.md).
 
 ### One thing in two places
 

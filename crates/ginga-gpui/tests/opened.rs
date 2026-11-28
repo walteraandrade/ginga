@@ -7,7 +7,7 @@ use ginga_gpui::{Easing, OpenExt, Presence, Tween};
 use gpui::{
     App, Bounds, Context, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement,
     Pixels, Render, StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window,
-    canvas, div, point, px,
+    canvas, div, point, prelude::FluentBuilder, px,
 };
 
 fn ms(millis: u64) -> Duration {
@@ -28,17 +28,35 @@ struct Column {
     details: Option<Presence<()>>,
     clicks: Rc<RefCell<usize>>,
     drawn: Drawn,
+    /// The box's margin on top.
+    margin: f32,
+    /// A part of a pixel added to the box's height.
+    extra: f32,
+    /// The box cuts its own overflow, as a rounded card does.
+    clip: bool,
+    /// The box shares a row with a 30 px mark, by `flex_1`.
+    row: bool,
+    /// Text in the box, in place of the tiles.
+    text: Option<&'static str>,
 }
 
 impl Column {
     fn tiles(&self) -> gpui::Stateful<gpui::Div> {
         let clicks = self.clicks.clone();
-        div()
+        let content = div()
             .id("tiles")
-            .flex()
-            .flex_wrap()
+            .mt(px(self.margin))
             .on_click(move |_, _, _| *clicks.borrow_mut() += 1)
-            .children((0..self.tiles).map(|_| div().w(px(40.)).h(px(20.))))
+            .when(self.clip, Styled::overflow_hidden)
+            .when(self.row, Styled::flex_1);
+        match self.text {
+            Some(text) => content.child(text),
+            None => content
+                .flex()
+                .flex_wrap()
+                .children((0..self.tiles).map(|_| div().w(px(40.)).h(px(20.))))
+                .child(div().w_full().h(px(self.extra))),
+        }
     }
 }
 
@@ -49,21 +67,25 @@ impl Render for Column {
             Some(details) => details.frame(window, cx).map(|shown| shown.progress),
             None => Some(self.progress),
         };
-        let tiles = self.tiles();
-        div()
-            .w(px(100.))
-            .flex()
-            .flex_col()
-            .children(opened.map(|progress| tiles.opened("tiles", progress)))
-            .child(
-                div().h(px(10.)).child(
-                    canvas(
-                        move |bounds, _, _| drawn.borrow_mut().push(bounds),
-                        |_, (), _, _| {},
-                    )
-                    .size_full(),
-                ),
-            )
+        let tiles = opened.map(|progress| self.tiles().opened("tiles", progress));
+        let tiles = if self.row {
+            div()
+                .flex()
+                .child(div().w(px(30.)).h(px(1.)))
+                .children(tiles)
+                .into_any_element()
+        } else {
+            div().children(tiles).into_any_element()
+        };
+        div().w(px(100.)).flex().flex_col().child(tiles).child(
+            div().h(px(10.)).child(
+                canvas(
+                    move |bounds, _, _| drawn.borrow_mut().push(bounds),
+                    |_, (), _, _| {},
+                )
+                .size_full(),
+            ),
+        )
     }
 }
 
@@ -89,6 +111,11 @@ fn open(
             details,
             clicks,
             drawn,
+            margin: 0.,
+            extra: 0.,
+            clip: false,
+            row: false,
+            text: None,
         }
     });
     cx.run_until_parked();
@@ -220,4 +247,92 @@ fn it_opens_and_closes_with_a_presence(cx: &mut TestAppContext) {
     next_frame(cx);
     assert_eq!(below(&drawn), 0.0, "gone");
     assert_eq!(next_frame(cx), 0);
+}
+
+/// Sets the progress and returns where the line under the box is drawn.
+fn at(
+    progress: f32,
+    view: &gpui::Entity<Column>,
+    drawn: &Drawn,
+    cx: &mut VisualTestContext,
+) -> f32 {
+    change(view, cx, |column, _| column.progress = progress);
+    below(drawn)
+}
+
+#[gpui::test]
+fn its_margins_are_around_the_box_at_every_progress(cx: &mut TestAppContext) {
+    let (view, drawn, _, cx) = open(1.0, 4, None, cx);
+    change(&view, cx, |column, _| column.margin = 10.);
+    assert_eq!(below(&drawn), 50.0, "40 px and its margin");
+    let nearly = at(0.999, &view, &drawn, cx);
+    assert!((50.0 - nearly).abs() < 0.1, "no jump at the end: {nearly}");
+    assert_eq!(
+        at(0.5, &view, &drawn, cx),
+        30.0,
+        "half of 40, and the margin"
+    );
+}
+
+#[gpui::test]
+fn in_a_row_it_is_laid_out_at_its_share_at_every_progress(cx: &mut TestAppContext) {
+    // 70 px beside the mark: one tile to a row, four rows.
+    let (view, drawn, _, cx) = open(1.0, 4, None, cx);
+    change(&view, cx, |column, _| column.row = true);
+    assert_eq!(below(&drawn), 80.0);
+    assert_eq!(
+        at(0.5, &view, &drawn, cx),
+        40.0,
+        "half of 80, at the same width"
+    );
+}
+
+#[gpui::test]
+fn wrapped_text_opens_to_the_height_it_wraps_to(cx: &mut TestAppContext) {
+    let (view, drawn, _, cx) = open(1.0, 0, None, cx);
+    change(&view, cx, |column, _| column.text = Some("one line"));
+    let one = below(&drawn);
+    change(&view, cx, |column, _| {
+        column.text = Some("a text long enough to wrap at a hundred pixels, more than once");
+    });
+    let full = below(&drawn);
+    assert!(
+        full >= 3.0 * one,
+        "it wraps: {one} for a line, {full} in all"
+    );
+    let half = at(0.5, &view, &drawn, cx);
+    assert!((half - full / 2.0).abs() < 0.5, "half of {full}: {half}");
+}
+
+#[gpui::test]
+fn content_that_cuts_its_own_overflow_is_not_squeezed(cx: &mut TestAppContext) {
+    let (view, drawn, _, cx) = open(0.5, 4, None, cx);
+    change(&view, cx, |column, _| column.clip = true);
+    next_frame(cx);
+    assert_eq!(below(&drawn), 20.0);
+    assert_eq!(next_frame(cx), 0, "it stays at half of 40");
+    assert_eq!(below(&drawn), 20.0);
+}
+
+#[gpui::test]
+fn a_height_change_under_half_a_pixel_asks_for_no_frame(cx: &mut TestAppContext) {
+    let (view, drawn, _, cx) = open(0.5, 4, None, cx);
+    next_frame(cx);
+    assert_eq!(below(&drawn), 20.0);
+    change(&view, cx, |column, _| column.extra = 0.25);
+    assert_eq!(next_frame(cx), 0);
+    assert_eq!(below(&drawn), 20.0);
+}
+
+#[gpui::test]
+fn fully_open_a_new_height_is_taken_at_once(cx: &mut TestAppContext) {
+    let (view, drawn, _, cx) = open(1.0, 4, None, cx);
+    change(&view, cx, |column, _| column.tiles = 6);
+    assert_eq!(below(&drawn), 60.0, "in the frame of the change");
+    assert_eq!(next_frame(cx), 0);
+    assert_eq!(
+        at(0.5, &view, &drawn, cx),
+        30.0,
+        "then half of the new height"
+    );
 }

@@ -1,24 +1,27 @@
 //! An element opened part of the way: a height that goes from nothing to its
 //! content's own, by a progress, as an accordion opens.
 
-use std::{cell::Cell, rc::Rc};
+use std::mem;
 
 use gpui::{
-    AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, ParentElement, Pixels, Styled, Window, div, px,
+    AnyElement, App, Bounds, ContentMask, Display, Element, ElementId, FlexDirection,
+    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Length, Pixels, Refineable, Style,
+    StyleRefinement, Styled, Window, px,
 };
 
 /// A change of the content's height shorter than this, in pixels, is not a
 /// change: no frame is asked for it.
-const SAME: f32 = 0.5;
+const LEAST_CHANGE: f32 = 0.5;
 
 /// Declares on any styled element how much of its height is open; see
 /// [`Opened`].
 pub trait OpenExt: Styled + IntoElement + 'static {
     /// The element takes `progress` of its own height: `0.0` none of it,
     /// `1.0` all of it, as it would be laid out with nothing around it
-    /// cut. What is past the open part is cut off. `id` keeps the height
-    /// it measured last, for as long as it is drawn.
+    /// cut. What is past the open part is cut off. A progress below `0.0`
+    /// or past `1.0`, such as a bouncy spring's, is held to them, and NaN is
+    /// `0.0`. `id` keeps the height it measured last, for as long as it is
+    /// drawn.
     ///
     /// The progress comes from whatever moves it: a presence's, a motion's.
     ///
@@ -42,19 +45,23 @@ impl<E: Styled + IntoElement + 'static> OpenExt for E {}
 
 /// An element opened part of the way: made by [`OpenExt::opened`].
 ///
-/// Fully open, it is the element as it is, with nothing added and nothing
-/// cut. Part of the way, it is held in a box of that share of its own
-/// height, laid out at the width it would have, with what is past the box
-/// cut off and taking no clicks; closed, it takes no room. Its own height
-/// is measured as it is laid out, and is the last one measured: a frame
-/// where the content's height changes draws the height before, and asks for
-/// the next frame.
+/// It is held in a box that takes its place in the parent: its margins, its
+/// width, its share of a flex row and its position are the box's, so it is
+/// laid out the same at every progress, at the width it would have. The box
+/// is as tall as that share of the element's own height. Part of the way,
+/// what is past the box is cut off and takes no clicks; closed, it takes no
+/// room but its margins. Fully open, nothing is cut. Its own height is
+/// measured as it is laid out, and is the last one measured: a frame where
+/// the content's height changes part of the way open draws the height
+/// before, and asks for the next frame.
 ///
 /// A height given as a share of its parent's, such as `h_full`, has no
-/// height of its own to open to. What it costs is layout: while it opens
-/// the box's height changes on each frame, so its parent is laid out again,
-/// and the views it pushes are rendered again, cached ones too, since a
-/// cached view is reused only where its place and size are the same.
+/// height of its own to open to. What is cut keeps the keyboard focus it
+/// can take: draw nothing when it is closed, as a presence does once it is
+/// gone. What it costs is layout: while it opens the box's height changes
+/// on each frame, so its parent is laid out again, and the views it pushes
+/// are rendered again, cached ones too, since a cached view is reused only
+/// where its place and size are the same.
 pub struct Opened<E> {
     id: ElementId,
     progress: f32,
@@ -68,13 +75,13 @@ struct Kept {
     height: Option<Pixels>,
 }
 
-/// What one frame of an opened element carries from layout to prepaint.
-/// `pub` in a private module: it appears in the `Element` impl, and cannot
-/// be named outside the crate.
-pub struct Frame {
+/// What an opened element carries from layout to prepaint. `pub` in a
+/// private module: it appears in the `Element` impl, and cannot be named
+/// outside the crate.
+pub struct OpenedLayout {
     element: AnyElement,
-    /// The element's own height, written as it is prepainted.
-    measured: Rc<Cell<Option<Pixels>>>,
+    /// The element's own layout, inside the box.
+    content: LayoutId,
     /// Whether it was laid out part of the way open.
     partly: bool,
 }
@@ -87,8 +94,26 @@ impl<E: Styled + IntoElement + 'static> IntoElement for Opened<E> {
     }
 }
 
+/// Takes from `inner` what places it in its parent, for the box around it.
+fn place_in_parent(inner: &mut StyleRefinement) -> StyleRefinement {
+    let mut outer = StyleRefinement {
+        margin: mem::take(&mut inner.margin),
+        position: inner.position.take(),
+        inset: mem::take(&mut inner.inset),
+        flex_grow: inner.flex_grow.take(),
+        flex_shrink: inner.flex_shrink.take(),
+        flex_basis: inner.flex_basis.take(),
+        align_self: inner.align_self.take(),
+        ..StyleRefinement::default()
+    };
+    outer.size.width = inner.size.width.take();
+    outer.min_size.width = inner.min_size.width.take();
+    outer.max_size.width = inner.max_size.width.take();
+    outer
+}
+
 impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
-    type RequestLayoutState = Frame;
+    type RequestLayoutState = OpenedLayout;
     type PrepaintState = ();
 
     fn id(&self) -> Option<ElementId> {
@@ -105,47 +130,39 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         _inspector_id: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, Frame) {
+    ) -> (LayoutId, OpenedLayout) {
         let id = id.expect("an opened element has an id");
         let kept = window.with_element_state(id, |kept: Option<Kept>, _| {
             let kept = kept.unwrap_or_default();
             (kept, kept)
         });
-        let element = self.element.take().expect("an element is laid out once");
-        let measured = Rc::new(Cell::new(None));
+        let mut element = self.element.take().expect("an element is laid out once");
         let progress = if self.progress.is_nan() {
             0.0
         } else {
             self.progress.clamp(0.0, 1.0)
         };
         let partly = progress < 1.0;
-        let mut element = if partly {
+        let outer = place_in_parent(element.style());
+        // The content keeps its own height in the box: a column that does
+        // not shrink it, so the box cuts it instead of squeezing it.
+        element.style().flex_shrink = Some(0.);
+        let mut element = element.into_any_element();
+        let content = element.request_layout(window, cx);
+        let mut style = Style::default();
+        style.refine(&outer);
+        style.display = Display::Flex;
+        style.flex_direction = FlexDirection::Column;
+        if partly {
             let height = kept.height.map_or(0.0, f32::from) * progress;
-            // A column that does not shrink its content: the content keeps
-            // its own height, and the box cuts it.
-            div()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .h(px(height))
-                .child(Measured {
-                    element: Some(element.flex_shrink_0()),
-                    measured: measured.clone(),
-                })
-                .into_any_element()
-        } else {
-            Measured {
-                element: Some(element),
-                measured: measured.clone(),
-            }
-            .into_any_element()
-        };
-        let layout = element.request_layout(window, cx);
+            style.size.height = Length::from(px(height));
+        }
+        let layout = window.request_layout(style, [content], cx);
         (
             layout,
-            Frame {
+            OpenedLayout {
                 element,
-                measured,
+                content,
                 partly,
             },
         )
@@ -155,29 +172,28 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         &mut self,
         id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
-        frame: &mut Frame,
+        bounds: Bounds<Pixels>,
+        layout: &mut OpenedLayout,
         window: &mut Window,
         cx: &mut App,
     ) {
-        frame.element.prepaint(window, cx);
         let id = id.expect("an opened element has an id");
-        let measured = frame.measured.get();
+        let measured = window.layout_bounds(layout.content).size.height;
+        let mask = layout.partly.then_some(ContentMask { bounds });
+        window.with_content_mask(mask, |window| layout.element.prepaint(window, cx));
         let changed = window.with_element_state(id, |kept: Option<Kept>, _| {
             let mut kept = kept.unwrap_or_default();
-            let changed = match (kept.height, measured) {
-                (Some(before), Some(now)) => f32::from(now - before).abs() >= SAME,
-                (None, Some(_)) => true,
-                (_, None) => false,
-            };
+            let changed = kept
+                .height
+                .is_none_or(|before| f32::from(measured - before).abs() >= LEAST_CHANGE);
             if changed {
-                kept.height = measured;
+                kept.height = Some(measured);
             }
             (changed, kept)
         });
         // Part of the way open, the box was laid out at the height before:
         // the next frame lays it out at the new one.
-        if changed && frame.partly {
+        if changed && layout.partly {
             window.request_animation_frame();
         }
     }
@@ -186,85 +202,13 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
-        frame: &mut Frame,
-        (): &mut (),
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        frame.element.paint(window, cx);
-    }
-}
-
-impl<E: ParentElement> ParentElement for Opened<E> {
-    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
-        if let Some(element) = &mut self.element {
-            element.extend(elements);
-        }
-    }
-}
-
-/// An element that writes down its height as it is prepainted.
-struct Measured<E> {
-    element: Option<E>,
-    measured: Rc<Cell<Option<Pixels>>>,
-}
-
-impl<E: IntoElement + 'static> IntoElement for Measured<E> {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
-impl<E: IntoElement + 'static> Element for Measured<E> {
-    type RequestLayoutState = AnyElement;
-    type PrepaintState = ();
-
-    fn id(&self) -> Option<ElementId> {
-        None
-    }
-
-    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, AnyElement) {
-        let element = self.element.take().expect("an element is laid out once");
-        let mut element = element.into_any_element();
-        (element.request_layout(window, cx), element)
-    }
-
-    fn prepaint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        element: &mut AnyElement,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        self.measured.set(Some(bounds.size.height));
-        element.prepaint(window, cx);
-    }
-
-    fn paint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
-        element: &mut AnyElement,
+        layout: &mut OpenedLayout,
         (): &mut (),
         window: &mut Window,
         cx: &mut App,
     ) {
-        element.paint(window, cx);
+        let mask = layout.partly.then_some(ContentMask { bounds });
+        window.with_content_mask(mask, |window| layout.element.paint(window, cx));
     }
 }

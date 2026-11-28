@@ -3,10 +3,10 @@
 
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-use ginga_gpui::{Easing, Look, LookExt, LookState, Transitions, Tween};
+use ginga_gpui::{Easing, Look, LookExt, LookState, Trace, Transitions, Tween};
 use gpui::{
-    Bounds, Context, IntoElement, ParentElement, Pixels, Render, Styled, TestAppContext, Window,
-    WindowHandle, canvas, div, point, px, size,
+    AppContext, Bounds, Context, IntoElement, ParentElement, Pixels, Render, Styled,
+    TestAppContext, Window, WindowHandle, canvas, div, point, px, size,
 };
 
 fn ms(millis: u64) -> Duration {
@@ -278,4 +278,122 @@ fn under_reduced_motion_a_delay_is_kept_and_then_the_look_is_taken_at_once(
         "at rest at once at 160 ms"
     );
     assert_eq!(after(16, &window, cx), 0, "and settled");
+}
+
+#[gpui::test]
+fn a_look_the_view_owns_can_be_written_down(cx: &mut TestAppContext) {
+    let (window, drawn) = open(cx, Look::new().width(100.), None, true);
+    let state = window
+        .update(cx, |cards, _, _| cards.owned.clone().unwrap())
+        .unwrap();
+    let (motion, now) = cx.update(|cx| state.inspect(cx)).unwrap();
+    assert_eq!(now, ms(0), "the first frame is the clock's start");
+    assert_eq!(motion.target(), Look::new().width(100.));
+
+    change(&window, cx, |cards| cards.look = Look::new().width(200.));
+    after(50, &window, cx);
+    let (motion, now) = cx.update(|cx| state.inspect(cx)).unwrap();
+    assert_eq!(now, ms(50));
+    assert_eq!(
+        motion.sample(now).value.width,
+        Some(last(&drawn).size.width.into()),
+        "what it reads is what was drawn"
+    );
+    assert_eq!(
+        Trace::of(&motion, now, ms(50)).to_string(),
+        "ms           width\n\
+         50         125.000\n\
+         100        150.000\n\
+         150        175.000\n\
+         200        200.000  settled\n"
+    );
+
+    let again = cx.update(|cx| state.inspect(cx)).unwrap();
+    assert_eq!(again.1, now, "a second read at the same time is the same");
+    assert_eq!(
+        Trace::of(&again.0, again.1, ms(50)).to_string(),
+        Trace::of(&motion, now, ms(50)).to_string()
+    );
+    after(50, &window, cx);
+    assert_eq!(
+        last(&drawn).size.width,
+        px(150.),
+        "reading it changed nothing of the motion"
+    );
+
+    after(150, &window, cx);
+    let (motion, now) = cx.update(|cx| state.inspect(cx)).unwrap();
+    assert_eq!(now, ms(250), "the clock's time, not the motion's end");
+    assert_eq!(
+        Trace::of(&motion, now, ms(50)).to_string(),
+        "ms           width\n\
+         250        200.000  settled\n"
+    );
+    assert_eq!(
+        after(16, &window, cx),
+        0,
+        "read once settled, it asks for no frame"
+    );
+}
+
+#[gpui::test]
+fn a_look_state_no_element_drew_has_nothing_to_write_down(cx: &mut TestAppContext) {
+    let state = LookState::default();
+    assert!(cx.update(|cx| state.inspect(cx)).is_none());
+}
+
+/// A child view that reads its parent's look while it is rendered, which
+/// GPUI does while it lays the parent out.
+struct Reader {
+    state: LookState,
+    read: Rc<RefCell<Vec<Option<Look>>>>,
+}
+
+impl Render for Reader {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let read = self.state.inspect(cx).map(|(motion, _)| motion.target());
+        self.read.borrow_mut().push(read);
+        div()
+    }
+}
+
+struct Parent {
+    state: LookState,
+    reader: gpui::Entity<Reader>,
+}
+
+impl Render for Parent {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .child(self.reader.clone())
+            .look_with(&self.state, Look::new().width(100.), glide())
+    }
+}
+
+#[gpui::test]
+fn a_child_reads_the_look_while_it_is_laid_out(cx: &mut TestAppContext) {
+    let state = LookState::default();
+    let read = Rc::new(RefCell::new(Vec::new()));
+    let window = cx.open_window(size(px(400.), px(300.)), {
+        let (state, read) = (state.clone(), read.clone());
+        move |_, cx| Parent {
+            reader: cx.new(|_| Reader {
+                state: state.clone(),
+                read,
+            }),
+            state,
+        }
+    });
+    cx.run_until_parked();
+    window
+        .update(cx, |parent, _, cx| {
+            parent.reader.update(cx, |_, cx| cx.notify());
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(
+        read.borrow().as_slice(),
+        [Some(Look::new().width(100.)), Some(Look::new().width(100.))],
+        "this frame's motion, from the first frame on"
+    );
 }

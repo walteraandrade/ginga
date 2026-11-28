@@ -89,8 +89,35 @@ impl<E: Styled + IntoElement + 'static> LookExt for E {}
 #[derive(Debug, Clone, Default)]
 pub struct LookState(Rc<RefCell<Option<Moving>>>);
 
+impl LookState {
+    /// The look's motion as the element last set it, and this frame's time
+    /// on its clock: read it with [`LookMotion::sample`] or write it down
+    /// with [`Trace::of`](ginga::Trace::of), as a test or a log would.
+    /// `None` until an element has drawn with it.
+    ///
+    /// The motion holds every value the element's looks have named, a hover
+    /// or pressed look's included, drawn or not: a value the look no longer
+    /// names may still be moving in it. A look kept with an id, by
+    /// [`LookExt::look`], cannot be read: keep it in a `LookState` to write
+    /// it down.
+    ///
+    /// Reading it changes nothing, starts no clock and asks for no frame.
+    ///
+    /// ```ignore
+    /// let (motion, now) = self.card.inspect(cx).unwrap();
+    /// println!("{}", Trace::of(&motion, now, Duration::from_millis(16)));
+    /// ```
+    #[must_use]
+    pub fn inspect(&self, cx: &App) -> Option<(LookMotion, std::time::Duration)> {
+        let moving = self.0.borrow();
+        moving
+            .as_ref()
+            .map(|moving| (moving.motion, moving.clock.peek(cx)))
+    }
+}
+
 /// An element's look on its way, and the clock it is read on.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Moving {
     motion: LookMotion,
     clock: Clock,
@@ -387,17 +414,29 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         cx: &mut App,
     ) -> ((LayoutId, LaidOut), Moving) {
         let (look, moving, held) = self.frame(moving, window, cx);
+        self.held = held;
+        let laid_out = self.lay_out_children(look, &moving, window, cx);
+        (laid_out, moving)
+    }
+
+    /// Lays the element out with this frame's look, once its motion is set.
+    fn lay_out_children(
+        &mut self,
+        look: Look,
+        moving: &Moving,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, LaidOut) {
         let element = self.element.take().expect("an element is laid out once");
         let mut element = styled(element, look).into_any_element();
         let layout = element.request_layout(window, cx);
-        self.held = held;
         let drawn = LaidOut {
             layout,
             element,
             gestures: moving.gestures.clone(),
             offset: offset_of(look),
         };
-        ((layout, drawn), moving)
+        (layout, drawn)
     }
 }
 
@@ -627,9 +666,14 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
         let ((layout, drawn), moving) = match (&self.keep, id) {
             (Keep::Owned(state), _) => {
                 let state = state.clone();
-                // Not borrowed while the children are laid out.
                 let taken = state.0.borrow_mut().take();
-                let (laid_out, moving) = self.lay_out(taken, window, cx);
+                let (look, moving, held) = self.frame(taken, window, cx);
+                // Back in the state before the children are laid out, so a
+                // child that reads it sees this frame's motion; not borrowed
+                // meanwhile.
+                *state.0.borrow_mut() = Some(moving.clone());
+                self.held = held;
+                let laid_out = self.lay_out_children(look, &moving, window, cx);
                 (laid_out, Some((state, moving)))
             }
             (Keep::Id(_), Some(id)) => (

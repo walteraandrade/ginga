@@ -16,6 +16,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test                                                # seconds
 cargo clippy -p ginga-gpui --all-targets -- -D warnings   # only when crates/ginga-gpui changed; the first build takes minutes
 cargo test -p ginga-gpui                                  # the same; GPUI's test platform needs no display
+mdbook build book && python3 book/check-links.py          # only when book/ changed
 ```
 
 ## The engine (`crates/ginga`)
@@ -32,7 +33,7 @@ cargo test -p ginga-gpui                                  # the same; GPUI's tes
 - Keep it small. Before adding a call, check that the ones in the book cannot do the job.
 - A thing that leaves stays drawable: `Presence` and `PresenceList` keep its content until the way out is over. They never decide what leaving looks like; they give a phase and a progress.
 - An invalid value does not build. Where a constructor can fail, it returns an error whose message says what to use instead.
-- Every public item has a doc comment, and every doc example runs as a test: the README's and the book's too, through `crates/ginga/src/lib.rs`. A new page of the book gets a line there and in `book/src/SUMMARY.md`.
+- Every public item has a doc comment, and every doc example runs as a test: the README's, through `crates/ginga/src/lib.rs`, and the book's, through the unpublished `ginga-book` crate in `book/`, which runs every page `book/src/SUMMARY.md` links.
 - Names say what a thing does in plain words: `toward`, `jump_to`, `settled`.
 
 ## Checking motion

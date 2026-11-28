@@ -1,0 +1,19 @@
+[package]
+name = "ginga-book"
+description = "The book's examples, run as tests. Not published."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+build = "build.rs"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+ginga.workspace = true
+
+[lints]
+workspace = true

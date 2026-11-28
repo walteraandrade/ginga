@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/ginga", "crates/ginga-gpui"]
-# The GPUI adapter takes minutes to build; plain `cargo test` covers the core only.
-default-members = ["crates/ginga"]
+members = ["crates/ginga", "crates/ginga-gpui", "book"]
+# The GPUI adapter takes minutes to build; plain `cargo test` covers the core and the book's examples only.
+default-members = ["crates/ginga", "book"]
 
 [workspace.package]
 version = "0.1.0"

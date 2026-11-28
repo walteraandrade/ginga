@@ -8,11 +8,14 @@
 - docs.rs alone. It documents items, not how they work together, and has no place for the gallery, the costs or the inspirations.
 - Another site generator (Zola, Docusaurus, VitePress). mdBook is the one Rust's own books use, is one binary, hides `# ` lines in examples as rustdoc does, and needs no Node.
 
-**Why.** The book splits the README's sections into pages without rewriting them, and keeps its rule that examples run: `crates/ginga/src/lib.rs` includes every page under `cfg(doctest)`, so `cargo test` runs them as it ran the README's. Packaging leaves `book/` out; under `cfg(doctest)` the `include_str!` is never expanded, so `cargo package` still builds.
+**Why.** The book splits the README's sections into pages without rewriting them, and keeps its rule that examples run: `book/` is also a crate, `ginga-book` (`publish = false`, a default member), whose `build.rs` reads `src/SUMMARY.md` and gives each linked page to rustdoc as an item's doc comment, so `cargo test` runs them as it ran the README's.
+
+The pages were first included from `crates/ginga/src/lib.rs` (#97's review). That broke `cargo test` on the packaged engine, which does not ship `book/`, and put GPUI's page names in the engine. A list of pages written by hand could also drift from `SUMMARY.md` and drop a page's tests without a failure; generating it from `SUMMARY.md` cannot.
 
 **What follows from it.**
 
-- A new page goes in `book/src/SUMMARY.md` and gets a line in the `pages!` list in `lib.rs`.
+- A new page needs only its line in `book/src/SUMMARY.md`: its examples run from then on.
+- `mdbook build` does not fail on a broken link or anchor; `book/check-links.py` checks the built site, in CI and before finishing.
 - Links between pages are relative (`../gpui/look.md`); links in the README stay absolute, since crates.io ships it.
 - The gallery's contact sheets are in `book/src/gallery/` as WebP, about 30 KB each.
 - Pages must be set to deploy from GitHub Actions in the repository's settings, once.

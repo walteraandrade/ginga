@@ -18,4 +18,5 @@ The pages were first included from `crates/ginga/src/lib.rs` (#97's review). Tha
 - `mdbook build` does not fail on a broken link or anchor; `book/check-links.py` checks the built site, in CI and before finishing.
 - Links between pages are relative (`../gpui/look.md`); links in the README stay absolute, since crates.io ships it.
 - The gallery's contact sheets are in `book/src/gallery/` as WebP, about 30 KB each.
+- For coding agents, the book opens by saying what ginga is, for which framework, and what it does, and has a page on when to use it and one of recipes by intent, each engine recipe complete and run as a test. `book/llms.py` writes `llms.txt`, `llms-full.txt` and a `.md` beside each page into the built site ([llmstxt.org](https://llmstxt.org)); a new page gets a line in its `ABOUT_PAGE`, or its first sentence is used. Asked by Waltinho on 2026-11-28: an agent looking for a Rust animation library should see at once what ginga is for.
 - Pages must be set to deploy from GitHub Actions in the repository's settings, once.

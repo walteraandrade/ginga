@@ -4,7 +4,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 
 ## Unreleased
 
-- The docs are a book, at https://walteraandrade.github.io/ginga/, built from `book/` with mdBook and published on each push to `main`; its examples run as tests. The README is now one screen that links to it. The gallery's contact sheets are on its own page.
+- The docs are a book, at https://walteraandrade.github.io/ginga/, built from `book/` with mdBook and published on each push to `main`; its examples run as tests. The README is now one screen that links to it. The gallery's contact sheets are on its own page. For coding agents: a page on when to use ginga, recipes by intent, and `llms.txt` and `llms-full.txt` at the site's root.
 - "Coming from Motion, SwiftUI or Compose", a table from their everyday tools to ginga, with recipes: steps, several stops, a stagger backward or from the centre, the scroll position, an icon that turns, writing motion down, reduced motion on purpose, and pause, seek, speed and reverse. The gallery's turn page.
 - `Opened::height_glides(transition)`: the height an opened element opens to glides to its content's new height, keeping its speed, instead of jumping; under reduced motion it is taken at once.
 - A `Sequence` step can be a `LookMotion` as well as a `Motion`: `then`, `with` and `at` take any `Retarget`. `Sequence::without_motion`, and in the adapter `ginga_gpui::sequence(now, cx)`, a sequence that under reduced motion puts each step at its target after its own delay.

@@ -16,7 +16,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test                                                # seconds
 cargo clippy -p ginga-gpui --all-targets -- -D warnings   # only when crates/ginga-gpui changed; the first build takes minutes
 cargo test -p ginga-gpui                                  # the same; GPUI's test platform needs no display
-mdbook build book && python3 book/check-links.py          # only when book/ changed
+mdbook build book && python3 book/llms.py && python3 book/check-links.py   # only when book/ changed
 ```
 
 ## The engine (`crates/ginga`)

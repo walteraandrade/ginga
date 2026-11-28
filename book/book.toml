@@ -1,6 +1,6 @@
 [book]
 title = "ginga"
-description = "Motion for Rust UIs, as a pure function of time."
+description = "ginga: an animation library for Rust UIs. Springs, tweens, keyframes and enter and exit transitions as pure functions of time, with a dependency-free engine and a GPUI adapter."
 language = "en"
 src = "src"
 

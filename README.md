@@ -3,11 +3,11 @@
 [![CI](https://github.com/walteraandrade/ginga/actions/workflows/ci.yml/badge.svg)](https://github.com/walteraandrade/ginga/actions/workflows/ci.yml)
 [![Book](https://img.shields.io/badge/book-walteraandrade.github.io%2Fginga-blue)](https://walteraandrade.github.io/ginga/)
 
-Motion for Rust UIs, as a pure function of time.
+An animation library for Rust UIs: springs, tweens, keyframes and enter and exit transitions, as pure functions of time. The engine has no dependencies and fits any framework; `ginga-gpui` adapts it to GPUI.
 
 A `Motion` is a value on its way to a target. You own it, you hand it the time, and it answers with the value at that time. Nothing ticks, nothing allocates while it runs, and the same times always give the same values. That makes motion something a test, a log or a coding agent can read as text, without a screen.
 
-**[Read the book](https://walteraandrade.github.io/ginga/)**: the whole API, with examples that run as tests, a gallery, what it costs, a guide for whoever comes from Motion, SwiftUI or Compose, and the inspirations.
+**[Read the book](https://walteraandrade.github.io/ginga/)**: [when to use it](https://walteraandrade.github.io/ginga/when-to-use.html), [recipes](https://walteraandrade.github.io/ginga/recipes.html) from what you want to do to the call that does it, the whole API with examples that run as tests, a gallery, what it costs, and a guide for whoever comes from Motion, SwiftUI or Compose. For language models: [`llms.txt`](https://walteraandrade.github.io/ginga/llms.txt) and [`llms-full.txt`](https://walteraandrade.github.io/ginga/llms-full.txt).
 
 ## What it is for
 

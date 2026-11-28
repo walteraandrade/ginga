@@ -23,6 +23,8 @@ jobs:
         with:
           tool: mdbook@0.4.52
       - run: mdbook build book
+      # llms.txt, llms-full.txt and a .md beside each page, for language models.
+      - run: python3 book/llms.py book/book
       # mdBook does not fail on a broken link or anchor; this does.
       - run: python3 book/check-links.py book/book
       - uses: actions/upload-pages-artifact@v3

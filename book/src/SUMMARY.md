@@ -2,6 +2,8 @@
 
 [ginga](introduction.md)
 [Getting started](getting-started.md)
+[When to use ginga](when-to-use.md)
+[Recipes](recipes.md)
 
 # The engine
 

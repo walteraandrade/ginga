@@ -29,6 +29,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[decisions/2026-11-27-keyframes-are-an-array-of-stops]]: keyframes keep their stops in an array (#30).
 - [[decisions/2026-11-27-a-transition-for-each-value]]: each value of a look has its own transition, over defaults (#27).
 - [[decisions/2026-11-27-a-sequence-is-a-schedule]]: a sequence is a schedule of delays, and an end is reported once by the app (#34).
+- [[decisions/2026-11-28-a-step-is-anything-retargeted]]: a sequence step is a `Motion` or a `LookMotion`, through a sealed `Retarget`; adapter motions are not steps; reduced motion drops the schedule (#84).
 - [[decisions/2026-11-27-two-goals-performance-then-agents]]: performance first, then ease of use for AI agents (#51).
 - [[decisions/2026-11-27-variants-are-a-handle-passed-by-hand]]: a parent's name reaches its children through a handle the view passes by hand (#31).
 - [[decisions/2026-11-27-reduced-motion-keeps-delays]]: reduced motion keeps a transition's delay, then goes at once (#62).

@@ -34,7 +34,7 @@ pub use ginga;
 use ginga::Animatable;
 pub use ginga::{
     Coast, CoastError, Color, Easing, InOut, KeyframesError, Look, LookMotion, Map, MapError,
-    Mapped, Order, Phase, Retarget, Sample, Sequence, SettledOnce, Shown, ShownItem, Slot, Spring,
+    Mapped, Order, Phase, Sample, Sequence, SettledOnce, Shown, ShownItem, Slot, Spring,
     SpringError, Step, Stop, Swap, Trace, Transition, Transitions, Tween,
 };
 pub use glide::{GlideExt, Glides};
@@ -255,6 +255,7 @@ pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition
 ///
 /// ```ignore
 /// // On a click, with the view's clock and its engine motions:
+/// let ms = Duration::from_millis;
 /// let mut entrance = ginga_gpui::sequence(self.clock.now(cx), cx);
 /// entrance.then(&mut self.card, Look::new().opacity(1.), Transitions::new().all(Spring::SNAPPY));
 /// entrance.then(&mut self.count, 10., Tween::new(ms(200), Easing::Out));

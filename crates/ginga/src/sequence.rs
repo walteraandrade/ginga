@@ -37,6 +37,10 @@ use crate::{Animatable, LookMotion, Motion, Transition, Transitions};
 ///   another sequence then.
 /// - Give each motion one step. A second step on the same motion replaces the
 ///   first, as a second target does.
+/// - A look step moves only the values its look named before; a value it
+///   names for the first time is at its target at once, when the step is
+///   added, as [`LookMotion::set_target`] does. Start the look from one that
+///   names every value it moves.
 /// - A motion given another target before its step ends leaves the
 ///   sequence's times behind: the sequence still says it settles when it
 ///   would have. To wait for the new end, start another sequence.
@@ -51,47 +55,72 @@ pub struct Sequence {
 
 /// What a [`Sequence`] can start: a value or a look, given a target with a
 /// transition. [`Motion`] moves with a [`Transition`] and [`LookMotion`] with
-/// [`Transitions`].
-pub trait Retarget {
+/// [`Transitions`]. It is sealed: those two are the only ones.
+///
+/// ```compile_fail
+/// use std::time::Duration;
+/// use ginga::Retarget;
+///
+/// struct Mine;
+///
+/// impl Retarget for Mine {
+///     type Target = f32;
+///     type Transition = ();
+///     fn retarget(&mut self, _: f32, _: (), _: Duration, _: bool, now: Duration) -> Duration { now }
+///     fn settles_at(&self) -> Option<Duration> { None }
+/// }
+/// ```
+pub trait Retarget: sealed::Sealed {
     /// What it heads for.
     type Target;
     /// How it gets there.
-    type Transition: Copy;
-    /// Heads for `target` from `now`, as its own `set_target` does.
-    fn retarget(&mut self, target: Self::Target, transition: Self::Transition, now: Duration);
+    type Transition;
+    /// Heads for `target` from `now`, its transition starting `delay` later,
+    /// after a delay of its own, and with no motion when `still`. Returns
+    /// when it starts to move: for a look, when the first value it names does.
+    fn retarget(
+        &mut self,
+        target: Self::Target,
+        transition: Self::Transition,
+        delay: Duration,
+        still: bool,
+        now: Duration,
+    ) -> Duration;
     /// When it is settled on its target, as its own `settles_at` says.
     fn settles_at(&self) -> Option<Duration>;
-    /// `transition`, starting `by` later: a delay of its own is kept, after it.
-    fn later(transition: Self::Transition, by: Duration) -> Self::Transition;
-    /// When `transition` starts to move, counted from when it is given.
-    fn start_delay(transition: &Self::Transition) -> Duration;
-    /// `transition` with no motion: it holds still for its delay, then is at
-    /// its target at once.
-    fn without_motion(transition: Self::Transition) -> Self::Transition;
+}
+
+mod sealed {
+    /// Keeps [`Retarget`](super::Retarget) to the engine's own motions.
+    pub trait Sealed {}
+    impl<T: crate::Animatable> Sealed for crate::Motion<T> {}
+    impl Sealed for crate::LookMotion {}
 }
 
 impl<T: Animatable> Retarget for Motion<T> {
     type Target = T;
     type Transition = Transition;
 
-    fn retarget(&mut self, target: T, transition: Transition, now: Duration) {
-        self.set_target(target, transition, now);
+    fn retarget(
+        &mut self,
+        target: T,
+        transition: Transition,
+        delay: Duration,
+        still: bool,
+        now: Duration,
+    ) -> Duration {
+        let transition = if still {
+            transition.without_motion()
+        } else {
+            transition
+        };
+        let delay = delay.saturating_add(transition.start_delay());
+        self.set_target(target, transition.delay(delay), now);
+        now.saturating_add(delay)
     }
 
     fn settles_at(&self) -> Option<Duration> {
         Self::settles_at(self)
-    }
-
-    fn later(transition: Transition, by: Duration) -> Transition {
-        transition.delay(by.saturating_add(transition.start_delay()))
-    }
-
-    fn start_delay(transition: &Transition) -> Duration {
-        transition.start_delay()
-    }
-
-    fn without_motion(transition: Transition) -> Transition {
-        transition.without_motion()
     }
 }
 
@@ -99,24 +128,28 @@ impl Retarget for LookMotion {
     type Target = crate::Look;
     type Transition = Transitions;
 
-    fn retarget(&mut self, target: crate::Look, transitions: Transitions, now: Duration) {
-        self.set_target(target, transitions, now);
+    fn retarget(
+        &mut self,
+        target: crate::Look,
+        transitions: Transitions,
+        delay: Duration,
+        still: bool,
+        now: Duration,
+    ) -> Duration {
+        let transitions = if still {
+            transitions.without_motion()
+        } else {
+            transitions
+        };
+        let starts = now
+            .saturating_add(delay)
+            .saturating_add(transitions.start_delay(&target));
+        self.set_target(target, transitions.delay(delay), now);
+        starts
     }
 
     fn settles_at(&self) -> Option<Duration> {
         Self::settles_at(self)
-    }
-
-    fn later(transitions: Transitions, by: Duration) -> Transitions {
-        transitions.delay(by)
-    }
-
-    fn start_delay(transitions: &Transitions) -> Duration {
-        transitions.start_delay()
-    }
-
-    fn without_motion(transitions: Transitions) -> Transitions {
-        transitions.without_motion()
     }
 }
 
@@ -221,22 +254,13 @@ impl Sequence {
         target: M::Target,
         transition: impl Into<M::Transition>,
     ) -> Step {
-        let starts = starts.max(self.start);
-        let mut transition = transition.into();
-        if self.still {
-            transition = M::without_motion(transition);
-        }
         // With no motion there is no schedule: only the step's own delay.
         let place = if self.still {
             Duration::ZERO
         } else {
             starts.saturating_sub(self.start)
         };
-        motion.retarget(target, M::later(transition, place), self.start);
-        let starts = self
-            .start
-            .saturating_add(place)
-            .saturating_add(M::start_delay(&transition));
+        let starts = motion.retarget(target, transition.into(), place, self.still, self.start);
         let settles = Retarget::settles_at(motion);
         // A motion already on its target ended when its target was set,
         // before its place: then the step ends where it starts.
@@ -573,5 +597,51 @@ button  1300 ms to 1400 ms
         assert_eq!(count.sample(ms(30)).value, 10.0, "then is there at once");
         assert_eq!(late.to_string(), "30 ms to 30 ms");
         assert_eq!(entrance.settles_at(), ms(30));
+    }
+
+    #[test]
+    fn a_look_starts_when_the_first_value_it_names_starts() {
+        use crate::Look;
+        // Only opacity is named, and only it waits: the values the look does
+        // not name, undelayed by default, do not make it start early.
+        let late = Transitions::new().opacity(linear(100).delay(ms(50)));
+        let mut card = LookMotion::at(Look::new().opacity(0.0));
+        let mut count = Motion::at(0.0);
+        let mut entrance = Sequence::starting_at(ms(0));
+        let first = entrance.then(&mut card, Look::new().opacity(1.0), late);
+        let second = entrance.with(&mut count, 10.0, linear(100));
+        assert_eq!(first.to_string(), "50 ms to 150 ms");
+        assert_eq!(
+            second.to_string(),
+            "50 ms to 150 ms",
+            "with the look, when it starts"
+        );
+        assert_eq!(card.sample(ms(25)).value.opacity, Some(0.0));
+        assert_eq!(card.sample(ms(100)).value.opacity, Some(0.5));
+        assert_eq!(count.sample(ms(100)).value, 5.0);
+    }
+
+    #[test]
+    fn a_look_placed_with_a_value_starts_with_it() {
+        use crate::Look;
+        let mut count = Motion::at(0.0);
+        let mut card = LookMotion::at(Look::new().width(0.0));
+        let mut entrance = Sequence::starting_at(ms(0));
+        entrance.then(&mut Motion::at(0.0), 1.0, linear(40));
+        let value = entrance.then(&mut count, 10.0, linear(100));
+        let look = entrance.with(
+            &mut card,
+            Look::new().width(100.0),
+            Transitions::new().width(linear(200)),
+        );
+        assert_eq!(value.to_string(), "40 ms to 140 ms");
+        assert_eq!(look.to_string(), "40 ms to 240 ms");
+        assert_eq!(card.sample(ms(140)).value.width, Some(50.0));
+        let after = entrance.then(&mut Motion::at(0.0), 1.0, linear(10));
+        assert_eq!(
+            after.to_string(),
+            "240 ms to 250 ms",
+            "the group ends with the longer"
+        );
     }
 }

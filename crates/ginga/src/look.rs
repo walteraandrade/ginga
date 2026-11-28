@@ -454,12 +454,15 @@ macro_rules! values {
                 self.each(Transition::without_motion)
             }
 
-            /// When the first of its values starts to move, counted from when
-            /// it is given: the smallest delay of its own among them.
-            pub(crate) fn start_delay(&self) -> Duration {
+            /// When the first of the values `look` names starts to move,
+            /// counted from when it is given: the smallest of their own
+            /// delays. A look that names nothing starts at once.
+            pub(crate) fn start_delay(&self, look: &Look) -> Duration {
                 let mut least = None::<Duration>;
-                $(let delay = self.named(|layer| layer.$field).unwrap_or($default).start_delay();
-                least = Some(least.map_or(delay, |least| least.min(delay)));)*
+                $(if look.$field.is_some() {
+                    let delay = self.named(|layer| layer.$field).unwrap_or($default).start_delay();
+                    least = Some(least.map_or(delay, |least| least.min(delay)));
+                })*
                 least.unwrap_or_default()
             }
 

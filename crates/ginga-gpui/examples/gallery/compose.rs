@@ -5,8 +5,8 @@
 use std::time::Duration;
 
 use ginga_gpui::{
-    Animate, Clock, Color, Easing, Look, LookMotion, Map, Sequence, SettledOnce, Spring,
-    Transitions, Tween, ginga, sequence, unless_reduced,
+    Animate, Clock, Color, Easing, Look, LookExt, LookMotion, Map, Sequence, SettledOnce, Spring,
+    Tween, ginga, sequence, unless_reduced,
 };
 use gpui::{Context, IntoElement, ParentElement, Render, Rgba, Styled, Window, div, px, rgb};
 
@@ -61,7 +61,7 @@ impl Compose {
             } else {
                 away()
             },
-            Transitions::new().all(Spring::SNAPPY),
+            Spring::SNAPPY,
         );
         self.entrance = Some(entrance);
         cx.notify();
@@ -126,10 +126,8 @@ impl Render for Compose {
                     .child(line("2. A body, after it", steps[1]))
                     .child(
                         div()
-                            .relative()
-                            .top(px(button.value.offset.map_or(0., |(_, y)| y)))
-                            .opacity(button.value.opacity.unwrap_or(1.).clamp(0., 1.))
-                            .child("3. A button, a look, 120 ms early"),
+                            .child("3. A button, a look, 120 ms early")
+                            .with_look(button.value),
                     ),
             )
             .child(format!("The steps have ended {} times", self.endings))

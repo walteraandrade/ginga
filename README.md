@@ -176,7 +176,7 @@ A `Sequence` starts several motions as one: `then` starts a step when the one be
 
 ```rust
 use std::time::Duration;
-use ginga::{Color, Easing, Map, Motion, Sequence, SettledOnce, Tween};
+use ginga::{Color, Easing, Look, LookMotion, Map, Motion, Sequence, SettledOnce, Transitions, Tween};
 
 let ms = Duration::from_millis;
 let fade = Tween::new(ms(100), Easing::Linear);
@@ -190,13 +190,21 @@ let now = width.of(&progress).sample(ms(50)).value;
 assert_eq!(now, 140.0);
 assert_eq!(fill.at(300.0), Color::hex(0x30a46c));
 
-// Three steps: one after another, the last overlapping by 40 ms.
-let (mut title, mut body, mut button) = (Motion::at(0.0), Motion::at(0.0), Motion::at(0.0));
+// Three steps: one after another, the last a look overlapping by 40 ms.
+let (mut title, mut body) = (Motion::at(0.0), Motion::at(0.0));
+let mut button = LookMotion::at(Look::new().offset(0.0, 24.0).opacity(0.0));
 let mut entrance = Sequence::starting_at(ms(0));
 entrance.then(&mut title, 1.0, fade);
 let second = entrance.then(&mut body, 1.0, fade);
-let third = entrance.at(second.ends.saturating_sub(ms(40)), &mut button, 1.0, fade);
+let here = Look::new().offset(0.0, 0.0).opacity(1.0);
+let third = entrance.at(second.ends.saturating_sub(ms(40)), &mut button, here, Transitions::new().all(fade));
 assert_eq!(third.to_string(), "160 ms to 260 ms");
+assert_eq!(button.sample(ms(210)).value, Look::new().offset(0.0, 12.0).opacity(0.5));
+
+// Without motion, as under reduced motion: each step is there after its own delay.
+let mut still = Sequence::starting_at(ms(0)).without_motion();
+still.then(&mut Motion::at(0.0), 1.0, fade);
+assert_eq!(still.settles_at(), ms(0));
 
 let mut done = SettledOnce::default();
 assert!(!done.check(Some(entrance.settles_at()), ms(250)));

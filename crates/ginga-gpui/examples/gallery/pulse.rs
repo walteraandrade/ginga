@@ -1,6 +1,8 @@
 //! A mark breathes and three dots pulse, each through its keyframes. The mark
 //! is an island of its own, so it is drawn at most about 30 times a second
-//! while the dots, beside it, are drawn on every frame.
+//! while the dots, beside it, are drawn on every frame. The dots are one
+//! loop, each copy a step behind the one before, and are partway through it
+//! from the first frame.
 
 use std::time::Duration;
 
@@ -15,7 +17,7 @@ fn ms(millis: u64) -> Duration {
 
 pub struct Pulse {
     mark: Entity<Island<Keyframes<f32, 3>>>,
-    dots: [Keyframes<f32, 5>; 3],
+    dots: [Keyframes<f32, 4>; 3],
 }
 
 impl Pulse {
@@ -51,22 +53,19 @@ impl Pulse {
                     .into_any_element()
             })
         });
-        // Each dot waits its turn inside a round of the same length, so the
-        // three stay in step round after round.
-        let dot = |wait: u64| {
-            Keyframes::new([
-                Stop::new(ms(0), 0.3, Easing::Linear),
-                Stop::new(ms(wait), 0.3, Easing::Linear),
-                Stop::new(ms(wait + 250), 1.0, Easing::OutQuart),
-                Stop::new(ms(wait + 500), 0.3, Easing::InOutSine),
-                Stop::new(ms(800), 0.3, Easing::Linear),
-            ])
-            .expect("the stops are in order from zero")
-            .times(0)
-        };
+        // One loop, working until the page is closed. Each dot plays it
+        // 150 ms behind the one before, so the three stay a step apart.
+        let dot = Keyframes::new([
+            Stop::new(ms(0), 0.3, Easing::Linear),
+            Stop::new(ms(250), 1.0, Easing::OutQuart),
+            Stop::new(ms(500), 0.3, Easing::InOutSine),
+            Stop::new(ms(800), 0.3, Easing::Linear),
+        ])
+        .expect("the stops are in order from zero")
+        .forever();
         Self {
             mark,
-            dots: [dot(0), dot(150), dot(300)],
+            dots: [0, 150, 300].map(|lag| dot.behind(ms(lag))),
         }
     }
 
@@ -77,10 +76,6 @@ impl Pulse {
             breath.restart(cx);
             cx.notify();
         });
-        for dot in &mut self.dots {
-            *dot = dot.times(2);
-            dot.restart(cx);
-        }
         cx.notify();
     }
 }

@@ -5,7 +5,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 ## Unreleased
 
 - Variants: a parent's name that its children follow one after another, before or after the parent (`Variant`, `Order`, `ginga_gpui::Variant`, `.leads(..)`, `.follows(..)`). `Transitions::delay` and `LookMotion::settles_at`.
-- `Keyframes::behind(lag)`, in the engine and the adapter: keyframes that play behind others of the same loop, partway through a round from their start. `ginga_gpui::Keyframes::starting_at`.
+- `Keyframes::behind(lag)`, in the engine and the adapter: keyframes that play behind others of the same loop, partway through a round from their start; a count of rounds waits on the first stop until the lag is over. `ginga_gpui::Keyframes::starting_at`, kept by `restart`.
 - `LookExt::with_look`: a look applied as it is, with no motion and no element state, such as one mixed by a presence's progress.
 - `shown.cover(element)` (`CoverExt`): what a presence draws takes no clicks and loses the keyboard focus while it leaves.
 - A look's offset, and a dragged element's, is painted instead of laid out: it adds to the element's own place, `absolute` ones included, and the pointer finds the element where it is painted. Before, it replaced the element's `left` and `top`: an `absolute` element that gave its place as the offset, as 0.1.0's docs said, now gives it with `left` and `top`.

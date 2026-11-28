@@ -213,18 +213,68 @@ fn a_cap_of_zero_is_no_cap(cx: &mut TestAppContext) {
 fn a_loop_behind_another_is_partway_through_its_round_from_the_first_frame(
     cx: &mut TestAppContext,
 ) {
-    let (window, drawn) = open(up_and_down().forever().behind(ms(50)), cx);
-    assert_eq!(last(&drawn), 50.0, "on its way down, 150 ms into a round");
+    // The ramp is up over 128 ms and down over 128: 32 ms behind, the first
+    // frame is 224 ms into the round before, on the way down. Ahead, it would
+    // be 32 on the way up.
+    let (window, drawn) = open(ramp().forever().behind(ms(32)), cx);
+    assert_eq!(
+        last(&drawn),
+        32.0,
+        "224 ms into a round: 32 on the way down"
+    );
+    cx.executor().advance_clock(ms(64));
+    next_frame(&window, cx);
+    assert_eq!(
+        last(&drawn),
+        32.0,
+        "32 ms into its first round, on the way up"
+    );
+    cx.executor().advance_clock(ms(32));
+    next_frame(&window, cx);
+    assert_eq!(last(&drawn), 64.0);
+}
+
+#[gpui::test]
+fn a_restart_keeps_the_delay_and_the_lag(cx: &mut TestAppContext) {
+    let (window, drawn) = open(up_and_down().starting_at(ms(100)), cx);
+    cx.executor().advance_clock(ms(500));
+    next_frame(&window, cx);
+    window
+        .update(cx, |pulse, _, cx| {
+            pulse.keyframes.restart(cx);
+            cx.notify();
+        })
+        .unwrap();
+    cx.run_until_parked();
+    cx.executor().advance_clock(ms(125));
+    next_frame(&window, cx);
+    assert_eq!(last(&drawn), 25.0, "25 ms after the restart's delay");
+
+    let (window, drawn) = open(ramp().forever().behind(ms(32)), cx);
     cx.executor().advance_clock(ms(100));
     next_frame(&window, cx);
-    assert_eq!(last(&drawn), 50.0, "50 ms into its first round");
+    window
+        .update(cx, |pulse, _, cx| {
+            pulse.keyframes.restart(cx);
+            cx.notify();
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(last(&drawn), 32.0, "as far behind as on its first frame");
 }
 
 #[gpui::test]
 fn starting_at_waits_on_the_first_stop_after_the_first_frame(cx: &mut TestAppContext) {
     let (window, drawn) = open(up_and_down().starting_at(ms(100)), cx);
     assert_eq!(last(&drawn), 0.0);
-    cx.executor().advance_clock(ms(150));
+    cx.executor().advance_clock(ms(50));
     next_frame(&window, cx);
-    assert_eq!(last(&drawn), 50.0, "50 ms after its start");
+    assert_eq!(
+        last(&drawn),
+        0.0,
+        "still waiting: with no start it would be 50"
+    );
+    cx.executor().advance_clock(ms(75));
+    next_frame(&window, cx);
+    assert_eq!(last(&drawn), 25.0, "25 ms after its start; with none, 75");
 }

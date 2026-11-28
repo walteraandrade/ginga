@@ -33,6 +33,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[decisions/2026-11-27-variants-are-a-handle-passed-by-hand]]: a parent's name reaches its children through a handle the view passes by hand (#31).
 - [[decisions/2026-11-27-reduced-motion-keeps-delays]]: reduced motion keeps a transition's delay, then goes at once (#62).
 - [[decisions/2026-11-27-a-frame-cap-is-per-set-of-keyframes]]: `at_most_every` caps one set of keyframes, not a view (#65).
+- [[decisions/2026-11-27-behind-is-a-lag-in-time]]: copies of one loop play a lag behind, partway through a round; a count of rounds waits (#64).
 - [[decisions/2026-11-27-files-for-contributors]]: CONTRIBUTING, code of conduct, security policy and issue forms, pointing at `AGENTS.md` and this folder (#48).
 
 ## Codebase

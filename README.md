@@ -523,6 +523,12 @@ It is held in a box that takes its place in the parent: its margins, its width, 
 
 What it costs is layout and rendering: while it opens, its parent is laid out again on each frame, and cached views in it or moved by it render again on each frame, since a cached view is reused only at the same place, size and cut. A cached view beside its parent does not. Fully open and still, it asks for nothing. [The measurement](https://github.com/walteraandrade/ginga/blob/main/docs/measurements/2026-11-28-accordion/README.md).
 
+`.height_glides(transition)` makes the height it opens to glide when the content's own height changes, as a toast whose text grows, instead of jumping. It heads for the new height from where it is and keeps its speed when the content changes again on the way. The frame that finds the change draws the height before, and what is above or below the box is cut while it glides. Under reduced motion the new height is taken at once, after the transition's delay. For something that is always open, give it a progress of `1.0`:
+
+```rust,ignore
+div().p_2().child(self.message.clone()).opened("toast", 1.).height_glides(Spring::SNAPPY)
+```
+
 ### One thing in two places
 
 `.shared(key, transition)` says that elements in different places are one thing. When one of a key appears as another of it goes, it does not appear in its place: it travels there from where the other was, its place and its size changing together. A tab's mark slides to the next tab; a row opens into a card.

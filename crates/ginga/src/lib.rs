@@ -72,7 +72,7 @@ pub use map::{Map, MapError, Mapped};
 pub use motion::{Motion, Sample};
 pub use presence::{InOut, Phase, Presence, Shown};
 pub use presence_list::{PresenceList, ShownItem};
-pub use sequence::{Sequence, SettledOnce, Step};
+pub use sequence::{Retarget, Sequence, SettledOnce, Step};
 pub use slot::{Slot, Swap};
 pub use spring::{Spring, SpringError};
 pub use trace::{Row, Trace, Traceable};

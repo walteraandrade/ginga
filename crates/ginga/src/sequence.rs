@@ -1,11 +1,12 @@
 use core::{fmt, time::Duration};
 
-use crate::{Animatable, Motion, Transition};
+use crate::{Animatable, LookMotion, Motion, Transition, Transitions};
 
 /// Several motions arranged in time and started as one: one after another,
 /// together, or a set time apart. A step is a motion given a target and a
 /// transition, delayed to start at its place in the sequence; nothing runs
-/// between frames, so each motion is read as usual.
+/// between frames, so each motion is read as usual. A step is a [`Motion`]
+/// or a [`LookMotion`], each with its own kind of transition (see [`Retarget`]).
 ///
 /// ```
 /// use std::time::Duration;
@@ -44,6 +45,79 @@ pub struct Sequence {
     start: Duration,
     last: Step,
     settles: Duration,
+    /// Each step is at its target once its delay is over, with no motion.
+    still: bool,
+}
+
+/// What a [`Sequence`] can start: a value or a look, given a target with a
+/// transition. [`Motion`] moves with a [`Transition`] and [`LookMotion`] with
+/// [`Transitions`].
+pub trait Retarget {
+    /// What it heads for.
+    type Target;
+    /// How it gets there.
+    type Transition: Copy;
+    /// Heads for `target` from `now`, as its own `set_target` does.
+    fn retarget(&mut self, target: Self::Target, transition: Self::Transition, now: Duration);
+    /// When it is settled on its target, as its own `settles_at` says.
+    fn settles_at(&self) -> Option<Duration>;
+    /// `transition`, starting `by` later: a delay of its own is kept, after it.
+    fn later(transition: Self::Transition, by: Duration) -> Self::Transition;
+    /// When `transition` starts to move, counted from when it is given.
+    fn start_delay(transition: &Self::Transition) -> Duration;
+    /// `transition` with no motion: it holds still for its delay, then is at
+    /// its target at once.
+    fn without_motion(transition: Self::Transition) -> Self::Transition;
+}
+
+impl<T: Animatable> Retarget for Motion<T> {
+    type Target = T;
+    type Transition = Transition;
+
+    fn retarget(&mut self, target: T, transition: Transition, now: Duration) {
+        self.set_target(target, transition, now);
+    }
+
+    fn settles_at(&self) -> Option<Duration> {
+        Self::settles_at(self)
+    }
+
+    fn later(transition: Transition, by: Duration) -> Transition {
+        transition.delay(by.saturating_add(transition.start_delay()))
+    }
+
+    fn start_delay(transition: &Transition) -> Duration {
+        transition.start_delay()
+    }
+
+    fn without_motion(transition: Transition) -> Transition {
+        transition.without_motion()
+    }
+}
+
+impl Retarget for LookMotion {
+    type Target = crate::Look;
+    type Transition = Transitions;
+
+    fn retarget(&mut self, target: crate::Look, transitions: Transitions, now: Duration) {
+        self.set_target(target, transitions, now);
+    }
+
+    fn settles_at(&self) -> Option<Duration> {
+        Self::settles_at(self)
+    }
+
+    fn later(transitions: Transitions, by: Duration) -> Transitions {
+        transitions.delay(by)
+    }
+
+    fn start_delay(transitions: &Transitions) -> Duration {
+        transitions.start_delay()
+    }
+
+    fn without_motion(transitions: Transitions) -> Transitions {
+        transitions.without_motion()
+    }
 }
 
 /// When one step of a [`Sequence`] starts and when it ends, counted on the
@@ -81,27 +155,54 @@ impl Sequence {
             start: now,
             last: none,
             settles: now,
+            still: false,
+        }
+    }
+
+    /// The same sequence with no motion and no schedule: each step holds
+    /// still only for its transition's own delay, then is at its target at
+    /// once, as a variant's elements are under reduced motion. For reduced
+    /// motion: a step says it starts and ends after its own delay.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Easing, Motion, Sequence, Tween};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let fade = Tween::new(ms(100), Easing::Linear);
+    /// let (mut title, mut body) = (Motion::at(0.0), Motion::at(0.0));
+    /// let mut entrance = Sequence::starting_at(ms(0)).without_motion();
+    /// entrance.then(&mut title, 1.0, fade);
+    /// entrance.then(&mut body, 1.0, fade);
+    /// assert_eq!((title.sample(ms(0)).value, body.sample(ms(0)).value), (1.0, 1.0));
+    /// assert_eq!(entrance.settles_at(), ms(0));
+    /// ```
+    #[must_use]
+    pub const fn without_motion(self) -> Self {
+        Self {
+            still: true,
+            ..self
         }
     }
 
     /// Adds a step that starts when the step before it ends, or when the
     /// sequence starts if it is the first.
-    pub fn then<T: Animatable>(
+    pub fn then<M: Retarget>(
         &mut self,
-        motion: &mut Motion<T>,
-        target: T,
-        transition: impl Into<Transition>,
+        motion: &mut M,
+        target: M::Target,
+        transition: impl Into<M::Transition>,
     ) -> Step {
         self.at(self.last.ends, motion, target, transition)
     }
 
     /// Adds a step that starts together with the step before it. The two are
     /// one group: a [`then`](Self::then) after them waits for the longer.
-    pub fn with<T: Animatable>(
+    pub fn with<M: Retarget>(
         &mut self,
-        motion: &mut Motion<T>,
-        target: T,
-        transition: impl Into<Transition>,
+        motion: &mut M,
+        target: M::Target,
+        transition: impl Into<M::Transition>,
     ) -> Step {
         let before = self.last;
         let step = self.at(before.starts, motion, target, transition);
@@ -113,30 +214,40 @@ impl Sequence {
     /// starts, or before it ends, to overlap. A time before the sequence
     /// starts counts as its start. A delay on `transition` is added to it,
     /// and the step starts after both.
-    pub fn at<T: Animatable>(
+    pub fn at<M: Retarget>(
         &mut self,
         starts: Duration,
-        motion: &mut Motion<T>,
-        target: T,
-        transition: impl Into<Transition>,
+        motion: &mut M,
+        target: M::Target,
+        transition: impl Into<M::Transition>,
     ) -> Step {
         let starts = starts.max(self.start);
-        let transition = transition.into();
-        let delay = starts
-            .saturating_sub(self.start)
-            .saturating_add(transition.start_delay());
-        motion.set_target(target, transition.delay(delay), self.start);
-        let starts = self.start.saturating_add(delay);
+        let mut transition = transition.into();
+        if self.still {
+            transition = M::without_motion(transition);
+        }
+        // With no motion there is no schedule: only the step's own delay.
+        let place = if self.still {
+            Duration::ZERO
+        } else {
+            starts.saturating_sub(self.start)
+        };
+        motion.retarget(target, M::later(transition, place), self.start);
+        let starts = self
+            .start
+            .saturating_add(place)
+            .saturating_add(M::start_delay(&transition));
+        let settles = Retarget::settles_at(motion);
         // A motion already on its target ended when its target was set,
         // before its place: then the step ends where it starts.
         let step = Step {
             starts,
-            ends: motion.settles_at().unwrap_or(starts).max(starts),
+            ends: settles.unwrap_or(starts).max(starts),
         };
         self.last = step;
         // A motion already on its target moves nothing at its place: it does
         // not hold the sequence's end back, as no frame would wait for it.
-        self.settles = self.settles.max(motion.settles_at().unwrap_or(self.start));
+        self.settles = self.settles.max(settles.unwrap_or(self.start));
         step
     }
 
@@ -396,5 +507,71 @@ button  1300 ms to 1400 ms
         entrance.then(&mut toast, 0.0, linear(100));
         assert!(!gone.check(Some(entrance.settles_at()), ms(560)));
         assert!(gone.check(Some(entrance.settles_at()), ms(600)));
+    }
+
+    #[test]
+    fn a_look_then_a_value_run_one_after_the_other() {
+        use crate::Look;
+        let fade = Transitions::new().all(linear(100));
+        let mut card = LookMotion::at(Look::new().opacity(0.0).offset(0.0, 20.0));
+        let mut count = Motion::at(0.0);
+        let mut entrance = Sequence::starting_at(ms(1000));
+        let first = entrance.then(&mut card, Look::new().opacity(1.0).offset(0.0, 0.0), fade);
+        let second = entrance.then(&mut count, 10.0, linear(200));
+        assert_eq!(first.to_string(), "1000 ms to 1100 ms");
+        assert_eq!(second.to_string(), "1100 ms to 1300 ms");
+        assert_eq!(entrance.settles_at(), ms(1300));
+        let at = |t| {
+            let look = card.sample(ms(t)).value;
+            (
+                look.opacity.unwrap(),
+                look.offset.unwrap().1,
+                count.sample(ms(t)).value,
+            )
+        };
+        assert_eq!(at(1000), (0.0, 20.0, 0.0));
+        assert_eq!(at(1050), (0.5, 10.0, 0.0));
+        assert_eq!(at(1100), (1.0, 0.0, 0.0));
+        assert_eq!(at(1200), (1.0, 0.0, 5.0));
+        assert_eq!(at(1300), (1.0, 0.0, 10.0));
+        assert!(count.sample(ms(1300)).settled);
+    }
+
+    #[test]
+    fn a_look_whose_values_wait_their_own_delays_starts_with_the_first() {
+        use crate::Look;
+        let late = Transitions::new()
+            .all(linear(100).delay(ms(40)))
+            .opacity(linear(100).delay(ms(10)));
+        let mut card = LookMotion::at(Look::new().opacity(0.0).width(0.0));
+        let mut entrance = Sequence::starting_at(ms(0));
+        entrance.then(&mut Motion::at(0.0), 1.0, linear(50));
+        let step = entrance.then(&mut card, Look::new().opacity(1.0).width(100.0), late);
+        assert_eq!(step.to_string(), "60 ms to 190 ms");
+        assert_eq!(card.sample(ms(110)).value.opacity, Some(0.5));
+        assert_eq!(card.sample(ms(140)).value.width, Some(50.0));
+    }
+
+    #[test]
+    fn without_motion_each_step_is_there_after_its_own_delay_only() {
+        use crate::Look;
+        let mut card = LookMotion::at(Look::new().opacity(0.0));
+        let mut count = Motion::at(0.0);
+        let mut entrance = Sequence::starting_at(ms(0)).without_motion();
+        entrance.then(
+            &mut card,
+            Look::new().opacity(1.0),
+            Transitions::new().all(linear(100)),
+        );
+        let late = entrance.at(ms(500), &mut count, 10.0, linear(200).delay(ms(30)));
+        assert_eq!(card.sample(ms(0)).value.opacity, Some(1.0));
+        assert_eq!(
+            count.sample(ms(29)).value,
+            0.0,
+            "it holds for its own delay"
+        );
+        assert_eq!(count.sample(ms(30)).value, 10.0, "then is there at once");
+        assert_eq!(late.to_string(), "30 ms to 30 ms");
+        assert_eq!(entrance.settles_at(), ms(30));
     }
 }

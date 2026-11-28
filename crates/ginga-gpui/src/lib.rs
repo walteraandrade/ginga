@@ -34,7 +34,7 @@ pub use ginga;
 use ginga::Animatable;
 pub use ginga::{
     Coast, CoastError, Color, Easing, InOut, KeyframesError, Look, LookMotion, Map, MapError,
-    Mapped, Order, Phase, Sample, Sequence, SettledOnce, Shown, ShownItem, Slot, Spring,
+    Mapped, Order, Phase, Retarget, Sample, Sequence, SettledOnce, Shown, ShownItem, Slot, Spring,
     SpringError, Step, Stop, Swap, Trace, Transition, Transitions, Tween,
 };
 pub use glide::{GlideExt, Glides};
@@ -245,6 +245,27 @@ pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition
         transition.without_motion()
     } else {
         transition
+    }
+}
+
+/// A [`Sequence`] that starts at `now`, a time on the view's [`Clock`]. When
+/// the desktop asks for reduced motion it has no motion and no schedule
+/// ([`Sequence::without_motion`]): each step is at its target once its own
+/// delay is over, as a variant's elements are.
+///
+/// ```ignore
+/// // On a click, with the view's clock and its engine motions:
+/// let mut entrance = ginga_gpui::sequence(self.clock.now(cx), cx);
+/// entrance.then(&mut self.card, Look::new().opacity(1.), Transitions::new().all(Spring::SNAPPY));
+/// entrance.then(&mut self.count, 10., Tween::new(ms(200), Easing::Out));
+/// ```
+#[must_use]
+pub fn sequence(now: Duration, cx: &App) -> Sequence {
+    let sequence = Sequence::starting_at(now);
+    if reduced(cx) {
+        sequence.without_motion()
+    } else {
+        sequence
     }
 }
 

@@ -63,8 +63,8 @@ impl Page {
     pub fn all(cx: &mut App) -> Vec<Page> {
         use crate::{
             color::Button, compose::Compose, drag::Throw, gestures::Buttons, island::IslandPage,
-            list::Rows, look::Card, presence::Toast, pulse::Pulse, shared::Shared, toward::Toward,
-            transitions::Arrive, variants::Menus, ways::Ways,
+            layout::Layout, list::Rows, look::Card, presence::Toast, pulse::Pulse, shared::Shared,
+            toward::Toward, transitions::Arrive, variants::Menus, ways::Ways,
         };
         vec![
             Page::new(
@@ -96,6 +96,12 @@ impl Page {
                 "Rows arrive and leave a list.",
                 cx.new(|cx| Rows::new(cx)),
                 Rows::play,
+            ),
+            Page::new(
+                "layout",
+                "Cards in a wrapping row glide to their new places when the first one goes or comes back.",
+                cx.new(|_| Layout::new()),
+                Layout::play,
             ),
             Page::new(
                 "look",

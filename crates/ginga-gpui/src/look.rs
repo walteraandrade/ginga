@@ -89,6 +89,27 @@ impl<E: Styled + IntoElement + 'static> LookExt for E {}
 #[derive(Debug, Clone, Default)]
 pub struct LookState(Rc<RefCell<Option<Moving>>>);
 
+impl LookState {
+    /// The look's motion as the element last set it, and this frame's time
+    /// on its clock: read it with [`LookMotion::sample`] or write it down
+    /// with [`Trace::of`](ginga::Trace::of), as a test or a log would.
+    /// `None` until an element has drawn with it.
+    ///
+    /// Reading it changes nothing, starts no clock and asks for no frame.
+    ///
+    /// ```ignore
+    /// let (motion, now) = self.card.inspect(cx).unwrap();
+    /// println!("{}", Trace::of(&motion, now, Duration::from_millis(16)));
+    /// ```
+    #[must_use]
+    pub fn inspect(&self, cx: &App) -> Option<(LookMotion, std::time::Duration)> {
+        let moving = self.0.borrow();
+        moving
+            .as_ref()
+            .map(|moving| (moving.motion, moving.clock.peek(cx)))
+    }
+}
+
 /// An element's look on its way, and the clock it is read on.
 #[derive(Debug)]
 struct Moving {

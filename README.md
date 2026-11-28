@@ -697,14 +697,16 @@ What you reach for elsewhere, and where it is here. Where the answer is a few li
 | Motion's `animate`, SwiftUI's `.animation`, Compose's `animate*AsState` | `ginga_gpui::Motion::toward(target, transition, ..)` in a view, `.look(id, look, transition)` on an element |
 | A spring, a tween, `duration`/`bounce`, `stiffness`/`damping`/`mass` | `Spring::new(response).bounce(..)`, `Spring::physical(..)`, `Tween::new(duration, easing)`, `Transition::Instant` |
 | `keyframes`, `repeat`, `repeatType: "mirror"`, `steps()` | `Keyframes` with `.times(n)`, `.forever()`, `.mirrored()`, `.pause(..)`; steps: [below](#steps) |
-| `useTransform`, `interpolate`, `animateColor` | `Map::new(..)?.of(&motion)`, `.clamped()`; through several stops: [below](#through-several-stops) |
+| `useTransform`, `interpolate` | `Map::new(..)?.of(&motion)`, or `Map::new(..)?.clamped().of(&motion)`; through several stops: [below](#through-several-stops) |
+| `animateColor`, `animateColorAsState` | a color moves as any value: `ginga_gpui::Motion<Rgba>` or `<Hsla>`, or a look's `background`, `text_color`, `border_color` |
 | Variants, `staggerChildren`, `when: "beforeChildren"`, `staggerDirection: -1` | `Variant` with `.stagger(..)`, `Order`, `set_in_order`; backward or from the centre: [below](#a-stagger-backward-or-from-the-centre) |
 | `AnimatePresence`, `exit`, `onExitComplete`, `mode="wait"` | `Presence`, `present(..)` with `.leave_to(..)` and `.on_gone(..)`, `Swap::Wait`, `PresenceList` |
 | `layout`, `layoutId`, `animateContentSize` | `.glides(..)`, `.shared(key, ..)`, `.opened(id, 1.).height_glides(..)` |
 | `whileHover`, `whileTap`, `whileFocus` | `.hover(..)`, `.pressed(..)`, `.focused(..)` |
-| `drag`, `dragConstraints`, `dragElastic`, a fling | `.draggable(..)` and `Coast` |
+| `drag`, `dragConstraints`, a fling | `.draggable(..)` with `.within(..)`, and `Coast`. While held it stays under the pointer, past a limit too, and springs back when let go; there is no `dragElastic` |
 | `useScroll`, a scroll that animates | a `Map` of the scroll position, or a `Motion` written into the `ScrollHandle`: [below](#from-the-scroll-position) |
 | `useReducedMotion`, `MotionConfig reducedMotion` | GPUI's `reduce_motion` flag, read for you (`unless_reduced`). The pinned GPUI does not fill it from the desktop, so the app sets it: [below](#reduced-motion-on-purpose) |
+| A test of an animation | `sample(now)` and `Trace::of(..)`, read at given times: [below](#writing-it-down) |
 | `onAnimationComplete`, `.then` | `Sample::settled`, `settles_at()`, `SettledOnce` |
 | GSAP's timeline, Motion's `animate([...])` sequences | `Sequence` with `then`, `with`, `at`; pause, seek, speed, reverse: [below](#pause-seek-speed-reverse) |
 | `scale`, `rotate`, `transform` on a `div` | GPUI cannot: a `div` has no transform. Change its size or its offset; an icon turns with its own transformation: [below](#an-icon-that-turns) |
@@ -740,15 +742,17 @@ A value through several stops, as `useTransform` with arrays: keyframes read at 
 use std::time::Duration;
 use ginga::{Easing, Keyframes, Stop};
 
-let at = Duration::from_secs_f32;
-// Scroll progress 0 → 0.5 → 1 gives opacity 0 → 1 → 0. The number becomes a
-// `Duration`, so it must be finite and not negative: clamp it first.
+// The number becomes a time, which cannot be negative or NaN: hold it to 0..=1
+// first, since a bouncy spring passes both ends a little.
+let at = |x: f32| Duration::from_secs_f32(x.max(0.0).min(1.0));
+// Scroll progress 0 → 0.5 → 1 gives opacity 0 → 1 → 0.
 let fade = Keyframes::new([
     Stop::new(at(0.0), 0.0, Easing::Linear),
     Stop::new(at(0.5), 1.0, Easing::Linear),
     Stop::new(at(1.0), 0.0, Easing::Linear),
 ])?;
 assert_eq!(fade.sample(at(0.75)).value, 0.5);
+assert_eq!(fade.sample(at(-0.04)).value, 0.0); // past the start: held there
 # Ok::<(), ginga::KeyframesError>(())
 ```
 
@@ -773,10 +777,12 @@ A value from the scroll position is a `Map` of where the scroll is. A scroll tha
 ```rust,ignore
 let (offset, max) = (self.scroll.offset(), self.scroll.max_offset());
 let progress = (-offset.y / max.y.max(px(1.))).clamp(0., 1.);
-let header = Map::new(0., 1., 64., 40.)?.clamped().at(progress);
+// `self.header` is a `Map::new(0., 1., 64., 40.)?.clamped()`, built once in `new`.
+let header = self.header.at(progress);
 
-// A scroll that glides to `target`: `self.glide` is an `Option<Motion<f32>>`,
-// set to `Some` when the glide starts.
+// A scroll that glides to `target`: `self.glide` is an `Option<Motion<f32>>`.
+// It starts from where the scroll is, not where an old glide left it:
+//     self.glide = Some(Motion::at(-self.scroll.offset().y.as_f32()));
 if let Some(glide) = &mut self.glide {
     let y = glide.toward(target, Spring::SMOOTH, window, cx);
     self.scroll.set_offset(point(px(0.), px(-y)));
@@ -794,7 +800,11 @@ A `div` cannot rotate, but an `svg` can: give its transformation a motion. The g
 
 ```rust,ignore
 let turned = self.turned.toward(if open { 0.25 } else { 0. }, Spring::SNAPPY, window, cx);
-svg().path("icons/chevron.svg").size(px(24.)).with_transformation(Transformation::rotate(radians(turned * TAU)))
+svg()
+    .path("icons/chevron.svg") // from the app's `AssetSource`
+    .size(px(24.))
+    .text_color(rgb(0xe0e2e6)) // an svg draws only in its own text color
+    .with_transformation(Transformation::rotate(radians(turned * TAU)))
 ```
 
 ### Writing it down

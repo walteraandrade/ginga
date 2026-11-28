@@ -1,6 +1,6 @@
 # Recipes
 
-Find what you want to do in the table, then copy the recipe. The engine recipes below are complete programs, imports included, and they run as tests on every change, so they compile against the current API. The GPUI recipes are short sketches, and each one links to a gallery page that does the same thing in full and compiles in CI.
+Find what you want to do in the table, then copy the recipe. Each engine recipe is a whole `main.rs`, imports included, and runs as a test on every change, so it compiles against the current API. Each GPUI recipe is a whole view from the gallery app, included here from its source file, which CI compiles.
 
 ## I want to…
 
@@ -34,7 +34,7 @@ Find what you want to do in the table, then copy the recipe. The engine recipes 
 
 ## Engine recipes
 
-Each one needs only `ginga = "0.1"`. Time is a `Duration` from any moment you choose; in an app it is the frame's time, and here it is written out so the numbers can be checked.
+Each one needs only `ginga = "0.1"` and is a whole `main.rs`. Time is a `Duration` from any moment you choose; in an app it is the frame's time, and here it is written out so the numbers can be checked.
 
 ### Move a value toward a target on every frame
 
@@ -59,19 +59,21 @@ impl Panel {
     }
 }
 
-let ms = Duration::from_millis;
-let mut panel = Panel { open: true, width: Motion::at(0.0) };
+fn main() {
+    let ms = Duration::from_millis;
+    let mut panel = Panel { open: true, width: Motion::at(0.0) };
 
-let (width, again) = panel.frame(ms(0));
-assert_eq!(width, 0.0);
-assert!(again); // on its way: ask for the next frame
+    let (width, again) = panel.frame(ms(0));
+    assert_eq!(width, 0.0);
+    assert!(again); // on its way: ask for the next frame
 
-let (width, again) = panel.frame(ms(100));
-assert!(width > 0.0 && width < 320.0 && again);
+    let (width, again) = panel.frame(ms(100));
+    assert!(width > 0.0 && width < 320.0 && again);
 
-let (width, again) = panel.frame(ms(2_000));
-assert_eq!(width, 320.0); // settled exactly on its target
-assert!(!again);          // stop asking for frames
+    let (width, again) = panel.frame(ms(2_000));
+    assert_eq!(width, 320.0); // settled exactly on its target
+    assert!(!again);          // stop asking for frames
+}
 ```
 
 ### Show and hide a toast
@@ -82,20 +84,22 @@ The toast keeps its content while it leaves, so there is always something to dra
 use std::time::Duration;
 use ginga::{Easing, Phase, Presence, Tween};
 
-let ms = Duration::from_millis;
-let fade = Tween::new(ms(200), Easing::Linear);
-let mut toast = Presence::absent();
+fn main() {
+    let ms = Duration::from_millis;
+    let fade = Tween::new(ms(200), Easing::Linear);
+    let mut toast = Presence::absent();
 
-toast.show("Saved", fade, ms(0));
-toast.hide(fade, ms(1_000));
+    toast.show("Saved", fade, ms(0));
+    toast.hide(fade, ms(1_000));
 
-// Each frame: draw what `frame` gives, with its progress as the opacity.
-let shown = toast.frame(ms(1_100)).unwrap();
-assert_eq!(*shown.content, "Saved");
-assert_eq!(shown.phase, Phase::Exiting);
-assert_eq!(shown.progress, 0.5);
+    // Each frame: draw what `frame` gives, with its progress as the opacity.
+    let shown = toast.frame(ms(1_100)).unwrap();
+    assert_eq!(*shown.content, "Saved");
+    assert_eq!(shown.phase, Phase::Exiting);
+    assert_eq!(shown.progress, 0.5);
 
-assert!(toast.frame(ms(1_200)).is_none()); // gone: draw nothing
+    assert!(toast.frame(ms(1_200)).is_none()); // gone: draw nothing
+}
 ```
 
 ### Animate a list as items arrive and leave
@@ -106,24 +110,26 @@ Tell the list what it holds; it says what to draw, with each item's phase and pr
 use std::time::Duration;
 use ginga::{Easing, InOut, Phase, PresenceList, Spring, Tween};
 
-let ms = Duration::from_millis;
-let ways = InOut::new(Tween::new(ms(150), Easing::Out), Tween::new(ms(150), Easing::In));
-const ROW: f32 = 40.0;
+fn main() {
+    let ms = Duration::from_millis;
+    let ways = InOut::new(Tween::new(ms(150), Easing::Out), Tween::new(ms(150), Easing::In));
+    const ROW: f32 = 40.0;
 
-let mut rows = PresenceList::new();
-rows.sync([(1, "Inbox"), (2, "Sent"), (3, "Drafts")], ways, ms(0));
-rows.place_all(|index, _| index as f32 * ROW, Spring::SNAPPY, ms(0));
+    let mut rows = PresenceList::new();
+    rows.sync([(1, "Inbox"), (2, "Sent"), (3, "Drafts")], ways, ms(0));
+    rows.place_all(|index, _| index as f32 * ROW, Spring::SNAPPY, ms(0));
 
-// "Sent" is removed: it leaves, and keeps its place until it is gone.
-rows.sync([(1, "Inbox"), (3, "Drafts")], ways, ms(1_000));
-rows.place_all(|index, _| index as f32 * ROW, Spring::SNAPPY, ms(1_000));
+    // "Sent" is removed: it leaves, and keeps its place until it is gone.
+    rows.sync([(1, "Inbox"), (3, "Drafts")], ways, ms(1_000));
+    rows.place_all(|index, _| index as f32 * ROW, Spring::SNAPPY, ms(1_000));
 
-let drawn: Vec<_> = rows.frame(ms(1_050)).map(|row| (*row.content, row.phase)).collect();
-assert_eq!(drawn, [("Inbox", Phase::Present), ("Sent", Phase::Exiting), ("Drafts", Phase::Present)]);
+    let drawn: Vec<_> = rows.frame(ms(1_050)).map(|row| (*row.content, row.phase)).collect();
+    assert_eq!(drawn, [("Inbox", Phase::Present), ("Sent", Phase::Exiting), ("Drafts", Phase::Present)]);
 
-// Once it is gone, "Drafts" travels up to its new place.
-let after: Vec<_> = rows.frame(ms(1_200)).map(|row| *row.content).collect();
-assert_eq!(after, ["Inbox", "Drafts"]);
+    // Once it is gone, "Drafts" travels up to its new place.
+    let after: Vec<_> = rows.frame(ms(1_200)).map(|row| *row.content).collect();
+    assert_eq!(after, ["Inbox", "Drafts"]);
+}
 ```
 
 ### Make a group arrive one after another
@@ -134,15 +140,17 @@ A stagger is a delay one step longer for each item, up to a cap.
 use std::time::Duration;
 use ginga::{Motion, Spring};
 
-let ms = Duration::from_millis;
-let mut cards = [Motion::at(0.0); 6];
-for (n, card) in (0..).zip(&mut cards) {
-    let delay = (ms(50) * n).min(ms(200));
-    card.set_target(1.0, Spring::SMOOTH.delay(delay), ms(0));
-}
+fn main() {
+    let ms = Duration::from_millis;
+    let mut cards = [Motion::at(0.0); 6];
+    for (n, card) in (0..).zip(&mut cards) {
+        let delay = (ms(50) * n).min(ms(200));
+        card.set_target(1.0, Spring::SMOOTH.delay(delay), ms(0));
+    }
 
-let moving = cards.iter().filter(|card| card.sample(ms(120)).value > 0.0).count();
-assert_eq!(moving, 3); // the ones delayed 0, 50 and 100 ms
+    let moving = cards.iter().filter(|card| card.sample(ms(120)).value > 0.0).count();
+    assert_eq!(moving, 3); // the ones delayed 0, 50 and 100 ms
+}
 ```
 
 ### Pulse forever
@@ -153,18 +161,20 @@ Keyframes go through stops and can repeat. A loop that repeats forever is never 
 use std::time::Duration;
 use ginga::{Easing, Keyframes, Stop};
 
-let ms = Duration::from_millis;
-let pulse = Keyframes::new([
-    Stop::new(ms(0), 1.0, Easing::Linear),
-    Stop::new(ms(600), 0.4, Easing::InOutSine),
-])?
-.mirrored()
-.forever();
+fn main() -> Result<(), ginga::KeyframesError> {
+    let ms = Duration::from_millis;
+    let pulse = Keyframes::new([
+        Stop::new(ms(0), 1.0, Easing::Linear),
+        Stop::new(ms(600), 0.4, Easing::InOutSine),
+    ])?
+    .mirrored()
+    .forever();
 
-assert_eq!(pulse.sample(ms(600)).value, 0.4);   // the end of the first round
-assert_eq!(pulse.sample(ms(1_200)).value, 1.0); // mirrored: back again
-assert_eq!(pulse.settles_at(), None);           // it never ends
-# Ok::<(), ginga::KeyframesError>(())
+    assert_eq!(pulse.sample(ms(600)).value, 0.4);   // the end of the first round
+    assert_eq!(pulse.sample(ms(1_200)).value, 1.0); // mirrored: back again
+    assert_eq!(pulse.settles_at(), None);           // it never ends
+    Ok(())
+}
 ```
 
 ### Throw a card and let it glide
@@ -175,18 +185,20 @@ A `Trail` measures the speed the card is let go with; `coast_within` glides it t
 use std::time::Duration;
 use ginga::{Coast, Motion, Trail};
 
-let ms = Duration::from_millis;
-let mut trail = Trail::default();
-trail.note(ms(0), 0.0);
-trail.note(ms(50), 40.0); // dragged 40 px in 50 ms
-let speed = trail.speed(ms(50));
-assert!(speed > 0.0); // px per second, toward the right
+fn main() {
+    let ms = Duration::from_millis;
+    let mut trail = Trail::default();
+    trail.note(ms(0), 0.0);
+    trail.note(ms(50), 40.0); // dragged 40 px in 50 ms
+    let speed = trail.speed(ms(50));
+    assert!(speed > 0.0); // px per second, toward the right
 
-let mut card = Motion::at(40.0);
-card.coast_within(speed, Coast::QUICK, 0.0, 300.0, ms(50));
-let rest = card.settles_at().unwrap();
-let end = card.sample(rest).value;
-assert!(end > 40.0 && end <= 300.0); // it glides on, and stays inside
+    let mut card = Motion::at(40.0);
+    card.coast_within(speed, Coast::QUICK, 0.0, 300.0, ms(50));
+    let rest = card.settles_at().unwrap();
+    let end = card.sample(rest).value;
+    assert!(end > 40.0 && end <= 300.0); // it glides on, and stays inside
+}
 ```
 
 ### Chain three motions
@@ -197,18 +209,20 @@ A `Sequence` sets each motion's target once, with a delay; nothing runs between 
 use std::time::Duration;
 use ginga::{Easing, Motion, Sequence, Tween};
 
-let ms = Duration::from_millis;
-let fade = Tween::new(ms(100), Easing::Linear);
-let (mut title, mut body, mut button) = (Motion::at(0.0), Motion::at(0.0), Motion::at(0.0));
+fn main() {
+    let ms = Duration::from_millis;
+    let fade = Tween::new(ms(100), Easing::Linear);
+    let (mut title, mut body, mut button) = (Motion::at(0.0), Motion::at(0.0), Motion::at(0.0));
 
-let mut entrance = Sequence::starting_at(ms(0));
-entrance.then(&mut title, 1.0, fade);  // 0 to 100 ms
-entrance.then(&mut body, 1.0, fade);   // 100 to 200 ms
-entrance.with(&mut button, 1.0, fade); // with the body
+    let mut entrance = Sequence::starting_at(ms(0));
+    entrance.then(&mut title, 1.0, fade);  // 0 to 100 ms
+    entrance.then(&mut body, 1.0, fade);   // 100 to 200 ms
+    entrance.with(&mut button, 1.0, fade); // with the body
 
-assert_eq!(body.sample(ms(150)).value, 0.5);
-assert_eq!(button.sample(ms(150)).value, 0.5);
-assert_eq!(entrance.settles_at(), ms(200));
+    assert_eq!(body.sample(ms(150)).value, 0.5);
+    assert_eq!(button.sample(ms(150)).value, 0.5);
+    assert_eq!(entrance.settles_at(), ms(200));
+}
 ```
 
 ### Move a type of your own
@@ -235,10 +249,12 @@ impl Animatable for Camera {
     }
 }
 
-let ms = Duration::from_millis;
-let mut camera = Motion::at(Camera { zoom: 1.0, angle: 0.0 });
-camera.set_target(Camera { zoom: 2.0, angle: 90.0 }, Tween::new(ms(100), Easing::Linear), ms(0));
-assert_eq!(camera.sample(ms(50)).value, Camera { zoom: 1.5, angle: 45.0 });
+fn main() {
+    let ms = Duration::from_millis;
+    let mut camera = Motion::at(Camera { zoom: 1.0, angle: 0.0 });
+    camera.set_target(Camera { zoom: 2.0, angle: 90.0 }, Tween::new(ms(100), Easing::Linear), ms(0));
+    assert_eq!(camera.sample(ms(50)).value, Camera { zoom: 1.5, angle: 45.0 });
+}
 ```
 
 ### Check a motion in a test
@@ -249,72 +265,43 @@ Read it at given times, or write it down with `Trace` and compare the text. The 
 use std::time::Duration;
 use ginga::{Easing, Motion, Trace, Tween};
 
-let ms = Duration::from_millis;
-let mut x = Motion::at(0.0);
-x.set_target(100.0, Tween::new(ms(200), Easing::Linear), ms(0));
+fn main() {
+    let ms = Duration::from_millis;
+    let mut x = Motion::at(0.0);
+    x.set_target(100.0, Tween::new(ms(200), Easing::Linear), ms(0));
 
-assert_eq!(x.sample(ms(100)).value, 50.0);
+    assert_eq!(x.sample(ms(100)).value, 50.0);
 
-let trace = Trace::of(&x, ms(0), ms(50)).to_string();
-assert!(trace.contains("100.000  settled"));
-println!("{trace}"); // a table of times and values, one row per 50 ms
+    let trace = Trace::of(&x, ms(0), ms(50)).to_string();
+    assert!(trace.contains("100.000  settled"));
+    println!("{trace}"); // a table of times and values, one row per 50 ms
+}
 ```
 
 ## GPUI recipes
 
-These need `ginga-gpui = "0.1"` and the GPUI it pins, `gpui-pre =0.3.12`. They are the lines that matter; each links to a gallery page that does the same in full and compiles in CI.
+These need `ginga-gpui = "0.1"` and the GPUI it pins, `gpui-pre =0.3.12`. Each is a whole view of the gallery app, included from its source file, which CI compiles; the gallery's [`main.rs`](https://github.com/walteraandrade/ginga/blob/main/crates/ginga-gpui/examples/gallery/main.rs) opens it in a window. Its `play` is what the gallery's Play button calls.
 
 ### GPUI: a panel that opens
 
-Keep the motion in the view, next to the state it animates. `toward` reads the frame's clock, asks for frames while the value moves, and goes at once under reduced motion. Full example: [`gallery/toward.rs`](https://github.com/walteraandrade/ginga/blob/main/crates/ginga-gpui/examples/gallery/toward.rs).
+Keep the motion in the view, next to the state it animates. `toward` reads the frame's clock, asks for frames while the value moves, and goes at once under reduced motion. From [`gallery/toward.rs`](https://github.com/walteraandrade/ginga/blob/main/crates/ginga-gpui/examples/gallery/toward.rs):
 
 ```rust,ignore
-use ginga_gpui::{Motion, Spring};
-use gpui::{Context, IntoElement, Pixels, Render, Styled, Window, div, px};
-
-struct Panel {
-    open: bool,
-    width: Motion<Pixels>,
-}
-
-impl Render for Panel {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let target = if self.open { px(320.) } else { px(0.) };
-        let width = self.width.toward(target, Spring::SNAPPY, window, cx);
-        div().w(width)
-    }
-}
+{{#include ../../crates/ginga-gpui/examples/gallery/toward.rs}}
 ```
 
 ### GPUI: a card that changes its look
 
-Say how the element should look; it gets there by itself, and the motion is kept with the element's id, so the view needs no field for it. Full example: [`gallery/look.rs`](https://github.com/walteraandrade/ginga/blob/main/crates/ginga-gpui/examples/gallery/look.rs).
+Say how the element should look; it gets there by itself, and the motion is kept with the element's id, so the view needs no field for it. From [`gallery/look.rs`](https://github.com/walteraandrade/ginga/blob/main/crates/ginga-gpui/examples/gallery/look.rs):
 
 ```rust,ignore
-use ginga_gpui::{Look, LookExt, Spring};
-use gpui::{Styled, div, rgb};
-
-let look = if self.open {
-    Look::new().size(320., 200.).opacity(1.)
-} else {
-    Look::new().size(160., 100.).opacity(0.6)
-};
-div().bg(rgb(0x2a2f3a)).look("card", look, Spring::SNAPPY)
+{{#include ../../crates/ginga-gpui/examples/gallery/look.rs}}
 ```
 
 ### GPUI: a toast that rises in and fades out
 
-`present` draws a thing while it is there and keeps drawing it on its way out, with no field in the view. Full example: [`gallery/ways.rs`](https://github.com/walteraandrade/ginga/blob/main/crates/ginga-gpui/examples/gallery/ways.rs).
+`present` draws a thing while it is there and keeps drawing it on its way out, with no field in the view; titles swap in the same place, crossing or one after the other. From [`gallery/ways.rs`](https://github.com/walteraandrade/ginga/blob/main/crates/ginga-gpui/examples/gallery/ways.rs):
 
 ```rust,ignore
-use std::time::Duration;
-use ginga_gpui::{Easing, InOut, Look, Spring, Tween, present};
-use gpui::{ParentElement, Styled, div};
-
-let ways = InOut::new(Spring::SNAPPY, Tween::new(Duration::from_millis(200), Easing::In));
-present("toast", self.saved.then_some("Saved"), ways, |text| {
-    div().px_4().py_2().rounded_lg().child(*text)
-})
-.arrive_from(Look::new().offset(0., 24.).opacity(0.))
-.leave_to(Look::new().opacity(0.))
+{{#include ../../crates/ginga-gpui/examples/gallery/ways.rs}}
 ```

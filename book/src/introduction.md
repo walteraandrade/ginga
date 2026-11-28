@@ -1,11 +1,9 @@
 # ginga
 
-**ginga is an animation library for Rust user interfaces.** It moves values (numbers, points, sizes, colors and your own types) with springs, tweens, keyframes and coasting, and keeps a thing drawable while it leaves. It has two crates:
+**ginga is an animation library for Rust user interfaces, where motion is a pure function of time.** It moves values (numbers, points, sizes, colors and your own types) with springs, tweens, keyframes and coasting, and keeps a thing drawable while it leaves. It has two crates:
 
 - [`ginga`](https://crates.io/crates/ginga), the engine: no dependencies and no UI framework. It fits any Rust UI or game loop. Read the time once a frame, hand it to the motion, draw the value it answers, and ask for another frame until it says it is settled.
 - [`ginga-gpui`](https://crates.io/crates/ginga-gpui), for [GPUI](https://www.gpui.rs), the UI framework of the Zed editor. A look is declared on an element, and the adapter adds ways in and out, lists that reorder, shared elements, dragging and loops. It reads the frame's clock and asks for frames for you.
-
-Motion for Rust UIs, as a pure function of time.
 
 A `Motion` is a value on its way to a target. You own it, you hand it the time, and it answers with the value at that time. Nothing ticks, nothing allocates while it runs, and the same times always give the same values. That makes motion something a test, a log or a coding agent can read as text, without a screen.
 

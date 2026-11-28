@@ -279,6 +279,7 @@ fn reading_derived_values_and_running_a_sequence_allocates_nothing() {
         .clamped();
     let mut progress = Motion::at(0.0);
     let (mut a, mut b, mut c) = (Motion::at(0.0), Motion::at(0.0), Motion::at(0.0));
+    let mut card = LookMotion::at(Look::new().opacity(0.0).offset(0.0, 12.0));
     let mut ended = SettledOnce::default();
     let mut checksum = 0.0;
     let before = allocations();
@@ -300,8 +301,16 @@ fn reading_derived_values_and_running_a_sequence_allocates_nothing() {
                 side,
                 Spring::SMOOTH,
             );
-            checksum += entrance.settles_at().as_secs_f32();
+            // A look as a step too, and every fourth round with no motion.
+            let look = Look::new().opacity(side).offset(0.0, 12.0 * (1.0 - side));
+            let mut cards = Sequence::starting_at(now);
+            if (frame / 120).is_multiple_of(4) {
+                cards = cards.without_motion();
+            }
+            cards.then(&mut card, look, Transitions::new().all(Spring::SNAPPY));
+            checksum += entrance.settles_at().as_secs_f32() + cards.settles_at().as_secs_f32();
         }
+        checksum += card.sample(now).value.opacity.unwrap_or_default();
         let px = width.of(&progress).sample(now).value;
         checksum += px + fill.at(px).green + c.sample(now).value;
         if ended.check(c.settles_at(), now) {

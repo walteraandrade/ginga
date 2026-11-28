@@ -1,10 +1,12 @@
 //! Motions composed: a bar whose color follows its width, and an entrance
-//! of three steps, one after another, the last overlapping the one before.
+//! of three steps, one after another, the last a look overlapping the one
+//! before.
 
 use std::time::Duration;
 
 use ginga_gpui::{
-    Animate, Clock, Color, Easing, Map, Sequence, SettledOnce, Spring, Tween, ginga, unless_reduced,
+    Animate, Clock, Color, Easing, Look, LookExt, LookMotion, Map, Sequence, SettledOnce, Spring,
+    Tween, ginga, sequence, unless_reduced,
 };
 use gpui::{Context, IntoElement, ParentElement, Render, Rgba, Styled, Window, div, px, rgb};
 
@@ -13,8 +15,10 @@ pub struct Compose {
     clock: Clock,
     /// The bar's progress, from 0 to 1.
     progress: ginga::Motion<f32>,
-    /// The three steps of the entrance, each from 0 (away) to 1 (here).
-    steps: [ginga::Motion<f32>; 3],
+    /// The first two steps of the entrance, each from 0 (away) to 1 (here).
+    steps: [ginga::Motion<f32>; 2],
+    /// The third step, a look: the button rises and fades in.
+    button: LookMotion,
     /// The last entrance, once Play is pressed.
     entrance: Option<Sequence>,
     ended: SettledOnce,
@@ -28,7 +32,8 @@ impl Compose {
             shown: false,
             clock: Clock::default(),
             progress: ginga::Motion::at(0.0),
-            steps: [ginga::Motion::at(0.0); 3],
+            steps: [ginga::Motion::at(0.0); 2],
+            button: LookMotion::at(away()),
             entrance: None,
             ended: SettledOnce::default(),
             endings: 0,
@@ -41,18 +46,22 @@ impl Compose {
         let to = if self.shown { 1.0 } else { 0.0 };
         self.progress
             .set_target(to, unless_reduced(Spring::BOUNCY, cx), now);
-        // The lines to copy: three steps, the third starting 120 ms before
-        // the second ends.
-        let fade = unless_reduced(Tween::new(Duration::from_millis(300), Easing::Out), cx);
-        let [title, body, button] = &mut self.steps;
-        let mut entrance = Sequence::starting_at(now);
+        // The lines to copy: three steps, the third a look starting 120 ms
+        // before the second ends. Under reduced motion each is there at once.
+        let fade = Tween::new(Duration::from_millis(300), Easing::Out);
+        let [title, body] = &mut self.steps;
+        let mut entrance = sequence(now, cx);
         entrance.then(title, to, fade);
         let second = entrance.then(body, to, fade);
         entrance.at(
             second.ends.saturating_sub(Duration::from_millis(120)),
-            button,
-            to,
-            unless_reduced(Spring::SNAPPY, cx),
+            &mut self.button,
+            if self.shown {
+                Look::new().offset(0., 0.).opacity(1.)
+            } else {
+                away()
+            },
+            Spring::SNAPPY,
         );
         self.entrance = Some(entrance);
         cx.notify();
@@ -71,11 +80,12 @@ impl Render for Compose {
         let bar = width.of(&self.progress).sample(now);
         let color = fill.at(bar.value);
         let steps = self.steps.map(|step| step.sample(now));
+        let button = self.button.sample(now);
         let ends = self.entrance.map(|entrance| entrance.settles_at());
         if self.ended.check(ends, now) {
             self.endings += 1;
         }
-        if !bar.settled || steps.iter().any(|step| !step.settled) {
+        if !bar.settled || !button.settled || steps.iter().any(|step| !step.settled) {
             window.request_animation_frame();
         }
         let line = |text: &'static str, step: ginga::Sample<f32>| {
@@ -114,8 +124,17 @@ impl Render for Compose {
                     .bg(rgb(0x0022_252b))
                     .child(line("1. A title", steps[0]))
                     .child(line("2. A body, after it", steps[1]))
-                    .child(line("3. A button, 120 ms early", steps[2])),
+                    .child(
+                        div()
+                            .child("3. A button, a look, 120 ms early")
+                            .with_look(button.value),
+                    ),
             )
             .child(format!("The steps have ended {} times", self.endings))
     }
+}
+
+/// Where the button is while the entrance is away.
+fn away() -> Look {
+    Look::new().offset(0., 24.).opacity(0.)
 }

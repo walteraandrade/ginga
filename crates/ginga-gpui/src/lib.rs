@@ -248,6 +248,28 @@ pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition
     }
 }
 
+/// A [`Sequence`] that starts at `now`, a time on the view's [`Clock`]. When
+/// the desktop asks for reduced motion it has no motion and no schedule
+/// ([`Sequence::without_motion`]): each step is at its target once its own
+/// delay is over, as a variant's elements are.
+///
+/// ```ignore
+/// // On a click, with the view's clock and its engine motions:
+/// let ms = Duration::from_millis;
+/// let mut entrance = ginga_gpui::sequence(self.clock.now(cx), cx);
+/// entrance.then(&mut self.card, Look::new().opacity(1.), Transitions::new().all(Spring::SNAPPY));
+/// entrance.then(&mut self.count, 10., Tween::new(ms(200), Easing::Out));
+/// ```
+#[must_use]
+pub fn sequence(now: Duration, cx: &App) -> Sequence {
+    let sequence = Sequence::starting_at(now);
+    if reduced(cx) {
+        sequence.without_motion()
+    } else {
+        sequence
+    }
+}
+
 /// The desktop asks for reduced motion: then every motion in the adapter
 /// drops its motion, and is at its target at once after its delay. The one place that asks.
 fn reduced(cx: &App) -> bool {

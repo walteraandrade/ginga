@@ -70,7 +70,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Map** (`Map`, `Map::of`). A value derived from a number: one range mapped onto a range of anything that moves, in a straight line per channel, going on past the ends unless `.clamped()`. Read from a motion with `of`, it samples, settles and traces like one.
 
-**Sequence** (`Sequence`, `Step`). Motions started as one at set times: `then` after the step before, `with` together with it, `at` a given time. It sets each target once with a delay and keeps only the times; a *step* is one motion's start and end.
+**Sequence** (`Sequence`, `Step`). Motions started as one at set times: `then` after the step before, `with` together with it, `at` a given time. It sets each target once with a delay and keeps only the times; a *step* is one motion's start and end. A step is anything **retargeted** (`Retarget`): a `Motion` with a `Transition` or a `LookMotion` with `Transitions`. *Without motion* (`Sequence::without_motion`, the adapter's `sequence(now, cx)` under reduced motion) a sequence drops its schedule too: each step is there after its own delay.
 
 **Settled once** (`SettledOnce`). Says `true` once, on the first check at or after an end time: for code that runs once when a motion or a sequence settles. A new target before a motion's end moves the end, and the old one is never reported; a target taken at once ends when it is set. A sequence's end never moves.
 
@@ -144,7 +144,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Clock** (`ginga_gpui::Clock`). The frame's time as the `Duration` the engine counts in, from the first frame the clock saw. The engine never reads a clock; the adapter reads one and hands the time on.
 
-**Reduced motion.** The desktop's setting for less motion. Under it, the adapter's motions, looks and presences keep each transition's delay and drop its motion (`unless_reduced`, `Transition::without_motion`, `Transitions::without_motion`): a delayed value holds still, then is at its target at once. A variant's schedule and a shared element's trip are dropped whole. See [[decisions/2026-11-27-reduced-motion-keeps-delays]].
+**Reduced motion.** The desktop's setting for less motion. Under it, the adapter's motions, looks and presences keep each transition's delay and drop its motion (`unless_reduced`, `Transition::without_motion`, `Transitions::without_motion`): a delayed value holds still, then is at its target at once. A variant's schedule, a sequence's schedule (`ginga_gpui::sequence`) and a shared element's trip are dropped whole. See [[decisions/2026-11-27-reduced-motion-keeps-delays]].
 
 **Animate** (`ginga_gpui::Animate`) and **stand-in** (`ginga_gpui::InPixels`). The orphan rule keeps the adapter from implementing `Animatable` for GPUI's own types, so each GPUI type that can move names a stand-in that the engine moves instead. `InPixels` is the stand-in for pixels: it stops a tenth of a pixel from the target.
 

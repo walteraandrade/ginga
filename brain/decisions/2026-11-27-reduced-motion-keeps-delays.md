@@ -13,5 +13,6 @@
 
 - A stagger built from delays (see [[decisions/2026-11-27-stagger-is-a-delay-on-the-transition]]) still steps under reduced motion, as jumps one after another.
 - A variant's schedule is not kept: under reduced motion every element of a variant takes its look at once, as [[decisions/2026-11-27-variants-are-a-handle-passed-by-hand]] says. The schedule is choreography of motion, not a delay the app gave one value.
+- A sequence started with `ginga_gpui::sequence(now, cx)` drops its schedule too: each step is at its target after its own delay ([[decisions/2026-11-28-a-step-is-anything-retargeted]]).
 - A shared element still does not travel and does not wait: it is in its destination at once.
 - `settles_at` of a value under reduced motion is the time its delay ends.

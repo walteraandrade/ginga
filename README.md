@@ -172,11 +172,11 @@ assert_eq!(knob.sample(knob.settles_at().unwrap()).value, 200.0);
 
 A `Map` derives a value from a number: `Map::new(from_start, from_end, to_start, to_end)?` maps one range onto a range of anything that moves, such as a progress into a width, or a width into a color. Past an end it goes on in the same line, as a spring's overshoot should; `.clamped()` holds it to the ends. `map.at(number)` maps one number, and `map.of(&motion)` reads it from a motion each frame: it samples and writes down as a `Trace` like a motion, and reading it allocates nothing. A value that *follows* another with a spring needs nothing new: hand the leader's value to `follower.toward(..)` on every frame.
 
-A `Sequence` starts several motions as one: `then` starts a step when the one before ends, `with` together with it, and `at(time, ..)` at a set time, such as 120 ms before the one before ends. Each step sets its motion's target once, with a delay; nothing runs between frames. Each call returns the `Step`'s start and end, and `settles_at()` says when the last one ends. Add every step when the sequence starts, and give each motion one step. `SettledOnce` says `true` once, on the first frame at or after a motion's or a sequence's end: for code that runs once at the end. A motion's end moves with a new target, so the old end never comes and the new one is reported instead; a target taken at once, as under reduced motion, ends when it is set, or when its delay ends. A sequence's end is the time it was given and does not move: to wait for a new end, start another sequence. In a GPUI view, a sequence moves engine motions (`ginga::Motion`, also reachable as `ginga_gpui::ginga::Motion`) read with the view's `ginga_gpui::Clock`, as any motion the view's own logic keeps. Use one `SettledOnce` for each thing you wait for: two ends at the same time are one end to it.
+A `Sequence` starts several motions as one: `then` starts a step when the one before ends, `with` together with it, and `at(time, ..)` at a set time, such as 120 ms before the one before ends. Each step sets its motion's target once, with a delay; nothing runs between frames. Each call returns the `Step`'s start and end, and `settles_at()` says when the last one ends. Add every step when the sequence starts, and give each motion one step. `SettledOnce` says `true` once, on the first frame at or after a motion's or a sequence's end: for code that runs once at the end. A motion's end moves with a new target, so the old end never comes and the new one is reported instead; a target taken at once, as under reduced motion, ends when it is set, or when its delay ends. A sequence's end is the time it was given and does not move: to wait for a new end, start another sequence. A step is a `Motion` with a transition or a `LookMotion` with `Transitions` (both are `Retarget`), so a look can follow a value: for a look, the step starts when the first of its values starts. In a GPUI view, a sequence moves engine motions (`ginga::Motion`, also reachable as `ginga_gpui::ginga::Motion`) and looks, read with the view's `ginga_gpui::Clock`, as any motion the view's own logic keeps. Start it with `ginga_gpui::sequence(now, cx)`: under reduced motion it is `Sequence::without_motion`, with no motion and no schedule, so each step is at its target once its own delay is over. Use one `SettledOnce` for each thing you wait for: two ends at the same time are one end to it.
 
 ```rust
 use std::time::Duration;
-use ginga::{Color, Easing, Map, Motion, Sequence, SettledOnce, Tween};
+use ginga::{Color, Easing, Look, LookMotion, Map, Motion, Sequence, SettledOnce, Transitions, Tween};
 
 let ms = Duration::from_millis;
 let fade = Tween::new(ms(100), Easing::Linear);
@@ -190,13 +190,21 @@ let now = width.of(&progress).sample(ms(50)).value;
 assert_eq!(now, 140.0);
 assert_eq!(fill.at(300.0), Color::hex(0x30a46c));
 
-// Three steps: one after another, the last overlapping by 40 ms.
-let (mut title, mut body, mut button) = (Motion::at(0.0), Motion::at(0.0), Motion::at(0.0));
+// Three steps: one after another, the last a look overlapping by 40 ms.
+let (mut title, mut body) = (Motion::at(0.0), Motion::at(0.0));
+let mut button = LookMotion::at(Look::new().offset(0.0, 24.0).opacity(0.0));
 let mut entrance = Sequence::starting_at(ms(0));
 entrance.then(&mut title, 1.0, fade);
 let second = entrance.then(&mut body, 1.0, fade);
-let third = entrance.at(second.ends.saturating_sub(ms(40)), &mut button, 1.0, fade);
+let here = Look::new().offset(0.0, 0.0).opacity(1.0);
+let third = entrance.at(second.ends.saturating_sub(ms(40)), &mut button, here, Transitions::new().all(fade));
 assert_eq!(third.to_string(), "160 ms to 260 ms");
+assert_eq!(button.sample(ms(210)).value, Look::new().offset(0.0, 12.0).opacity(0.5));
+
+// Without motion, as under reduced motion: each step is there after its own delay.
+let mut still = Sequence::starting_at(ms(0)).without_motion();
+still.then(&mut Motion::at(0.0), 1.0, fade);
+assert_eq!(still.settles_at(), ms(0));
 
 let mut done = SettledOnce::default();
 assert!(!done.check(Some(entrance.settles_at()), ms(250)));

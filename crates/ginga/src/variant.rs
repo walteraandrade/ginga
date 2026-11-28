@@ -51,8 +51,9 @@ pub struct Variant<N> {
     step: Duration,
     /// The order of a change made with [`set`](Self::set).
     order: Order,
-    /// The order of the change running now.
-    running: Order,
+    /// The order of the change running now, once there is one: until then,
+    /// the order a change made with `set` would have.
+    running: Option<Order>,
     /// When the parent is settled on the new name, once it says so.
     parent_ends: Option<Duration>,
     /// When the last of the children is settled on it, once they say so.
@@ -82,7 +83,7 @@ impl<N: Copy + PartialEq> Variant<N> {
             since: Duration::ZERO,
             step: Duration::ZERO,
             order: Order::Together,
-            running: Order::Together,
+            running: None,
             parent_ends: None,
             children_end: None,
         }
@@ -94,14 +95,17 @@ impl<N: Copy + PartialEq> Variant<N> {
         Self { step, ..self }
     }
 
-    /// The same variant, with the parent and its children in `order`.
+    /// The same variant, with the parent and its children in `order` for
+    /// each change made with [`set`](Self::set). A change already running
+    /// keeps its order.
     #[must_use]
     pub const fn order(self, order: Order) -> Self {
-        Self {
-            order,
-            running: order,
-            ..self
-        }
+        Self { order, ..self }
+    }
+
+    /// The order of the change running now.
+    fn running(&self) -> Order {
+        self.running.unwrap_or(self.order)
     }
 
     /// The name the parent shows.
@@ -110,11 +114,12 @@ impl<N: Copy + PartialEq> Variant<N> {
         self.name
     }
 
-    /// The parent waits for its children ([`Order::ChildrenFirst`]): ask
-    /// for its delay only after they said when they end.
+    /// The change running now has the parent wait for its children
+    /// ([`Order::ChildrenFirst`]): ask for its delay only after they said
+    /// when they end.
     #[must_use]
     pub fn parent_waits_for_children(&self) -> bool {
-        self.running == Order::ChildrenFirst
+        self.running() == Order::ChildrenFirst
     }
 
     /// Shows `name` from `now`. A new name starts the schedule again, and
@@ -155,7 +160,7 @@ impl<N: Copy + PartialEq> Variant<N> {
         }
         self.name = name;
         self.since = now;
-        self.running = order;
+        self.running = Some(order);
         self.parent_ends = None;
         self.children_end = None;
         true
@@ -167,7 +172,7 @@ impl<N: Copy + PartialEq> Variant<N> {
     /// asked before any child said, it does not wait at all.
     #[must_use]
     pub fn parent_delay(&self, now: Duration) -> Duration {
-        let starts = match self.running {
+        let starts = match self.running() {
             Order::ChildrenFirst => self.children_end.unwrap_or(self.since),
             Order::Together | Order::ParentFirst => self.since,
         };
@@ -181,7 +186,7 @@ impl<N: Copy + PartialEq> Variant<N> {
     /// place has passed starts at once.
     #[must_use]
     pub fn child_delay(&self, index: u32, now: Duration) -> Duration {
-        let first = match self.running {
+        let first = match self.running() {
             Order::ParentFirst => self.parent_ends.unwrap_or(self.since),
             Order::Together | Order::ChildrenFirst => self.since,
         };
@@ -406,5 +411,53 @@ mod tests {
         assert!(!menu.set_in_order(Menu::Shown, Order::ChildrenFirst, ms(50)));
         assert!(!menu.parent_waits_for_children());
         assert_eq!(menu.child_delay(0, ms(50)), ms(50));
+    }
+
+    #[test]
+    fn a_variant_never_changed_waits_as_it_was_built() {
+        assert!(
+            Variant::new(Menu::Hidden)
+                .order(Order::ChildrenFirst)
+                .parent_waits_for_children()
+        );
+        assert!(!Variant::new(Menu::Hidden).parent_waits_for_children());
+    }
+
+    #[test]
+    fn a_new_built_order_leaves_the_running_change_alone() {
+        let mut menu = Variant::new(Menu::Hidden).stagger(ms(50));
+        menu.set_in_order(Menu::Shown, Order::ChildrenFirst, ms(0));
+        let mut menu = menu.order(Order::Together);
+        assert!(menu.parent_waits_for_children(), "still children first");
+        assert!(menu.set(Menu::Hidden, ms(500)));
+        assert!(
+            !menu.parent_waits_for_children(),
+            "the next set is together"
+        );
+    }
+
+    #[test]
+    fn set_in_order_with_the_built_order_or_together_is_set() {
+        for order in [Order::ParentFirst, Order::Together] {
+            let mut built = Variant::new(Menu::Hidden).stagger(ms(50)).order(order);
+            let mut given = built;
+            built.set(Menu::Shown, ms(0));
+            given.set_in_order(Menu::Shown, order, ms(0));
+            built.parent_ends(ms(100));
+            given.parent_ends(ms(100));
+            assert_eq!(built, given);
+            assert_eq!(given.child_delay(1, ms(0)), built.child_delay(1, ms(0)));
+        }
+        let mut menu = Variant::new(Menu::Hidden)
+            .stagger(ms(50))
+            .order(Order::ParentFirst);
+        menu.set_in_order(Menu::Shown, Order::Together, ms(0));
+        menu.parent_ends(ms(100));
+        assert_eq!(
+            menu.child_delay(0, ms(0)),
+            Duration::ZERO,
+            "together: no wait"
+        );
+        assert_eq!(menu.child_delay(1, ms(0)), ms(50));
     }
 }

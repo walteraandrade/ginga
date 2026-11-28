@@ -549,6 +549,10 @@ for (n, row) in (0..).zip(&mut rows) {
 }
 // The panel fades in over 100 ms; then the rows, 50 ms apart.
 assert_eq!(rows.map(|row| row.sample(ms(175)).value.opacity.unwrap()), [0.75, 0.25, 0.0]);
+
+// Closing gives its own order: the rows first, then the panel.
+menu.set_in_order(false, Order::ChildrenFirst, ms(500));
+assert!(menu.parent_waits_for_children());
 ```
 
 ## An element to drag

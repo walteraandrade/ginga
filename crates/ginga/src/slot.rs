@@ -519,11 +519,11 @@ mod tests {
         slot.show("one", ways(), ms(0));
         slot.hide(Tween::new(ms(100), Easing::Linear), ms(100));
         slot.frame(ms(199));
-        assert!(all_gone(&mut slot).is_empty());
+        assert_eq!(all_gone(&mut slot), [] as [&str; 0]);
         slot.frame(ms(200));
         assert_eq!(all_gone(&mut slot), ["one"]);
         slot.frame(ms(300));
-        assert!(all_gone(&mut slot).is_empty(), "once");
+        assert_eq!(all_gone(&mut slot), [] as [&str; 0], "once");
     }
 
     #[test]
@@ -567,7 +567,7 @@ mod tests {
         slot.show("two", ways(), ms(100));
         slot.show("one", ways(), ms(130));
         slot.frame(ms(400));
-        assert!(all_gone(&mut slot).is_empty());
+        assert_eq!(all_gone(&mut slot), [] as [&str; 0]);
         assert_eq!(
             slot.frame(ms(400))[2].map(|shown| *shown.content),
             Some("one")

@@ -414,7 +414,8 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         cx: &mut App,
     ) -> ((LayoutId, LaidOut), Moving) {
         let (look, moving, held) = self.frame(moving, window, cx);
-        let laid_out = self.lay_out_children(look, held, &moving, window, cx);
+        self.held = held;
+        let laid_out = self.lay_out_children(look, &moving, window, cx);
         (laid_out, moving)
     }
 
@@ -422,7 +423,6 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
     fn lay_out_children(
         &mut self,
         look: Look,
-        held: Option<Held>,
         moving: &Moving,
         window: &mut Window,
         cx: &mut App,
@@ -430,7 +430,6 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         let element = self.element.take().expect("an element is laid out once");
         let mut element = styled(element, look).into_any_element();
         let layout = element.request_layout(window, cx);
-        self.held = held;
         let drawn = LaidOut {
             layout,
             element,
@@ -673,7 +672,8 @@ impl<E: Styled + IntoElement + 'static> Element for Looked<E> {
                 // child that reads it sees this frame's motion; not borrowed
                 // meanwhile.
                 *state.0.borrow_mut() = Some(moving.clone());
-                let laid_out = self.lay_out_children(look, held, &moving, window, cx);
+                self.held = held;
+                let laid_out = self.lay_out_children(look, &moving, window, cx);
                 (laid_out, Some((state, moving)))
             }
             (Keep::Id(_), Some(id)) => (

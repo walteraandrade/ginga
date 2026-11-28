@@ -329,6 +329,7 @@ fn swapping_a_slot_and_mixing_its_looks_allocates_nothing() {
     let from = Look::new().offset(0.0, 24.0).opacity(0.0);
     let mut slot = Slot::new(Swap::Wait);
     let mut checksum = 0.0;
+    let mut gone_count = 0;
     let before = allocations();
     for frame in 0..10_000u64 {
         let now = Duration::from_micros(frame * 8_333);
@@ -342,9 +343,13 @@ fn swapping_a_slot_and_mixing_its_looks_allocates_nothing() {
             let look = from.mix(Look::new(), shown.progress);
             checksum += look.opacity.unwrap_or_default();
         }
+        while let Some(gone) = slot.take_gone() {
+            gone_count += gone + 1;
+        }
     }
     let after = allocations();
     assert!(checksum > 0.0);
+    assert!(gone_count > 0, "contents were gone and handed back");
     assert_eq!(after - before, 0);
 }
 

@@ -33,10 +33,22 @@ struct Stage {
     drawn: Drawn,
     clicks: Rc<Cell<u32>>,
     focus: FocusHandle,
+    /// The contents found gone, in the order they went.
+    gone: Gone,
+    /// How many times the view rendered.
+    renders: Rc<Cell<u32>>,
+    /// Draws no `present` at all.
+    hidden: bool,
+    /// Renders again when content is gone, as a view that changes then does.
+    renders_on_gone: bool,
 }
 
+/// The contents a stage found gone.
+type Gone = Rc<RefCell<Vec<&'static str>>>;
+
 impl Render for Stage {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.renders.set(self.renders.get() + 1);
         let fade = Tween::new(ms(100), Easing::Linear).delay(self.delay);
         let (drawn, clicks, focus) = (self.drawn.clone(), self.clicks.clone(), self.focus.clone());
         let shown = present(
@@ -59,7 +71,19 @@ impl Render for Stage {
                     )
             },
         )
-        .swap(self.swap);
+        .swap(self.swap)
+        .on_gone({
+            let view = cx.entity().downgrade();
+            move |name, _, cx| {
+                view.update(cx, |this, cx| {
+                    this.gone.borrow_mut().push(name);
+                    if this.renders_on_gone {
+                        cx.notify();
+                    }
+                })
+                .ok();
+            }
+        });
         let shown = if self.looks {
             shown
                 .arrive_from(Look::new().offset(0., 40.))
@@ -67,16 +91,22 @@ impl Render for Stage {
         } else {
             shown
         };
-        div().size_full().pt(px(100.)).child(shown)
+        div()
+            .size_full()
+            .pt(px(100.))
+            .children((!self.hidden).then_some(shown))
     }
 }
 
 struct Opened<'a> {
     cx: &'a mut VisualTestContext,
+    view: gpui::Entity<Stage>,
     wanted: Rc<Cell<Option<&'static str>>>,
     drawn: Drawn,
     clicks: Rc<Cell<u32>>,
     focus: FocusHandle,
+    gone: Gone,
+    renders: Rc<Cell<u32>>,
 }
 
 fn open<'a>(cx: &'a mut TestAppContext, first: Option<&'static str>, swap: Swap) -> Opened<'a> {
@@ -91,11 +121,22 @@ fn open_with<'a>(
     delay: Duration,
 ) -> Opened<'a> {
     let wanted = Rc::new(Cell::new(first));
-    let (drawn, clicks) = (Drawn::default(), Rc::new(Cell::new(0)));
+    let (drawn, clicks, gone, renders) = (
+        Drawn::default(),
+        Rc::new(Cell::new(0)),
+        Gone::default(),
+        Rc::new(Cell::new(0)),
+    );
     let focus = cx.update(|cx| cx.focus_handle());
-    let (_, cx) = cx.add_window_view({
-        let (wanted, drawn, clicks, focus) =
-            (wanted.clone(), drawn.clone(), clicks.clone(), focus.clone());
+    let (view, cx) = cx.add_window_view({
+        let (wanted, drawn, clicks, focus, gone, renders) = (
+            wanted.clone(),
+            drawn.clone(),
+            clicks.clone(),
+            focus.clone(),
+            gone.clone(),
+            renders.clone(),
+        );
         move |_, _| Stage {
             wanted,
             swap,
@@ -104,15 +145,22 @@ fn open_with<'a>(
             drawn,
             clicks,
             focus,
+            gone,
+            renders,
+            hidden: false,
+            renders_on_gone: false,
         }
     });
     cx.run_until_parked();
     Opened {
         cx,
+        view,
         wanted,
         drawn,
         clicks,
         focus,
+        gone,
+        renders,
     }
 }
 
@@ -134,6 +182,11 @@ impl Opened<'_> {
             .iter()
             .map(|(name, bounds)| (*name, f32::from(bounds.origin.y) - 100.))
             .collect()
+    }
+
+    /// The contents found gone so far, in the order they went.
+    fn gone(&self) -> Vec<&'static str> {
+        self.gone.borrow().clone()
     }
 
     /// Wants `content` from the next frame on.
@@ -269,4 +322,152 @@ fn under_reduced_motion_it_is_there_and_gone_at_once(cx: &mut TestAppContext) {
     assert_eq!(stage.last(), [("toast", 0.)]);
     stage.want(None);
     assert_eq!(stage.last(), []);
+}
+
+#[gpui::test]
+fn when_its_way_out_is_over_it_says_so_once(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("toast"), Swap::Sync);
+    stage.after(100);
+    stage.want(None);
+    stage.after(50);
+    assert_eq!(stage.gone().len(), 0, "still leaving");
+    assert_eq!(stage.after(49).len(), 1, "drawn at 99 ms");
+    assert_eq!(stage.gone().len(), 0);
+    assert_eq!(stage.after(1), []);
+    assert_eq!(stage.gone(), ["toast"], "the frame at 100 ms");
+    stage.after(100);
+    stage.want(None);
+    stage.after(16);
+    assert_eq!(stage.gone().len(), 1, "and never again");
+}
+
+#[gpui::test]
+fn wanted_again_on_its_way_out_it_is_not_gone(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("toast"), Swap::Sync);
+    stage.after(100);
+    stage.want(None);
+    stage.after(50);
+    stage.want(Some("toast"));
+    stage.after(50);
+    stage.after(100);
+    assert_eq!(stage.gone().len(), 0);
+}
+
+#[gpui::test]
+fn an_instant_way_out_is_over_on_the_frame_that_starts_it(cx: &mut TestAppContext) {
+    let mut stage = open_with(cx, Some("toast"), Swap::Sync, false, Duration::ZERO);
+    stage.after(16);
+    stage.want(None);
+    assert_eq!(stage.last(), []);
+    assert_eq!(stage.gone().len(), 1);
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_way_out_is_over_at_once(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let mut stage = open(cx, Some("toast"), Swap::Sync);
+    stage.after(16);
+    stage.want(None);
+    assert_eq!(stage.gone().len(), 1);
+}
+
+#[gpui::test]
+fn each_content_a_swap_sends_away_is_gone_once(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("one"), Swap::Sync);
+    stage.after(100);
+    stage.want(Some("two"));
+    stage.after(30);
+    stage.want(Some("three"));
+    stage.after(30);
+    assert_eq!(stage.gone().len(), 0, "two leave, one arrives");
+    stage.after(40);
+    assert_eq!(stage.gone(), ["one"], "the first is gone at 100 ms");
+    stage.after(30);
+    assert_eq!(
+        stage.gone(),
+        ["one", "two"],
+        "the second 100 ms after it left"
+    );
+    // Drawn again, still wanted: what is here is not gone.
+    stage.want(Some("three"));
+    stage.after(100);
+    assert_eq!(stage.gone().len(), 2, "the one here is not gone");
+}
+
+#[gpui::test]
+fn content_held_back_by_a_swap_that_waits_is_not_gone(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("one"), Swap::Wait);
+    stage.after(100);
+    stage.want(Some("two"));
+    stage.after(50);
+    stage.after(60);
+    assert_eq!(stage.gone().len(), 1, "only the one that left");
+    stage.after(200);
+    assert_eq!(stage.gone().len(), 1);
+}
+
+#[gpui::test]
+fn two_contents_gone_by_one_frame_are_each_gone(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("one"), Swap::Sync);
+    stage.after(100);
+    stage.want(Some("two"));
+    stage.after(30);
+    stage.want(Some("three"));
+    stage.after(200);
+    assert_eq!(stage.gone(), ["one", "two"]);
+}
+
+#[gpui::test]
+fn content_a_wait_drops_unseen_is_not_gone(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("one"), Swap::Wait);
+    stage.after(100);
+    stage.want(Some("two"));
+    stage.after(30);
+    stage.want(Some("three"));
+    stage.after(30);
+    stage.want(None);
+    stage.after(200);
+    assert_eq!(stage.gone(), ["one"], "two and three were never seen");
+}
+
+#[gpui::test]
+fn a_fourth_swap_while_two_leave_cuts_the_oldest_short_and_it_is_gone(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("one"), Swap::Sync);
+    stage.after(100);
+    for name in ["two", "three", "four"] {
+        stage.want(Some(name));
+        stage.after(10);
+    }
+    assert_eq!(stage.gone(), ["one"], "cut short at 20 ms");
+}
+
+#[gpui::test]
+fn content_there_when_the_element_stops_being_drawn_is_not_gone(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("toast"), Swap::Sync);
+    stage.after(100);
+    stage.want(None);
+    stage.after(50);
+    stage.view.update(stage.cx, |this, cx| {
+        this.hidden = true;
+        cx.notify();
+    });
+    stage.after(200);
+    assert_eq!(stage.gone(), Vec::<&str>::new());
+}
+
+#[gpui::test]
+fn what_it_changes_when_content_is_gone_draws_the_next_frame(cx: &mut TestAppContext) {
+    let mut stage = open(cx, Some("toast"), Swap::Sync);
+    stage
+        .view
+        .update(stage.cx, |this, _| this.renders_on_gone = true);
+    stage.after(100);
+    stage.want(None);
+    stage.after(50);
+    let renders = stage.renders.get();
+    stage.after(50);
+    assert_eq!(stage.gone(), ["toast"]);
+    // The frame that finds it gone, and the one the view's change asks for:
+    // a change made while the frame is drawn would ask for none.
+    assert_eq!(stage.renders.get(), renders + 2);
 }

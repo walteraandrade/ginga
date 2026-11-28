@@ -5,6 +5,7 @@ Each release of `ginga` and `ginga-gpui`, newest first. The two crates are relea
 ## Unreleased
 
 - A `Sequence` step can be a `LookMotion` as well as a `Motion`: `then`, `with` and `at` take any `Retarget`. `Sequence::without_motion`, and in the adapter `ginga_gpui::sequence(now, cx)`, a sequence that under reduced motion puts each step at its target after its own delay.
+- `Present::on_gone(|content, window, cx| ..)`: called with each content once it is gone, after the frame that finds it gone, instant ways out and reduced motion included. `Slot::take_gone`, in the engine: what was seen and let go, once each; content a wait dropped unseen is not gone. Content that waited while what was leaving came back is now dropped at once, unseen, instead of leaving.
 - `LookState::inspect(cx)`: a declared look's engine motion and this frame's time, to write it down with `Trace::of`.
 - `.glides(id, transition)` (`GlideExt`, `Glides`): an element travels to where layout puts it, painted, with layout untouched; scrolls, painted offsets and a glide around it are not moves.
 - `.opened(id, progress)` (`OpenExt`, `Opened`): an element that takes `progress` of its own height, measured as it is laid out, as an accordion opens; what is past the open part is cut off and takes no clicks.

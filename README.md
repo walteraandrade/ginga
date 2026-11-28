@@ -270,7 +270,12 @@ title.show("Sent", InOut::new(fade, fade), ms(0));
 let [leaving, _, arriving] = title.frame(ms(50));
 assert_eq!(leaving.unwrap().progress, 0.5); // "Inbox", halfway out
 assert!(arriving.is_none()); // "Sent" waits for it, unseen
+
+title.frame(ms(100));
+assert_eq!(title.take_gone(), Some("Inbox")); // seen, and its way out is over
 ```
+
+`take_gone` hands back, once each, what was seen and let go: its way out over, or cut short by a fourth swap while two leave. What waited and was never seen is not gone.
 
 `Look::mix` draws a way in or out as a look: the look a thing arrives from, mixed into its own by its progress. A `Map` moves one value and a `LookMotion` moves a look in time; `mix` is a look at a progress that something else, such as a presence, moves.
 
@@ -481,7 +486,7 @@ present("toast", self.saved.then_some("Saved"), ways, |text| {
 .leave_to(Look::new().opacity(0.))
 ```
 
-Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once.
+Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once. `.on_gone(|content, window, cx| ..)` is called with each content once it is gone, after the frame that finds it gone: to drop what the view kept for it, or to move the focus. An instant way out, or one that reduced motion makes instant, is over on the frame that starts it; content wanted again on its way out is not gone.
 
 ### Gliding to a new place
 

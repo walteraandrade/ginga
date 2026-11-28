@@ -3,11 +3,11 @@
 
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-use ginga_gpui::{Easing, GlideExt, Look, LookExt, Tween};
+use ginga_gpui::{Easing, GlideExt, Look, LookExt, Spring, Transition, Tween};
 use gpui::{
     Bounds, Context, InteractiveElement, IntoElement, ParentElement, Pixels, Render, ScrollHandle,
     StatefulInteractiveElement, Styled, TestAppContext, Window, WindowHandle, canvas, div, point,
-    px, size,
+    prelude::FluentBuilder, px, size,
 };
 
 fn ms(millis: u64) -> Duration {
@@ -28,13 +28,20 @@ struct Row {
     outer: Option<f32>,
     scroll: ScrollHandle,
     drawn: Drawn,
+    /// How the card glides.
+    transition: Transition,
+    /// The card's width.
+    width: f32,
+    /// The card sits at the right end of a row as wide as the window, so
+    /// the window's width moves it.
+    right: bool,
 }
 
 impl Render for Row {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let drawn = self.drawn.clone();
         let card = div()
-            .w(px(20.))
+            .w(px(self.width))
             .h(px(20.))
             .child(
                 canvas(
@@ -43,9 +50,10 @@ impl Render for Row {
                 )
                 .size_full(),
             )
-            .glides("card", Tween::new(ms(200), Easing::Linear));
+            .glides("card", self.transition);
         let inner = div()
             .flex()
+            .when(self.right, |row| row.w_full().justify_end())
             .child(div().w(px(self.spacer)).h(px(20.)))
             .child(card);
         let content = match self.outer {
@@ -58,6 +66,7 @@ impl Render for Row {
         };
         div()
             .id("column")
+            .w_full()
             .h(px(100.))
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
@@ -79,6 +88,9 @@ fn open(cx: &mut TestAppContext, outer: Option<f32>) -> (WindowHandle<Row>, Draw
             outer,
             scroll: ScrollHandle::new(),
             drawn,
+            transition: Tween::new(ms(200), Easing::Linear).into(),
+            width: 20.,
+            right: false,
         }
     });
     cx.run_until_parked();
@@ -190,5 +202,108 @@ fn under_reduced_motion_it_is_in_its_place_at_once(cx: &mut TestAppContext) {
     let (window, drawn) = open(cx, None);
     change(&window, cx, |row| row.spacer = 100.);
     assert_eq!(x(&drawn), 100.0);
+    assert_eq!(after(16, &window, cx), 0);
+}
+
+#[gpui::test]
+fn a_second_move_on_the_way_keeps_its_speed(cx: &mut TestAppContext) {
+    let (window, drawn) = open(cx, None);
+    change(&window, cx, |row| row.transition = Spring::SNAPPY.into());
+    change(&window, cx, |row| row.spacer = 100.);
+    after(100, &window, cx);
+    change(&window, cx, |row| row.spacer = 0.);
+    after(16, &window, cx);
+    // The same moves on the engine's own motion: a spring that changes
+    // course goes on with the speed it had.
+    let mut motion = ginga::Motion::at(0.0_f32);
+    motion.set_target(100.0, Spring::SNAPPY, ms(0));
+    motion.set_target(0.0, Spring::SNAPPY, ms(100));
+    let kept = motion.sample(ms(116)).value;
+    // From rest at the same place, as if the speed were lost.
+    let mut from_rest = ginga::Motion::at(motion.sample(ms(100)).value);
+    from_rest.set_target(0.0, Spring::SNAPPY, ms(100));
+    let lost = from_rest.sample(ms(116)).value;
+    assert!(
+        (kept - lost).abs() > 2.0,
+        "the two differ: {kept} and {lost}"
+    );
+    // GPUI paints at the window's pixels, half a pixel at this scale.
+    assert!(
+        (x(&drawn) - kept).abs() <= 0.5,
+        "painted at {}, the motion is at {kept}",
+        x(&drawn)
+    );
+}
+
+#[gpui::test]
+fn a_change_of_the_window_size_is_not_a_move(cx: &mut TestAppContext) {
+    let (window, drawn) = open(cx, None);
+    change(&window, cx, |row| row.right = true);
+    after(200, &window, cx);
+    assert_eq!(after(16, &window, cx), 0);
+    assert_eq!(x(&drawn), 380.0, "at the right end of 400 px");
+    cx.simulate_window_resize(window.into(), size(px(300.), px(300.)));
+    cx.run_until_parked();
+    after(0, &window, cx);
+    assert_eq!(x(&drawn), 280.0, "in its new place at once");
+    assert_eq!(after(16, &window, cx), 0, "and it does not glide");
+}
+
+#[gpui::test]
+fn a_scroll_by_a_part_of_a_pixel_is_not_a_move(cx: &mut TestAppContext) {
+    let (window, drawn) = open(cx, None);
+    cx.simulate_window_scale_factor_change(window.into(), 1.0);
+    cx.run_until_parked();
+    for offset in [-30.4, -30.6, -30.5, -31.4] {
+        change(&window, cx, |row| {
+            row.scroll.set_offset(point(px(0.), px(offset)));
+        });
+        assert_eq!(
+            after(16, &window, cx),
+            0,
+            "a scroll to {offset} does not glide"
+        );
+        assert_eq!(x(&drawn), 0.0);
+    }
+}
+
+#[gpui::test]
+fn a_move_under_half_a_pixel_is_not_a_move(cx: &mut TestAppContext) {
+    let (window, drawn) = open(cx, None);
+    change(&window, cx, |row| row.spacer = 0.25);
+    assert_eq!(
+        after(16, &window, cx),
+        0,
+        "a quarter of a pixel does not glide"
+    );
+    change(&window, cx, |row| row.spacer = 1.0);
+    assert_eq!(after(16, &window, cx), 1, "a pixel glides");
+    assert!(x(&drawn) < 1.0, "on its way from where it was");
+}
+
+#[gpui::test]
+fn its_size_changes_at_once_while_its_place_glides(cx: &mut TestAppContext) {
+    let (window, drawn) = open(cx, None);
+    change(&window, cx, |row| {
+        row.spacer = 100.;
+        row.width = 60.;
+    });
+    let bounds = *drawn.borrow().last().unwrap();
+    assert_eq!(f32::from(bounds.size.width), 60.0, "its new size at once");
+    assert_eq!(f32::from(bounds.origin.x), 0.0, "where it was");
+}
+
+#[gpui::test]
+fn under_reduced_motion_it_holds_for_the_delay_then_is_in_place(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let (window, drawn) = open(cx, None);
+    change(&window, cx, |row| {
+        row.transition = Tween::new(ms(200), Easing::Linear).delay(ms(100)).into();
+    });
+    change(&window, cx, |row| row.spacer = 100.);
+    after(50, &window, cx);
+    assert_eq!(x(&drawn), 0.0, "it holds still for the delay");
+    after(50, &window, cx);
+    assert_eq!(x(&drawn), 100.0, "then it is in its place at once");
     assert_eq!(after(16, &window, cx), 0);
 }

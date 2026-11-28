@@ -11,7 +11,9 @@ use gpui::{
     StyleRefinement, Styled, Window, point, px, size,
 };
 
-use crate::{Clock, unless_reduced};
+use std::time::Duration;
+
+use crate::{Animate, Clock, unless_reduced};
 
 /// A move of the box, in pixels, shorter than this asks for no frame: a new
 /// height of the content that moves the box less is drawn on the next frame
@@ -106,7 +108,7 @@ struct Kept {
     clock: Clock,
     /// The height it opens to, heading for the content's own: once it has
     /// been measured, and only when its height glides.
-    glide: Option<ginga::Motion<f32>>,
+    glide: Option<ginga::Motion<<Pixels as Animate>::Repr>>,
 }
 
 /// What an opened element carries from layout to prepaint. `pub` in a
@@ -119,7 +121,10 @@ pub struct OpenedLayout {
     /// How much of it is open, held to `0.0..=1.0`.
     progress: f32,
     /// The box is not as tall as the content: what is past it is cut.
+    /// Decided in prepaint, once both heights are known.
     cut: bool,
+    /// This frame's time on the element's clock, read once, in layout.
+    now: Duration,
 }
 
 impl<E: Styled + IntoElement + 'static> IntoElement for Opened<E> {
@@ -168,14 +173,19 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
         cx: &mut App,
     ) -> (LayoutId, OpenedLayout) {
         let id = id.expect("an opened element has an id");
-        let (kept, gliding) = window.with_element_state(id, |kept: Option<Kept>, _| {
+        let (kept, gliding, now) = window.with_element_state(id, |kept: Option<Kept>, _| {
             let mut kept = kept.unwrap_or_default();
-            let now = kept.clock.now(cx);
+            // The clock is read only for a height that glides.
+            let now = if self.glide.is_some() {
+                kept.clock.now(cx)
+            } else {
+                Duration::ZERO
+            };
             let gliding = self
                 .glide
                 .and(kept.glide)
-                .map(|glide| px(glide.sample(now).value));
-            ((kept, gliding), kept)
+                .map(|glide| Pixels::from_repr(glide.sample(now).value));
+            ((kept, gliding, now), kept)
         });
         let mut element = self.element.take().expect("an element is laid out once");
         let progress = if self.progress.is_nan() {
@@ -206,6 +216,7 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
                 content,
                 progress,
                 cut: partly,
+                now,
             },
         )
     }
@@ -221,6 +232,9 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
     ) {
         let id = id.expect("an opened element has an id");
         let measured = window.layout_bounds(layout.content).size.height;
+        // Cut only what is past the box: a gliding box as tall as its
+        // content, settled, is the element as it is.
+        layout.cut = layout.progress < 1.0 || bounds.size.height < measured - px(LEAST_CHANGE);
         // Closed, nothing of it is drawn: it takes no clicks, no focus and
         // no keys, and draws nothing deferred.
         if layout.progress > 0.0 {
@@ -243,18 +257,31 @@ impl<E: Styled + IntoElement + 'static> Element for Opened<E> {
                 let moved = (height - before).abs() * progress;
                 return (progress < 1.0 && moved >= LEAST_CHANGE, kept);
             };
-            let now = kept.clock.now(cx);
-            let motion = kept.glide.get_or_insert(ginga::Motion::at(height));
+            let now = layout.now;
+            // Part of the way open, the first frame is laid out at no height.
+            let first = kept.glide.is_none() && progress < 1.0 && height * progress >= LEAST_CHANGE;
+            let motion = kept
+                .glide
+                .get_or_insert(ginga::Motion::at(measured.to_repr()));
+            let target = f32::from(Pixels::from_repr(motion.target()));
+            let sample = motion.sample(now);
             // The box was laid out at the height before: a change that
             // moves it is drawn from the next frame, even one taken at once.
-            let moves = (height - motion.target()).abs() * progress >= LEAST_CHANGE;
-            if moves {
-                motion.set_target(height, transition, now);
-            } else if motion.target() != height {
-                // Too small a change to move the box: it is taken at once.
-                motion.jump_to(height);
+            let moves = (height - target).abs() * progress >= LEAST_CHANGE;
+            if progress == 0.0 {
+                // Closed, it takes no room: it is at the new height, and asks
+                // for nothing.
+                motion.jump_to(measured.to_repr());
+                return (false, kept);
             }
-            (moves || !motion.sample(now).settled, kept)
+            if moves || (target != height && !sample.settled) {
+                // On its way, a small change keeps its course and its speed.
+                motion.set_target(measured.to_repr(), transition, now);
+            } else if target != height {
+                // Too small a change to move a box at rest: taken at once.
+                motion.jump_to(measured.to_repr());
+            }
+            (first || moves || !motion.sample(now).settled, kept)
         });
         if next_frame {
             window.request_animation_frame();

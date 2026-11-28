@@ -1,9 +1,10 @@
 //! Questions open and close as an accordion: each answer's height goes from
-//! nothing to its own, by its presence's progress.
+//! nothing to its own, by its presence's progress. Below, a note whose text
+//! grows and shrinks glides to its new height.
 
 use std::time::Duration;
 
-use ginga_gpui::{Easing, InOut, OpenExt, Presence, Tween};
+use ginga_gpui::{Easing, InOut, OpenExt, Presence, Spring, Tween};
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement,
     Styled, Window, div, px, rgb,
@@ -28,6 +29,8 @@ pub struct Accordion {
     answers: [Presence<&'static str>; 3],
     /// The question Play opens next.
     next: usize,
+    /// How many lines the note has.
+    lines: usize,
 }
 
 impl Accordion {
@@ -35,6 +38,7 @@ impl Accordion {
         Self {
             answers: [Presence::absent(), Presence::absent(), Presence::absent()],
             next: 0,
+            lines: 1,
         }
     }
 
@@ -61,6 +65,7 @@ impl Accordion {
     pub fn play(&mut self, cx: &mut Context<Self>) {
         let chosen = self.next;
         self.next = (self.next + 1) % QUESTIONS.len();
+        self.lines = self.lines % 3 + 1;
         self.toggle(chosen, cx);
     }
 }
@@ -92,6 +97,22 @@ impl Render for Accordion {
                     .children(answer),
             );
         }
-        div().p(px(40.)).child(list)
+        // The lines to copy: open all the way, its height glides to the text's.
+        let note = div()
+            .w(px(360.))
+            .rounded(px(8.))
+            .bg(rgb(0x0030_3a48))
+            .px(px(12.))
+            .py(px(8.))
+            .children((1..=self.lines).map(|line| div().child(format!("A note, line {line}"))))
+            .opened("note", 1.)
+            .height_glides(Spring::SNAPPY);
+        div()
+            .p(px(40.))
+            .flex()
+            .flex_col()
+            .gap(px(24.))
+            .child(list)
+            .child(note)
     }
 }

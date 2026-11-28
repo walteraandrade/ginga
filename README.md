@@ -386,7 +386,7 @@ impl Render for Panel {
 }
 ```
 
-`toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once under reduced motion (GPUI's `reduce_motion`). A delay is timing, not motion, so it is kept: under reduced motion a delayed value holds still until its delay is over, then is at its target at once (`Transition::without_motion`, and `Transitions::without_motion` for a look). A `ginga_gpui::Motion` moves `f32` and GPUI's `Pixels`, `Point<Pixels>`, `Size<Pixels>`, `Bounds<Pixels>`, `Rgba` and `Hsla`; another GPUI type gets an `Animate` impl. `motion.inspect(cx)` hands back the engine's motion and this frame's time, to write it down with `Trace::of`. `ginga_gpui::Presence` is a `Presence` read on the frame's clock: `show(content, enter, cx)`, `hide(exit, cx)` and `frame(window, cx)`. `shown.cover(element)` (`CoverExt`) draws what `frame` gave covered while it leaves: it takes no clicks, and the keyboard focus is taken from inside it, as `present` does. An event handler with no window reads `wanted()`, the content that should be on screen, and `sample(cx)`, what `frame` would hand back; `Presence::leaving(content, exit, cx)` makes a thing that is only seen leaving. `ginga_gpui::PresenceList` is a `PresenceList` on the same clock: `sync(items, in_out, cx)`, `place_all(place, transition, cx)` and `frame(window, cx)`, which asks for the next frame while any item arrives, leaves or travels, and applies reduced motion to each way and each travel to a new place; `sample(cx)` is what `frame` would hand back, for an event handler with no window.
+`toward` reads the frame's clock, asks GPUI for another frame while the value moves, and moves at once under reduced motion (GPUI's `reduce_motion`). A delay is timing, not motion, so it is kept: under reduced motion a delayed value holds still until its delay is over, then is at its target at once (`Transition::without_motion`). A look keeps its fades then (`Transitions::for_reduced_motion`, below). A `ginga_gpui::Motion` moves `f32` and GPUI's `Pixels`, `Point<Pixels>`, `Size<Pixels>`, `Bounds<Pixels>`, `Rgba` and `Hsla`; another GPUI type gets an `Animate` impl. `motion.inspect(cx)` hands back the engine's motion and this frame's time, to write it down with `Trace::of`. `ginga_gpui::Presence` is a `Presence` read on the frame's clock: `show(content, enter, cx)`, `hide(exit, cx)` and `frame(window, cx)`. `shown.cover(element)` (`CoverExt`) draws what `frame` gave covered while it leaves: it takes no clicks, and the keyboard focus is taken from inside it, as `present` does. An event handler with no window reads `wanted()`, the content that should be on screen, and `sample(cx)`, what `frame` would hand back; `Presence::leaving(content, exit, cx)` makes a thing that is only seen leaving. `ginga_gpui::PresenceList` is a `PresenceList` on the same clock: `sync(items, in_out, cx)`, `place_all(place, transition, cx)` and `frame(window, cx)`, which asks for the next frame while any item arrives, leaves or travels, and applies reduced motion to each way and each travel to a new place; `sample(cx)` is what `frame` would hand back, for an event handler with no window.
 
 When the logic of a motion lives in a crate that knows nothing about GPUI, that crate keeps a `ginga::Motion` and takes the time as an argument; the view supplies it with `ginga_gpui::Clock`.
 
@@ -425,7 +425,7 @@ let half = fill.sample(ms(50)).value.background.unwrap();
 assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);
 ```
 
-When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and, under reduced motion, takes each value at once after that value's delay. To write a declared look down, keep it in a `LookState`: `self.card.inspect(cx)` hands back its engine motion and this frame's time for `Trace::of`, as `motion.inspect(cx)` does for a `ginga_gpui::Motion`, and is `None` until an element has drawn with it. A look the view already has, such as one mixed by a presence's progress (`from.mix(Look::new(), shown.progress)`), is applied as it is with `.with_look(look)`: the same mapping, with no motion and no element state.
+When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves. Under reduced motion it keeps its fades: the opacity and the colors keep their transitions, and the offset, the size and the radius are taken at once after their delay (`Transitions::for_reduced_motion`). To write a declared look down, keep it in a `LookState`: `self.card.inspect(cx)` hands back its engine motion and this frame's time for `Trace::of`, as `motion.inspect(cx)` does for a `ginga_gpui::Motion`, and is `None` until an element has drawn with it. A look the view already has, such as one mixed by a presence's progress (`from.mix(Look::new(), shown.progress)`), is applied as it is with `.with_look(look)`: the same mapping, with no motion and no element state.
 
 In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
 
@@ -494,7 +494,7 @@ present("toast", self.saved.then_some("Saved"), ways, |text| {
 .leave_to(Look::new().opacity(0.))
 ```
 
-Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once. `.on_gone(|content, window, cx| ..)` is called with each content once it is gone, after the frame that finds it gone: to drop what the view kept for it, or to move the focus. An instant way out, or one that reduced motion makes instant, is over on the frame that starts it; content wanted again on its way out is not gone.
+Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once. Under reduced motion a way whose look names an opacity other than 1 keeps its transition and fades where the content is laid out, its offset left out; a way that only moves is taken at once after its delay. `.on_gone(|content, window, cx| ..)` is called with each content once it is gone, after the frame that finds it gone: to drop what the view kept for it, or to move the focus. An instant way out, or one that reduced motion makes instant, is over on the frame that starts it; content wanted again on its way out is not gone.
 
 ### Gliding to a new place
 
@@ -574,7 +574,7 @@ let (name, order) = match self.menu.name() {
 self.menu.set_in_order(name, order, cx);
 ```
 
-Only a change of look that comes with a new name follows the schedule: a hover, or a change of the app's own, goes at once. The schedule's delay is added to any a transition has of its own. A parent that goes after its children waits for the ones laid out inside it, cached views of their own included; children drawn beside it do not hold it. Times count from the change of name, so a child drawn a frame late keeps its place. Under reduced motion the schedule is dropped: every element changes at once, after only its own transition's delay.
+Only a change of look that comes with a new name follows the schedule: a hover, or a change of the app's own, goes at once. The schedule's delay is added to any a transition has of its own. A parent that goes after its children waits for the ones laid out inside it, cached views of their own included; children drawn beside it do not hold it. Times count from the change of name, so a child drawn a frame late keeps its place. Under reduced motion the schedule is dropped: every element keeps only its fades, as any look does, after only its own transition's delay.
 
 In the engine, a `Variant` is the schedule alone. Each element asks for its delay and says when it will be settled, so the side that waits knows how long:
 
@@ -832,7 +832,21 @@ assert_eq!(lines, ["one Present", "two Exiting"]);
 
 ### Reduced motion on purpose
 
-The adapter reads GPUI's own flag, `cx.reduce_motion()`. GPUI 0.3.12 starts it off and does not read the desktop's preference, so an app sets it, from its own setting or from the desktop's, and a test sets it the same way: `cx.set_reduce_motion(true)`. Every motion, look and presence in the adapter then keeps its delay and drops its motion; a variant's or a sequence's schedule and a shared element's trip are dropped whole.
+The adapter reads GPUI's own flag, `cx.reduce_motion()`. GPUI 0.3.12 starts it off and does not read the desktop's preference, so an app sets it, from its own setting or from the desktop's, and a test sets it the same way: `cx.set_reduce_motion(true)`. A look and a `present` way that fades then keep their fades: the opacity and the colors keep their transitions, and the offset, the size and the radius go at once after their delay, so a toast fades in where it is instead of sliding. The engine gives the same timings with `Transitions::for_reduced_motion`:
+
+```rust
+use std::time::Duration;
+use ginga::{Easing, Look, LookMotion, Transitions, Tween};
+
+let ms = Duration::from_millis;
+let rise = Transitions::new().all(Tween::new(ms(100), Easing::Linear));
+let mut toast = LookMotion::at(Look::new().offset(0.0, 16.0).opacity(0.0));
+toast.set_target(Look::new().offset(0.0, 0.0).opacity(1.0), rise.for_reduced_motion(), ms(0));
+// In place at once, half faded in at 50 ms.
+assert_eq!(toast.sample(ms(50)).value, Look::new().offset(0.0, 0.0).opacity(0.5));
+```
+
+Every other motion and presence keeps its delay and drops its motion; a variant's or a sequence's schedule and a shared element's trip are dropped whole.
 
 ### Pause, seek, speed, reverse
 

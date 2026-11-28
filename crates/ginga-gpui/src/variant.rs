@@ -40,8 +40,9 @@ use crate::Clock;
 /// self.menu.set(Menu::Shown, cx);
 /// ```
 ///
-/// Clones share one variant. Under reduced motion every element takes its
-/// look at once, with no schedule, after only its own transition's delay.
+/// Clones share one variant. Under reduced motion the schedule is dropped:
+/// each element keeps only its fades, as any look does, after only its own
+/// transition's delay.
 #[derive(Debug)]
 pub struct Variant<N>(Rc<RefCell<State<N>>>);
 

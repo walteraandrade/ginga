@@ -27,9 +27,9 @@ use crate::{Animate, Clock};
 /// They start on the first frame that draws them; [`restart`](Self::restart)
 /// plays them again. While they move they ask GPUI to render the view again:
 /// on the next frame, or with [`at_most_every`](Self::at_most_every), no
-/// sooner than a set time after the last one. When the desktop asks for
-/// reduced motion they rest where they end (or, when they repeat forever, on
-/// the first stop) and ask for no frames.
+/// sooner than a set time after the last one. Under reduced motion they
+/// rest where they end (or, when they repeat forever, on the first stop) and
+/// ask for no frames.
 ///
 /// The builders mirror [`ginga::Keyframes`]'s rather than taking one built
 /// there: the engine's keyframes hold the stand-in of each value, such as

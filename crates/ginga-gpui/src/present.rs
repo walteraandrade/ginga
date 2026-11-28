@@ -57,7 +57,7 @@ where
 }
 
 /// What is called with content that was leaving, once it is gone.
-type OnGone<T> = Box<dyn Fn(T, &mut Window, &mut App)>;
+type OnGone<T> = Box<dyn FnMut(T, &mut Window, &mut App)>;
 
 /// An element with ways in and out: made by [`present`].
 pub struct Present<T> {
@@ -91,7 +91,7 @@ impl<T: PartialEq + 'static> Present<T> {
     ///     })
     /// ```
     #[must_use]
-    pub fn on_gone(mut self, gone: impl Fn(T, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_gone(mut self, gone: impl FnMut(T, &mut Window, &mut App) + 'static) -> Self {
         self.on_gone = Some(Box::new(gone));
         self
     }
@@ -241,7 +241,8 @@ impl<T: PartialEq> Kept<T> {
         if let Some((number, Phase::Exiting)) = held {
             self.came_back = Some(number);
         }
-        let number = held.map_or(self.next, |(number, _)| number);
+        // Held content keeps the one it has: the slot does not replace it.
+        let number = self.next;
         if held.is_none() {
             self.next += 1;
         }
@@ -354,7 +355,7 @@ impl<T: PartialEq + 'static> Element for Present<T> {
         let layout = element.request_layout(window, cx);
         // After the frame, so what it changes draws the next one; and after
         // what the contents inside defer, so a focus it moves stays moved.
-        if let Some(on_gone) = self.on_gone.take().filter(|_| !gone.is_empty()) {
+        if let Some(mut on_gone) = self.on_gone.take().filter(|_| !gone.is_empty()) {
             window.defer(cx, move |window, cx| {
                 for gone in gone {
                     on_gone(gone.content, window, cx);

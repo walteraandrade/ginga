@@ -5,9 +5,9 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use ginga_gpui::{Easing, OpenExt, Presence, Tween};
 use gpui::{
-    App, Bounds, Context, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement,
-    Pixels, Render, StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window,
-    canvas, div, point, prelude::FluentBuilder, px,
+    App, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton,
+    ParentElement, Pixels, Render, StatefulInteractiveElement, Styled, TestAppContext,
+    VisualTestContext, Window, canvas, div, point, prelude::FluentBuilder, px,
 };
 
 fn ms(millis: u64) -> Duration {
@@ -38,6 +38,11 @@ struct Column {
     row: bool,
     /// Text in the box, in place of the tiles.
     text: Option<&'static str>,
+    /// A focus the box takes with the Tab key.
+    focus: FocusHandle,
+    /// A 20 px square that sticks out of the box to the left, as a shadow
+    /// would: a click on it is counted too.
+    side: bool,
 }
 
 impl Column {
@@ -47,6 +52,21 @@ impl Column {
             .id("tiles")
             .mt(px(self.margin))
             .on_click(move |_, _, _| *clicks.borrow_mut() += 1)
+            .track_focus(&self.focus)
+            .when(self.side, |tiles| {
+                tiles.relative().child(
+                    div()
+                        .id("side")
+                        .absolute()
+                        .left(px(-20.))
+                        .top_0()
+                        .size(px(20.))
+                        .on_click({
+                            let clicks = self.clicks.clone();
+                            move |_, _, _| *clicks.borrow_mut() += 1
+                        }),
+                )
+            })
             .when(self.clip, Styled::overflow_hidden)
             .when(self.row, Styled::flex_1);
         match self.text {
@@ -77,15 +97,21 @@ impl Render for Column {
         } else {
             div().children(tiles).into_any_element()
         };
-        div().w(px(100.)).flex().flex_col().child(tiles).child(
-            div().h(px(10.)).child(
-                canvas(
-                    move |bounds, _, _| drawn.borrow_mut().push(bounds),
-                    |_, (), _, _| {},
-                )
-                .size_full(),
-            ),
-        )
+        div()
+            .ml(px(30.))
+            .w(px(100.))
+            .flex()
+            .flex_col()
+            .child(tiles)
+            .child(
+                div().h(px(10.)).child(
+                    canvas(
+                        move |bounds, _, _| drawn.borrow_mut().push(bounds),
+                        |_, (), _, _| {},
+                    )
+                    .size_full(),
+                ),
+            )
     }
 }
 
@@ -105,7 +131,7 @@ fn open(
     let (view, cx) = cx.add_window_view({
         let drawn = drawn.clone();
         let clicks = clicks.clone();
-        move |_, _| Column {
+        move |_, cx| Column {
             progress,
             tiles,
             details,
@@ -116,6 +142,8 @@ fn open(
             clip: false,
             row: false,
             text: None,
+            focus: cx.focus_handle().tab_stop(true),
+            side: false,
         }
     });
     cx.run_until_parked();
@@ -161,7 +189,7 @@ fn fully_open_it_takes_its_own_height_at_its_width(cx: &mut TestAppContext) {
     // It asks for no frame: it is not part of the way open.
     assert_eq!(next_frame(cx), 0);
     // Nothing is cut: the last row takes clicks.
-    click(cx, 10., 50.);
+    click(cx, 40., 50.);
     assert_eq!(*clicks.borrow(), 1);
 }
 
@@ -175,14 +203,14 @@ fn part_of_the_way_open_it_takes_that_share_and_cuts_the_rest(cx: &mut TestAppCo
     assert_eq!(next_frame(cx), 0, "its height did not change");
     // The first row is in the open part; the second is cut, and the line
     // is drawn where the second row would be.
-    click(cx, 10., 10.);
+    click(cx, 40., 10.);
     assert_eq!(*clicks.borrow(), 1);
-    click(cx, 10., 30.);
+    click(cx, 40., 30.);
     assert_eq!(*clicks.borrow(), 1, "the cut row takes no click");
 
     change(&view, cx, |column, _| column.progress = 0.0);
     assert_eq!(below(&drawn), 0.0, "closed, it takes no room");
-    click(cx, 10., 5.);
+    click(cx, 40., 5.);
     assert_eq!(*clicks.borrow(), 1, "closed, it takes no click");
 }
 
@@ -334,5 +362,49 @@ fn fully_open_a_new_height_is_taken_at_once(cx: &mut TestAppContext) {
         at(0.5, &view, &drawn, cx),
         30.0,
         "then half of the new height"
+    );
+}
+
+#[gpui::test]
+fn closed_it_asks_for_no_frame_and_takes_no_focus(cx: &mut TestAppContext) {
+    let (view, drawn, _, cx) = open(0.0, 4, None, cx);
+    assert_eq!(below(&drawn), 0.0);
+    assert_eq!(
+        next_frame(cx),
+        0,
+        "closed from its first frame, it asks for none"
+    );
+    change(&view, cx, |column, _| column.tiles = 6);
+    assert_eq!(next_frame(cx), 0, "a new height while closed moves nothing");
+    let focus = view.read_with(cx, |column, _| column.focus.clone());
+    cx.update(Window::focus_next);
+    assert!(
+        !cx.update(|window, _| focus.is_focused(window)),
+        "Tab does not reach it closed"
+    );
+    assert_eq!(
+        at(1.0, &view, &drawn, cx),
+        60.0,
+        "and it opens to its new height"
+    );
+    cx.update(Window::focus_next);
+    assert!(
+        cx.update(|window, _| focus.is_focused(window)),
+        "open, it does"
+    );
+}
+
+#[gpui::test]
+fn part_of_the_way_open_only_its_height_is_cut(cx: &mut TestAppContext) {
+    let (view, _, clicks, cx) = open(1.0, 4, None, cx);
+    change(&view, cx, |column, _| {
+        column.side = true;
+        column.progress = 0.5;
+    });
+    click(cx, 20., 10.);
+    assert_eq!(
+        *clicks.borrow(),
+        1,
+        "what sticks out at the side takes a click"
     );
 }

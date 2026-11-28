@@ -102,6 +102,8 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Cover** (`CoverExt::cover`, `Covered`). What a presence draws, covered while the content leaves: a child over it takes the pointer, and a keyboard focus inside it is taken away. Nothing wraps it, so its layout does not change. `present` covers its leaving content the same way.
 
+**Opened** (`OpenExt::opened`, `Opened`). An element that takes a *progress* of its own height, measured as it is laid out, as an accordion opens: closed it takes no room, part of the way open what is past the open part is cut off and takes no clicks, fully open it is the element as it is. *Not a look's size*: a look names the size; an opened element opens to whatever height its content has.
+
 **Present.** The phase of something shown and still. *Not settled*: see *settled*.
 
 **Progress.** How much of something shown is here: `0.0` gone, `1.0` fully here. A view draws it as opacity, scale, height or anything else. A bouncy spring passes both ends a little.

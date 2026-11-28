@@ -22,6 +22,8 @@
 //! `ffmpeg`. It needs `xvfb-run`, `ffmpeg`, a Vulkan driver and `montage`.
 
 #[cfg(target_os = "linux")]
+mod accordion;
+#[cfg(target_os = "linux")]
 mod app;
 #[cfg(target_os = "linux")]
 mod color;

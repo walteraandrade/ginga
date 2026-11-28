@@ -50,6 +50,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[codebase/a-variant-on-an-element]]: how `.leads` and `.follows` delay a look, and how a parent waits for its children.
 - [[codebase/a-shared-element]]: how two elements of one key hand a motion over, and why the first frame only measures.
 - [[codebase/a-glide-on-an-element]]: where a gliding element's place comes from, so a scroll is not a move, and why a glide inside a glide does not move twice.
+- [[codebase/an-opened-element]]: how `.opened` measures its own height a frame behind, and why fully open adds nothing.
 
 ## Measurements
 

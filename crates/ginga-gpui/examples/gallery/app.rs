@@ -62,9 +62,10 @@ impl Page {
     /// more line here, and a module in `main.rs`.
     pub fn all(cx: &mut App) -> Vec<Page> {
         use crate::{
-            color::Button, compose::Compose, drag::Throw, gestures::Buttons, island::IslandPage,
-            layout::Layout, list::Rows, look::Card, presence::Toast, pulse::Pulse, shared::Shared,
-            toward::Toward, transitions::Arrive, variants::Menus, ways::Ways,
+            accordion::Accordion, color::Button, compose::Compose, drag::Throw, gestures::Buttons,
+            island::IslandPage, layout::Layout, list::Rows, look::Card, presence::Toast,
+            pulse::Pulse, shared::Shared, toward::Toward, transitions::Arrive, variants::Menus,
+            ways::Ways,
         };
         vec![
             Page::new(
@@ -108,6 +109,12 @@ impl Page {
                 "A card declares its look; clicked, it changes size and fades.",
                 cx.new(|_| Card::new()),
                 Card::play,
+            ),
+            Page::new(
+                "accordion",
+                "Questions open and close: each answer's height goes from nothing to its own.",
+                cx.new(|_| Accordion::new()),
+                Accordion::play,
             ),
             Page::new(
                 "variants",

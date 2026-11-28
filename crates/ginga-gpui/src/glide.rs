@@ -4,19 +4,19 @@
 use ginga::Transition;
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, Global, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, ParentElement, Pixels, Point, Size, Styled, Window,
+    IntoElement, LayoutId, ParentElement, Pixels, Point, Size, Window,
 };
 
-use crate::{Animate, Clock, look::prepaint_at, unless_reduced};
+use crate::{Animate, Clock, unless_reduced};
 
 /// A move in the layout shorter than this, in pixels, is not a move: the
 /// place is exact, and this only absorbs float error in what is subtracted
 /// from it.
 const STILL: f32 = 0.5;
 
-/// Declares on any styled element that it glides to where layout puts it;
+/// Declares on any element that it glides to where layout puts it;
 /// see [`Glides`].
-pub trait GlideExt: Styled + IntoElement + 'static {
+pub trait GlideExt: IntoElement + 'static {
     /// When layout moves the element, it is painted where it was and
     /// travels to its new place with `transition`, instead of jumping
     /// there. The motion is kept under `id` for as long as the element is
@@ -37,7 +37,7 @@ pub trait GlideExt: Styled + IntoElement + 'static {
     }
 }
 
-impl<E: Styled + IntoElement + 'static> GlideExt for E {}
+impl<E: IntoElement + 'static> GlideExt for E {}
 
 /// An element that glides to where layout puts it: made by
 /// [`GlideExt::glides`].
@@ -60,10 +60,12 @@ impl<E: Styled + IntoElement + 'static> GlideExt for E {}
 /// once, after the transition's delay. The rows of GPUI's `list` and
 /// `uniform_list` are each laid out on their own, so their place in the
 /// list is not a place in the window: use
-/// [`PresenceList::place_all`](crate::PresenceList::place_all) there. For
-/// the same reason, a glide in such a row, or in a `deferred` or `anchored`
-/// element, inside an element that glides, does not know the glide around
-/// it: it moves against it, instead of with it.
+/// [`PresenceList::place_all`](crate::PresenceList::place_all) there. A
+/// cached view (`.cached(..)`), a `deferred` element and an `anchored` one
+/// are laid out or drawn on their own too: a glide inside one measures its
+/// place there, so it does not see the view move, and inside an element
+/// that glides it does not know the glide around it. Put the glide on the
+/// cached view, or around it.
 pub struct Glides<E> {
     id: ElementId,
     transition: Transition,
@@ -74,10 +76,9 @@ pub struct Glides<E> {
 #[derive(Clone, Copy)]
 struct Kept {
     clock: Clock,
-    /// Where it is painted, as a place in the layout, heading for `place`.
+    /// Where it is painted, as a place in the layout, from the gliding
+    /// element around it. Its target is its place, as last laid out.
     motion: ginga::Motion<<Point<Pixels> as Animate>::Repr>,
-    /// Its place, as last laid out, from the gliding element around it.
-    place: Point<Pixels>,
     /// The window's size when it was laid out there.
     viewport: Size<Pixels>,
 }
@@ -89,7 +90,7 @@ struct GlidePlaces(Vec<Point<Pixels>>);
 
 impl Global for GlidePlaces {}
 
-impl<E: Styled + IntoElement + 'static> IntoElement for Glides<E> {
+impl<E: IntoElement + 'static> IntoElement for Glides<E> {
     type Element = Self;
 
     fn into_element(self) -> Self {
@@ -97,8 +98,8 @@ impl<E: Styled + IntoElement + 'static> IntoElement for Glides<E> {
     }
 }
 
-impl<E: Styled + IntoElement + 'static> Element for Glides<E> {
-    type RequestLayoutState = (AnyElement, LayoutId);
+impl<E: IntoElement + 'static> Element for Glides<E> {
+    type RequestLayoutState = AnyElement;
     type PrepaintState = ();
 
     fn id(&self) -> Option<ElementId> {
@@ -115,11 +116,10 @@ impl<E: Styled + IntoElement + 'static> Element for Glides<E> {
         _inspector_id: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, (AnyElement, LayoutId)) {
+    ) -> (LayoutId, AnyElement) {
         let element = self.element.take().expect("an element is laid out once");
         let mut element = element.into_any_element();
-        let layout = element.request_layout(window, cx);
-        (layout, (element, layout))
+        (element.request_layout(window, cx), element)
     }
 
     fn prepaint(
@@ -127,7 +127,7 @@ impl<E: Styled + IntoElement + 'static> Element for Glides<E> {
         id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        (element, layout): &mut (AnyElement, LayoutId),
+        element: &mut AnyElement,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -148,18 +148,16 @@ impl<E: Styled + IntoElement + 'static> Element for Glides<E> {
             let mut kept = kept.unwrap_or_else(|| Kept {
                 clock: Clock::default(),
                 motion: ginga::Motion::at(place.to_repr()),
-                place,
                 viewport,
             });
             let now = kept.clock.now(cx);
-            let moved = (place - kept.place).map(f32::from);
+            let moved = (place - Point::from_repr(kept.motion.target())).map(f32::from);
             if moved.x.abs() >= STILL || moved.y.abs() >= STILL {
                 if viewport == kept.viewport {
                     kept.motion.set_target(place.to_repr(), transition, now);
                 } else {
                     kept.motion.jump_to(place.to_repr());
                 }
-                kept.place = place;
             }
             kept.viewport = viewport;
             let sample = kept.motion.sample(now);
@@ -174,7 +172,7 @@ impl<E: Styled + IntoElement + 'static> Element for Glides<E> {
             window.request_animation_frame();
         }
         cx.default_global::<GlidePlaces>().0.push(in_window);
-        prepaint_at(element, *layout, offset, |_, _| (), window, cx);
+        window.with_element_offset(offset, |window| element.prepaint(window, cx));
         cx.global_mut::<GlidePlaces>().0.pop();
     }
 
@@ -183,7 +181,7 @@ impl<E: Styled + IntoElement + 'static> Element for Glides<E> {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
-        (element, _): &mut (AnyElement, LayoutId),
+        element: &mut AnyElement,
         (): &mut (),
         window: &mut Window,
         cx: &mut App,

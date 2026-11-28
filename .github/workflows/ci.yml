@@ -45,7 +45,7 @@ jobs:
       - run: cargo fmt -p ginga --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
-      # What goes to crates.io builds on its own; `cargo test` above runs the README it ships.
+      # What goes to crates.io builds on its own; `cargo test` above runs the README it ships and the book.
       - run: cargo package --locked -p ginga
 
   adapter:

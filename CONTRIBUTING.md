@@ -1,13 +1,13 @@
 # Contributing to ginga
 
-Thank you for wanting to help. ginga is motion for Rust UIs, as a pure function of time; the [README](README.md) shows what it is and its whole API. This file says how a change gets in.
+Thank you for wanting to help. ginga is motion for Rust UIs, as a pure function of time; the [README](README.md) says what it is, and [the book](https://walteraandrade.github.io/ginga/) (its pages are in `book/`) shows its whole API. This file says how a change gets in.
 
 Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). A security problem is not reported in a public issue: see [SECURITY.md](SECURITY.md).
 
 ## Where to start
 
 - **A bug.** Open an issue with the bug form. The most useful report is a `Trace` of the motion that went wrong (see [Checking motion](#checking-motion)), with the times and values you expected.
-- **An idea or a new call.** Open an issue with the feature form before writing code. ginga keeps its API small, so the first question is whether the calls in the README already do the job; a short talk in the issue saves a pull request that cannot be merged.
+- **An idea or a new call.** Open an issue with the feature form before writing code. ginga keeps its API small, so the first question is whether the calls in the book already do the job; a short talk in the issue saves a pull request that cannot be merged.
 - **Something to pick up.** Issues labeled `ready-for-agent` are ready to work on, by a person or a coding agent. Issues labeled `ready-for-human` wait for a maintainer's decision; leave those until it is made. Say in the issue that you are taking it, so two people don't do the same work.
 - **A typo or a broken link.** Send a pull request straight away.
 

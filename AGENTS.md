@@ -1,6 +1,6 @@
 # AGENTS.md
 
-ginga: motion for Rust UIs, as a pure function of time. The README says what it is and shows the whole API. These are the rules that keep it that way.
+ginga: motion for Rust UIs, as a pure function of time. The README says what it is; the book in `book/`, published at https://walteraandrade.github.io/ginga/, shows the whole API. These are the rules that keep it that way.
 
 ## Memory: `brain/`
 
@@ -29,10 +29,10 @@ cargo test -p ginga-gpui                                  # the same; GPUI's tes
 
 ## The API
 
-- Keep it small. Before adding a call, check that the ones in the README cannot do the job.
+- Keep it small. Before adding a call, check that the ones in the book cannot do the job.
 - A thing that leaves stays drawable: `Presence` and `PresenceList` keep its content until the way out is over. They never decide what leaving looks like; they give a phase and a progress.
 - An invalid value does not build. Where a constructor can fail, it returns an error whose message says what to use instead.
-- Every public item has a doc comment, and every doc example runs as a test.
+- Every public item has a doc comment, and every doc example runs as a test: the README's and the book's too, through `crates/ginga/src/lib.rs`. A new page of the book gets a line there and in `book/src/SUMMARY.md`.
 - Names say what a thing does in plain words: `toward`, `jump_to`, `settled`.
 
 ## Checking motion

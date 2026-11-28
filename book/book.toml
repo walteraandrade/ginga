@@ -1,0 +1,19 @@
+[book]
+title = "ginga"
+description = "Motion for Rust UIs, as a pure function of time."
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/walteraandrade/ginga"
+edit-url-template = "https://github.com/walteraandrade/ginga/edit/main/book/{path}"
+site-url = "/ginga/"
+default-theme = "navy"
+preferred-dark-theme = "navy"
+
+[output.html.playground]
+runnable = false
+
+[output.html.fold]
+enable = true
+level = 1

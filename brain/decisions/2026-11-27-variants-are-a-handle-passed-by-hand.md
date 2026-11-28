@@ -7,7 +7,7 @@
 - A handle the view passes down by hand. It is explicit and wordier.
 - A scope kept in the app while the tree is laid out, as one GPUI motion crate does. It reads like Motion's variants and hides state in a global.
 
-**Why.** A child in a cached view of its own skips render, so it would never see a scope set while its parent renders. A handle reaches it: `Variant::set` renders again every view that drew an element of the variant, cached ones too. The handle also keeps the state where the rest of ginga keeps it, in the view ([[principles/time-is-an-argument]], and gpui-ce-motion's "the state has an owner in plain sight" in the README's inspirations).
+**Why.** A child in a cached view of its own skips render, so it would never see a scope set while its parent renders. A handle reaches it: `Variant::set` renders again every view that drew an element of the variant, cached ones too. The handle also keeps the state where the rest of ginga keeps it, in the view ([[principles/time-is-an-argument]], and gpui-ce-motion's "the state has an owner in plain sight" in the book's inspirations).
 
 **What follows from it.**
 

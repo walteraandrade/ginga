@@ -10,7 +10,7 @@
 
 - Both crates ship the root README. Its links are absolute GitHub URLs, because relative ones do not resolve on crates.io, so a new link in the README is absolute too.
 - CI runs `cargo package --locked --workspace` in the adapter job. It builds both crates as crates.io gets them, the adapter against the packaged engine, before anything is published. `cargo package -p ginga-gpui` on its own fails until the engine version it needs is on crates.io.
-- The packaged engine's README examples are the doc tests that `cargo test` runs. Packaging builds the crate but runs no tests.
+- The packaged engine's README examples, and the book's, are the doc tests that `cargo test` runs; the book's are included only under `cfg(doctest)`, so packaging, which leaves `book/` out, still builds. Packaging builds the crate but runs no tests.
 - `CHANGELOG.md` gets an entry for each release, and `SECURITY.md` supports the latest published version.
 - To release: write the CHANGELOG entry; bump `version` in `[workspace.package]` and in `[workspace.dependencies]` together; run `cargo package --locked --workspace`; then `cargo publish -p ginga`, then `cargo publish -p ginga-gpui`. Until 1.0, a change that breaks the API bumps the minor version.
 - The first publish needs a crates.io token from the account that will own the names. Later releases can use crates.io's trusted publishing from GitHub Actions, which needs the crates to exist first.

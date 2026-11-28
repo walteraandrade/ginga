@@ -84,3 +84,42 @@ pub use variant::{Order, Variant};
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct Readme;
+
+/// The book's examples, run as tests: each page of `book/src` is one item here.
+/// A new page in `book/src/SUMMARY.md` gets a line.
+#[cfg(doctest)]
+mod book {
+    macro_rules! pages {
+        ($($name:ident = $path:literal;)*) => {
+            $(
+                #[doc = include_str!(concat!("../../../book/src/", $path))]
+                struct $name;
+            )*
+        };
+    }
+
+    pages! {
+        Introduction = "introduction.md";
+        GettingStarted = "getting-started.md";
+        EngineMotion = "engine/motion.md";
+        EnginePresence = "engine/presence.md";
+        EngineTrace = "engine/trace.md";
+        GpuiView = "gpui/view.md";
+        GpuiLook = "gpui/look.md";
+        GpuiLookMoment = "gpui/look-moment.md";
+        GpuiWaysInAndOut = "gpui/ways-in-and-out.md";
+        GpuiGlide = "gpui/glide.md";
+        GpuiOpened = "gpui/opened.md";
+        GpuiShared = "gpui/shared.md";
+        GpuiVariants = "gpui/variants.md";
+        GpuiDrag = "gpui/drag.md";
+        GpuiLoop = "gpui/loop.md";
+        GpuiIsland = "gpui/island.md";
+        Gallery = "gallery.md";
+        Cost = "cost.md";
+        ComingFrom = "coming-from.md";
+        NotYet = "not-yet.md";
+        Inspirations = "inspirations.md";
+        Contributing = "contributing.md";
+    }
+}

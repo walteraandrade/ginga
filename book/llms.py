@@ -98,6 +98,7 @@ def about():
         "Engine examples on these pages run as tests on every change; each engine recipe is a whole `main.rs`. GPUI recipes are whole gallery views that CI compiles.",
         "Check motion without a screen: `sample(now)` returns the value at any time, and `Trace::of(&motion, start, step)` writes it down as text.",
         "Until 1.0, a new minor version can change the API.",
+        f"Every page below in one file: {SITE}llms-full.txt",
     ]
     sentences = re.split(r"(?<=[.:])\s+", " ".join(plain(first).split()))
     return " ".join(s for s in sentences if not s.endswith(":")), notes  # without the sentence that leads into a list

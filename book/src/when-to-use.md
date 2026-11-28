@@ -5,7 +5,7 @@ ginga moves values in a Rust user interface: a panel that opens, a toast that co
 ## Use it when
 
 - **You build a UI in Rust and want things to move.** Widths, heights, positions, opacity, corner radius, colors, or any type of your own that can be turned into a few `f32` (`Animatable`).
-- **Your UI is in GPUI.** `ginga-gpui` declares motion on the element (`.look(..)`, `present(..)`, `.glides(..)`, `.shared(..)`, `.draggable(..)`), reads the frame's clock, asks for frames only while something moves, and follows reduced motion.
+- **Your UI is in GPUI.** `ginga-gpui` declares motion on the element (`.look(..)`, `present(..)`, `.glides(..)`, `.shared(..)`, `.draggable(..)`), reads the frame's clock, asks for frames only while something moves, and follows GPUI's reduced-motion flag, which the app sets.
 - **Your UI is in another framework, or a game loop.** The `ginga` engine has no dependencies and knows no framework. Keep a `Motion` next to your state, pass it the time on each frame, draw the value, and ask your framework for another frame while the sample is not `settled`. There is no adapter for other frameworks yet. The engine needs only the time, so one is a few lines: [a frame loop](recipes.md#move-a-value-toward-a-target-on-every-frame).
 - **You want motion that tests and agents can check.** The same times always give the same values, and `Trace` writes a motion down as text ([Motion as text](engine/trace.md)).
 - **You care about the cost of a frame.** A frame of a moving motion costs tens of nanoseconds, a settled one a few, and running a motion never allocates ([What it costs](cost.md)).
@@ -24,7 +24,7 @@ ginga moves values in a Rust user interface: a panel that opens, a toast that co
 | Motion described on a GPUI element, with hover, press and focus states | `.look(id, look, transition)`, `.hover(..)`, `.pressed(..)`, `.focused(..)` |
 | An element that travels to where layout puts it, or between two places | `.glides(..)`, `.shared(..)` |
 | A drag | `.draggable(..)` |
-| Respect for reduced motion | `ginga-gpui` reads GPUI's `reduce_motion`; the engine has `Transition::without_motion` |
+| Respect for reduced motion | `ginga-gpui` reads GPUI's `reduce_motion`, which the app sets; the engine has `Transition::without_motion` |
 
 The table from a goal to the exact call, with links and complete examples, is in [Recipes](recipes.md).
 
@@ -36,9 +36,9 @@ The table from a goal to the exact call, with links and complete examples, is in
 - **Transforms on a GPUI `div`.** GPUI has no transform, so there is no `scale` or `rotate` on a box: change its size or its offset instead. An icon turns with its own transformation ([An icon that turns](coming-from.md#an-icon-that-turns)).
 - **A width that layout changes.** An item whose content grows wider takes its new width at once. A height can glide (`.opened(id, 1.).height_glides(..)`), and a size that a look names moves. See [What it does not do yet](not-yet.md).
 - **Gestures beyond a drag with one pointer.** Pinch, rotate and a drag on a touchpad's scroll are not there yet.
-- **Another GPUI.** `ginga-gpui` pins `gpui-pre =0.3.12`, and an app must use the same one, or the types do not match. The engine works with any.
+- **Another GPUI.** `ginga-gpui` pins one version of GPUI ([Getting started](getting-started.md) names it), and an app must use the same one, or the types do not match. The engine works with any.
 
-It is early work: until 1.0, a new minor version can change the API. The engine needs Rust 1.87 or newer, and the GPUI adapter Rust 1.95.
+It is early work: until 1.0, a new minor version can change the API. The minimum Rust versions are in [Contributing](contributing.md).
 
 ## Alternatives
 

@@ -17,7 +17,7 @@ Find what you want to do in the table, then copy the recipe. Each engine recipe 
 | run several motions one after another, or overlapping | `Sequence` with `then`, `with`, `at` | [recipe](#chain-three-motions) |
 | compute one value from another (a progress into a width or a color) | `Map::new(..)?.of(&motion)` | [A value that moves](engine/motion.md#values-from-values-and-steps-in-order) |
 | run code once when a motion ends | `SettledOnce`, `settles_at()` | [A value that moves](engine/motion.md#values-from-values-and-steps-in-order) |
-| move a type of my own | `impl Animatable` | [recipe](#move-a-type-of-your-own) |
+| move a type of my own | `impl Animatable`; in a GPUI view, `impl ginga_gpui::Animate` | [recipe](#move-a-type-of-your-own), [In a GPUI view](gpui/view.md) |
 | check a motion in a test, without a screen | `sample(now)`, `Trace::of(..)` | [recipe](#check-a-motion-in-a-test), [Motion as text](engine/trace.md) |
 | animate a field of a GPUI view | `ginga_gpui::Motion::toward(target, transition, window, cx)` | [recipe](#gpui-a-panel-that-opens), [In a GPUI view](gpui/view.md) |
 | declare on a GPUI element how it looks, and let it get there | `.look(id, look, transition)` | [recipe](#gpui-a-card-that-changes-its-look), [A look on an element](gpui/look.md) |
@@ -29,7 +29,7 @@ Find what you want to do in the table, then copy the recipe. Each engine recipe 
 | make a menu's rows follow it, one after another | `Variant`, `.leads(..)`, `.follows(..)` | [A parent and its children](gpui/variants.md) |
 | drag an element, throw it, and keep it inside limits | `.draggable(&state, drag)` | [An element to drag](gpui/drag.md) |
 | keep a GPUI animation from redrawing heavy views | an `Island` | [Motion that redraws little](gpui/island.md) |
-| follow reduced motion | automatic in `ginga-gpui`; `Transition::without_motion` in the engine | [In a GPUI view](gpui/view.md), [Coming from…](coming-from.md#reduced-motion-on-purpose) |
+| follow reduced motion | `ginga-gpui` follows GPUI's `reduce_motion` flag, which the app sets (`cx.set_reduce_motion(..)`); `Transition::without_motion` in the engine | [In a GPUI view](gpui/view.md), [Coming from…](coming-from.md#reduced-motion-on-purpose) |
 | scale or rotate a GPUI `div` | not possible: GPUI has no transform. Change its size or offset | [When to use ginga](when-to-use.md#do-not-use-it-for) |
 
 ## Engine recipes
@@ -104,31 +104,65 @@ fn main() {
 
 ### Animate a list as items arrive and leave
 
-Tell the list what it holds; it says what to draw, with each item's phase and progress, and where to draw it while it moves.
+Tell the list what it holds; it says what to draw, with each item's phase and progress. Tell it on every frame where each item is laid out: here a row takes its height times its progress, so the room of a row that leaves closes as it fades, and the rows below it come up.
 
 ```rust
 use std::time::Duration;
 use ginga::{Easing, InOut, Phase, PresenceList, Spring, Tween};
 
+const ROW: f32 = 40.0;
+
+/// Call on every frame, before drawing: each row starts where the rows above it end.
+fn lay_out(rows: &mut PresenceList<u32, &'static str>, now: Duration) {
+    let mut top = 0.0;
+    rows.place_all(
+        |_, row| {
+            let place = top;
+            top += ROW * row.progress;
+            place
+        },
+        Spring::SNAPPY,
+        now,
+    );
+}
+
+/// Where each row is drawn at `now`: its place, plus the offset the list gives.
+fn tops(rows: &mut PresenceList<u32, &'static str>, now: Duration) -> Vec<(&'static str, Phase, f32)> {
+    let mut top = 0.0;
+    rows.frame(now)
+        .map(|row| {
+            let drawn = (*row.content, row.phase, top + row.offset);
+            top += ROW * row.progress;
+            drawn
+        })
+        .collect()
+}
+
 fn main() {
     let ms = Duration::from_millis;
-    let ways = InOut::new(Tween::new(ms(150), Easing::Out), Tween::new(ms(150), Easing::In));
-    const ROW: f32 = 40.0;
+    let ways = InOut::new(Tween::new(ms(150), Easing::Linear), Tween::new(ms(150), Easing::Linear));
 
     let mut rows = PresenceList::new();
-    rows.sync([(1, "Inbox"), (2, "Sent"), (3, "Drafts")], ways, ms(0));
-    rows.place_all(|index, _| index as f32 * ROW, Spring::SNAPPY, ms(0));
+    rows.sync([(1, "Inbox"), (2, "Sent"), (3, "Drafts")], InOut::INSTANT, ms(0));
+    lay_out(&mut rows, ms(0));
 
-    // "Sent" is removed: it leaves, and keeps its place until it is gone.
+    // "Sent" is removed: it fades out, and is drawn until it is gone.
     rows.sync([(1, "Inbox"), (3, "Drafts")], ways, ms(1_000));
-    rows.place_all(|index, _| index as f32 * ROW, Spring::SNAPPY, ms(1_000));
+    for now in (1_000..=1_075).step_by(16) {
+        lay_out(&mut rows, ms(now));
+    }
+    let halfway = tops(&mut rows, ms(1_075));
+    assert_eq!(halfway[1].0, "Sent");
+    assert_eq!(halfway[1].1, Phase::Exiting);
+    let drafts = halfway[2].2;
+    assert!(40.0 < drafts && drafts < 80.0); // "Drafts" is on its way up, from 80 to 40
 
-    let drawn: Vec<_> = rows.frame(ms(1_050)).map(|row| (*row.content, row.phase)).collect();
-    assert_eq!(drawn, [("Inbox", Phase::Present), ("Sent", Phase::Exiting), ("Drafts", Phase::Present)]);
-
-    // Once it is gone, "Drafts" travels up to its new place.
-    let after: Vec<_> = rows.frame(ms(1_200)).map(|row| *row.content).collect();
-    assert_eq!(after, ["Inbox", "Drafts"]);
+    // Once it is gone and the spring is done, "Drafts" is right below "Inbox".
+    for now in (1_075..=1_600).step_by(16) {
+        lay_out(&mut rows, ms(now));
+    }
+    assert!(rows.frame(ms(1_600)).all(|row| !row.moving()));
+    assert_eq!(tops(&mut rows, ms(1_600)), [("Inbox", Phase::Present, 0.0), ("Drafts", Phase::Present, ROW)]);
 }
 ```
 

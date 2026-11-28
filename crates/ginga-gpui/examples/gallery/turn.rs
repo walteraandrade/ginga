@@ -5,6 +5,8 @@
 use std::f32::consts::TAU;
 
 use ginga_gpui::{Motion, Spring};
+
+use crate::app::CHEVRON_PATH;
 use gpui::{
     Context, IntoElement, ParentElement, Render, Styled, Transformation, Window, div, px, radians,
     rgb, svg,
@@ -24,6 +26,13 @@ impl Turn {
         }
     }
 
+    /// How much of a whole turn the chevron has made this frame.
+    #[cfg(test)]
+    pub fn turned(&mut self, cx: &gpui::App) -> f32 {
+        let (motion, now) = self.turned.inspect(cx);
+        motion.sample(now).value
+    }
+
     pub fn play(&mut self, cx: &mut Context<Self>) {
         self.open = !self.open;
         cx.notify();
@@ -41,7 +50,7 @@ impl Render for Turn {
             .gap(px(12.))
             .child(
                 svg()
-                    .path("icons/chevron.svg")
+                    .path(CHEVRON_PATH)
                     .size(px(24.))
                     .text_color(rgb(0x00e0_e2e6))
                     .with_transformation(Transformation::rotate(radians(turned * TAU))),

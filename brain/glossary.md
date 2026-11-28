@@ -144,7 +144,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Clock** (`ginga_gpui::Clock`). The frame's time as the `Duration` the engine counts in, from the first frame the clock saw. The engine never reads a clock; the adapter reads one and hands the time on.
 
-**Reduced motion.** The desktop's setting for less motion. Under it, the adapter's motions, looks and presences keep each transition's delay and drop its motion (`unless_reduced`, `Transition::without_motion`, `Transitions::without_motion`): a delayed value holds still, then is at its target at once. A variant's schedule, a sequence's schedule (`ginga_gpui::sequence`) and a shared element's trip are dropped whole. See [[decisions/2026-11-27-reduced-motion-keeps-delays]].
+**Reduced motion.** Less motion, asked for through GPUI's `reduce_motion` flag. GPUI 0.3.12 starts it off and does not read the desktop's preference, so the app sets it with `cx.set_reduce_motion`. Under it, the adapter's motions, looks and presences keep each transition's delay and drop its motion (`unless_reduced`, `Transition::without_motion`, `Transitions::without_motion`): a delayed value holds still, then is at its target at once. A variant's schedule, a sequence's schedule (`ginga_gpui::sequence`) and a shared element's trip are dropped whole. See [[decisions/2026-11-27-reduced-motion-keeps-delays]].
 
 **Animate** (`ginga_gpui::Animate`) and **stand-in** (`ginga_gpui::InPixels`). The orphan rule keeps the adapter from implementing `Animatable` for GPUI's own types, so each GPUI type that can move names a stand-in that the engine moves instead. `InPixels` is the stand-in for pixels: it stops a tenth of a pixel from the target.
 

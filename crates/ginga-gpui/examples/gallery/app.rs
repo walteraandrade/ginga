@@ -15,18 +15,25 @@ use gpui::{
 };
 
 /// The gallery's own files: the icons its pages draw.
-struct Assets;
+pub struct Assets;
+
+/// Where the turn page finds its chevron.
+pub const CHEVRON_PATH: &str = "icons/chevron.svg";
 
 /// A chevron pointing right, drawn in the text color.
 const CHEVRON: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>"#;
 
 impl gpui::AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<std::borrow::Cow<'static, [u8]>>> {
-        Ok((path == "icons/chevron.svg").then_some(std::borrow::Cow::Borrowed(CHEVRON.as_bytes())))
+        Ok((path == CHEVRON_PATH).then_some(std::borrow::Cow::Borrowed(CHEVRON.as_bytes())))
     }
 
-    fn list(&self, _path: &str) -> gpui::Result<Vec<SharedString>> {
-        Ok(vec!["icons/chevron.svg".into()])
+    fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
+        Ok(if CHEVRON_PATH.starts_with(path) {
+            vec![CHEVRON_PATH.into()]
+        } else {
+            Vec::new()
+        })
     }
 }
 

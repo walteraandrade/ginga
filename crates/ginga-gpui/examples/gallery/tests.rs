@@ -5,7 +5,12 @@ use std::time::Duration;
 
 use gpui::{TestAppContext, WindowHandle, px, size};
 
-use crate::app::{Gallery, Page};
+use gpui::AssetSource as _;
+
+use crate::{
+    app::{Assets, CHEVRON_PATH, Gallery, Page},
+    turn::Turn,
+};
 
 /// Frames a page may take to settle, at 60 a second: ten seconds.
 const MOST_FRAMES: usize = 600;
@@ -52,5 +57,46 @@ fn every_page_moves_on_play_and_then_settles(cx: &mut TestAppContext) {
                 page.name
             );
         }
+    }
+}
+
+#[gpui::test]
+fn the_turn_page_draws_its_chevron_and_turns_a_quarter(cx: &mut TestAppContext) {
+    let chevron = Assets
+        .load(CHEVRON_PATH)
+        .unwrap()
+        .expect("the chevron is there");
+    assert!(chevron.starts_with(b"<svg"), "the chevron is an svg");
+    assert!(
+        Assets
+            .list("icons")
+            .unwrap()
+            .iter()
+            .any(|p| p.as_ref() == CHEVRON_PATH)
+    );
+    assert!(
+        Assets.list("fonts").unwrap().is_empty(),
+        "only icons are listed"
+    );
+
+    let window = cx.open_window(size(px(400.), px(100.)), |_, _| Turn::new());
+    cx.run_until_parked();
+    let turned =
+        |cx: &mut TestAppContext| window.update(cx, |turn, _, cx| turn.turned(cx)).unwrap();
+    assert_eq!(turned(cx), 0.0);
+    for target in [0.25, 0.0] {
+        window.update(cx, |turn, _, cx| turn.play(cx)).unwrap();
+        cx.run_until_parked();
+        for _ in 0..MOST_FRAMES {
+            cx.executor().advance_clock(Duration::from_millis(16));
+            let requests = window
+                .update(cx, |_, window, cx| window.simulate_next_frame(cx))
+                .unwrap();
+            cx.run_until_parked();
+            if requests == 0 {
+                break;
+            }
+        }
+        assert_eq!(turned(cx), target, "settled exactly on {target} of a turn");
     }
 }

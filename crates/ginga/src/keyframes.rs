@@ -105,6 +105,8 @@ pub struct Keyframes<T: Animatable, const N: usize> {
     mirrored: bool,
     pause: Duration,
     start: Duration,
+    /// How far behind keyframes without it these play.
+    behind: Duration,
 }
 
 impl<T: Animatable, const N: usize> Keyframes<T, N> {
@@ -135,6 +137,7 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
             mirrored: false,
             pause: Duration::ZERO,
             start: Duration::ZERO,
+            behind: Duration::ZERO,
         })
     }
 
@@ -176,6 +179,40 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
         self
     }
 
+    /// Plays `lag` behind the same keyframes without it. Its rounds start
+    /// `lag` after its start, and [`settles_at`](Self::settles_at) counts
+    /// from there.
+    ///
+    /// Keyframes that play [`forever`](Self::forever) are partway through a
+    /// round from their start: until `lag` has passed, they are where the
+    /// round before their first would be. Copies of one loop, each a step
+    /// further behind, play it one after another, each a part of the round
+    /// away. Keyframes with a count of rounds play only those: until `lag`
+    /// has passed they rest on the first stop, as with
+    /// [`starting_at`](Self::starting_at).
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use ginga::{Easing, Keyframes, Stop};
+    ///
+    /// let ms = Duration::from_millis;
+    /// let rise = Keyframes::new([
+    ///     Stop::new(ms(0), 0.0, Easing::Linear),
+    ///     Stop::new(ms(400), 1.0, Easing::Linear),
+    /// ])?
+    /// .forever();
+    /// let second = rise.behind(ms(100));
+    /// // From its very start it is where the first was 100 ms before, a round ago.
+    /// assert_eq!(second.sample(ms(0)).value, rise.sample(ms(300)).value);
+    /// assert_eq!(second.sample(ms(250)).value, rise.sample(ms(150)).value);
+    /// # Ok::<(), ginga::KeyframesError>(())
+    /// ```
+    #[must_use]
+    pub const fn behind(mut self, lag: Duration) -> Self {
+        self.behind = lag;
+        self
+    }
+
     /// The value at `now`. It never changes the keyframes.
     #[must_use]
     pub fn sample(&self, now: Duration) -> Sample<T> {
@@ -185,26 +222,31 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
                 settled: false,
             };
         }
-        if self.settles_at().is_some_and(|end| now >= end) {
+        let settles_at = self.settles_at();
+        if settles_at.is_some_and(|end| now >= end) {
             return Sample {
                 value: self.rest(),
                 settled: true,
             };
         }
-        // Past `settles_at`, so the round has a length: see there.
-        let round = self.round_length();
-        let period = round.saturating_add(self.pause);
-        let (index, within) = split(now.saturating_sub(self.start), period);
-        // In the pause, the value holds where the round ended.
-        let within = within.min(round);
-        let backward = self.mirrored && index % 2 == 1;
-        let at = if backward {
-            round.saturating_sub(within)
-        } else {
-            within
-        };
+        // Not settled, so the round has a length: see `settles_at`.
+        let rounds_start = self.start.saturating_add(self.behind);
+        if now < rounds_start {
+            // Only a loop is partway through a round before its first: a
+            // count of rounds plays only those.
+            let value = if settles_at.is_none() {
+                self.before_its_rounds(rounds_start.saturating_sub(now))
+            } else {
+                self.stops[0].value
+            };
+            return Sample {
+                value,
+                settled: false,
+            };
+        }
+        let (index, within) = split(now.saturating_sub(rounds_start), self.period());
         Sample {
-            value: self.value_at(at),
+            value: self.in_period(index, within),
             settled: false,
         }
     }
@@ -220,13 +262,51 @@ impl<T: Animatable, const N: usize> Keyframes<T, N> {
         let Rounds::Times(rounds) = self.rounds else {
             return None;
         };
+        if rounds == 0 {
+            return Some(self.start);
+        }
         let pauses = self.pause.checked_mul(rounds.saturating_sub(1));
         let played = self
             .round_length()
             .checked_mul(rounds)
             .zip(pauses)
             .and_then(|(rounds, pauses)| rounds.checked_add(pauses));
-        Some(played.map_or(Duration::MAX, |played| self.start.saturating_add(played)))
+        let rounds_start = self.start.saturating_add(self.behind);
+        Some(played.map_or(Duration::MAX, |played| rounds_start.saturating_add(played)))
+    }
+
+    /// The value `early` before the first round starts: where a round that
+    /// came before it would be, the one just before played backward when
+    /// the keyframes are mirrored.
+    fn before_its_rounds(&self, early: Duration) -> T {
+        let period = self.period();
+        let (whole, left) = split(early, period);
+        // `early` lies in the `back`-th period before the first, `within` it.
+        let (back, within) = if left.is_zero() {
+            (whole, Duration::ZERO)
+        } else {
+            (whole + 1, period.saturating_sub(left))
+        };
+        self.in_period(back, within)
+    }
+
+    /// A round and the pause after it.
+    fn period(&self) -> Duration {
+        self.round_length().saturating_add(self.pause)
+    }
+
+    /// The value `within` the period numbered `index`, counted either way
+    /// from the first round: every odd one plays backward when mirrored, and
+    /// in the pause the value holds where the round ended.
+    fn in_period(&self, index: u128, within: Duration) -> T {
+        let round = self.round_length();
+        let within = within.min(round);
+        let at = if self.mirrored && index % 2 == 1 {
+            round.saturating_sub(within)
+        } else {
+            within
+        };
+        self.value_at(at)
     }
 
     /// Where the keyframes rest once they have played: the last stop, or the
@@ -585,6 +665,88 @@ ms           value
             50.0,
             "held in the long pause"
         );
+    }
+
+    /// The working dots' round: up over 400 ms, down over 800 ms, linear.
+    fn dot() -> Keyframes<f32, 3> {
+        Keyframes::new([
+            Stop::new(ms(0), 0.0, Easing::Linear),
+            Stop::new(ms(400), 1.0, Easing::Linear),
+            Stop::new(ms(1200), 0.0, Easing::Linear),
+        ])
+        .unwrap()
+        .forever()
+    }
+
+    #[test]
+    fn copies_behind_one_another_are_each_partway_through_the_round_from_the_start() {
+        let round = 1200;
+        let dots = [0, 160, 320].map(|lag| dot().behind(ms(lag)));
+        for t in (0..=2400).step_by(40) {
+            for (dot, lag) in dots.iter().zip([0, 160, 320]) {
+                // As the first dot at t - lag, a round later where that is
+                // before its start.
+                let then = (t + round - lag) % round;
+                let expected = dots[0].sample(ms(then)).value;
+                assert!(
+                    (dot.sample(ms(t)).value - expected).abs() < 1e-5,
+                    "the dot {lag} ms behind, at {t} ms"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn behind_counts_its_rounds_from_when_the_lag_is_over() {
+        let pulse = up_and_half_back().times(2).behind(ms(50));
+        assert_eq!(pulse.settles_at(), Some(ms(450)));
+        assert_eq!(
+            values(&pulse, &[0, 49, 50, 150]),
+            [(0.0, false), (0.0, false), (0.0, false), (100.0, false)],
+            "a count of rounds rests on the first stop until the lag is over"
+        );
+        let once = up_and_half_back().times(1).behind(ms(1_000));
+        assert_eq!(once.sample(ms(0)).value, 0.0, "and plays no extra round");
+        assert_eq!(once.sample(ms(1_100)).value, 100.0);
+        assert!(!pulse.sample(ms(449)).settled);
+        assert!(pulse.sample(ms(450)).settled);
+        // Mirrored, the round just before the first plays backward.
+        let mirrored = up_and_half_back().mirrored().forever().behind(ms(50));
+        assert_eq!(
+            mirrored.sample(ms(0)).value,
+            up_and_half_back().sample(ms(50)).value
+        );
+        // No rounds: nothing to be partway through.
+        let none = up_and_half_back().times(0).behind(ms(50));
+        assert_eq!(none.settles_at(), Some(ms(0)));
+        assert!(none.sample(ms(0)).settled);
+    }
+
+    #[test]
+    fn a_loop_behind_is_where_it_was_lag_before_for_any_lag_pause_or_mirror() {
+        // Lags of whole periods (200 and 400 with no pause, 250 and 500 with
+        // one), of parts of one, and of more than one.
+        let kinds = [
+            (up_and_half_back().forever(), 200),
+            (up_and_half_back().forever().mirrored(), 200),
+            (up_and_half_back().forever().pause(ms(50)), 250),
+            (up_and_half_back().forever().pause(ms(50)).mirrored(), 250),
+        ];
+        for (base, period) in kinds {
+            // Long enough to reach back past any lag, and a whole number of
+            // back-and-forth rounds.
+            let cycles = 8 * period;
+            for lag in [30, 200, 230, 250, 400, 470, 500] {
+                let copy = base.behind(ms(lag));
+                for t in (0..=1_000).step_by(10) {
+                    let expected = base.sample(ms(t + cycles - lag)).value;
+                    assert!(
+                        (copy.sample(ms(t)).value - expected).abs() < 1e-4,
+                        "{lag} ms behind, period {period}, mirrored or not, at {t} ms"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

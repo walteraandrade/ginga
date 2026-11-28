@@ -211,7 +211,9 @@ fn building_and_reading_keyframes_allocates_nothing() {
     .unwrap()
     .forever()
     .mirrored()
-    .pause(ms(300));
+    .pause(ms(300))
+    // Partway through a round from its start.
+    .behind(ms(700));
     let dots = [0u32, 1, 2].map(|n| {
         Keyframes::new([
             Stop::new(ms(0), 0.3, Easing::Linear),

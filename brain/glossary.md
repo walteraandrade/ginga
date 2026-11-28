@@ -36,7 +36,7 @@ Types are in `code`. Unless it says otherwise, a type is in the engine, `ginga`;
 
 **Stagger.** Items that arrive one after another: each gets a delay one step longer than the one before, usually up to a cap. ginga has no stagger call; it is a delay per item ([the decision](decisions/2026-11-27-stagger-is-a-delay-on-the-transition.md)).
 
-**Keyframes** (`Keyframes`). A motion through several stops instead of to one target, which can repeat. Built from an array of stops, so it is plain data and never allocates; see [the decision](decisions/2026-11-27-keyframes-are-an-array-of-stops.md). `ginga_gpui::Keyframes` is the same for a GPUI view.
+**Keyframes** (`Keyframes`). A motion through several stops instead of to one target, which can repeat. Built from an array of stops, so it is plain data and never allocates; see [the decision](decisions/2026-11-27-keyframes-are-an-array-of-stops.md). `ginga_gpui::Keyframes` is the same for a GPUI view. **Behind** (`Keyframes::behind`): keyframes that play a lag behind others of the same loop, and are partway through a round from their start instead of resting on the first stop; a count of rounds waits on the first stop until the lag is over. *Not `starting_at`*, which waits on the first stop until its start. See [the decision](decisions/2026-11-27-behind-is-a-lag-in-time.md).
 
 **Stop** (`Stop`). One point of keyframes: a value, the time in a round it is reached, and the easing that gets there from the stop before. The first stop is at zero; two stops at one time are a jump.
 

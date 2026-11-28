@@ -39,6 +39,8 @@ use crate::{Animate, Clock};
 pub struct Keyframes<T: Animate, const N: usize> {
     stops: ginga::Keyframes<T::Repr, N>,
     clock: Clock,
+    /// How long after the first frame, or after a restart, they start.
+    delay: Duration,
     every: Option<Duration>,
     /// The view a capped frame is asked for, and the time until which it
     /// is: until then, that view asks for no other.
@@ -57,6 +59,7 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
         Ok(Self {
             stops: ginga::Keyframes::new(stops)?,
             clock: Clock::default(),
+            delay: Duration::ZERO,
             every: None,
             asked: None,
         })
@@ -90,6 +93,27 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
         self
     }
 
+    /// Starts `start` after the first frame that draws them instead of on
+    /// it, and as long after each [`restart`](Self::restart); before then
+    /// they rest on the first stop. See [`ginga::Keyframes::starting_at`].
+    #[must_use]
+    pub fn starting_at(mut self, start: Duration) -> Self {
+        self.delay = start;
+        self.stops = self.stops.starting_at(start);
+        self
+    }
+
+    /// Plays `lag` behind the same keyframes without it. A loop is partway
+    /// through a round from the first frame: copies of one loop, each a step
+    /// further behind, play it one after another. A count of rounds rests on
+    /// the first stop until `lag` has passed. See
+    /// [`ginga::Keyframes::behind`].
+    #[must_use]
+    pub fn behind(mut self, lag: Duration) -> Self {
+        self.stops = self.stops.behind(lag);
+        self
+    }
+
     /// Asks for a frame no sooner than `every` after the one being drawn, to
     /// draw a slow loop at a lower rate than the display's. The values stay
     /// those of each frame's time.
@@ -116,10 +140,13 @@ impl<T: Animate, const N: usize> Keyframes<T, N> {
         self
     }
 
-    /// Plays the keyframes again from their first stop, now.
+    /// Plays the keyframes again, now: from their first stop, or after the
+    /// delay of [`starting_at`](Self::starting_at). A loop
+    /// [`behind`](Self::behind) others stays as far behind, partway through
+    /// a round, so restarted copies keep their places in the loop.
     pub fn restart(&mut self, cx: &App) {
         let now = self.clock.now(cx);
-        self.stops = self.stops.starting_at(now);
+        self.stops = self.stops.starting_at(now.saturating_add(self.delay));
     }
 
     /// The value to draw this frame.

@@ -1,6 +1,7 @@
 //! A mark breathes and three dots pulse, each through its keyframes. The mark
 //! is an island of its own, so it is drawn at most about 30 times a second
-//! while the dots, beside it, are drawn on every frame.
+//! while the dots, beside it, are drawn on every frame. The dots play one
+//! round, each copy a step behind the one before.
 
 use std::time::Duration;
 
@@ -15,7 +16,7 @@ fn ms(millis: u64) -> Duration {
 
 pub struct Pulse {
     mark: Entity<Island<Keyframes<f32, 3>>>,
-    dots: [Keyframes<f32, 5>; 3],
+    dots: [Keyframes<f32, 4>; 3],
 }
 
 impl Pulse {
@@ -51,22 +52,21 @@ impl Pulse {
                     .into_any_element()
             })
         });
-        // Each dot waits its turn inside a round of the same length, so the
-        // three stay in step round after round.
-        let dot = |wait: u64| {
-            Keyframes::new([
-                Stop::new(ms(0), 0.3, Easing::Linear),
-                Stop::new(ms(wait), 0.3, Easing::Linear),
-                Stop::new(ms(wait + 250), 1.0, Easing::OutQuart),
-                Stop::new(ms(wait + 500), 0.3, Easing::InOutSine),
-                Stop::new(ms(800), 0.3, Easing::Linear),
-            ])
-            .expect("the stops are in order from zero")
-            .times(0)
-        };
+        // One round for all three, each dot 150 ms behind the one before, so
+        // they stay a step apart. Zero rounds until Play. As a loop, with
+        // `forever`, each would be partway through the round from the first
+        // frame; with a count, each waits its turn on the first stop.
+        let dot = Keyframes::new([
+            Stop::new(ms(0), 0.3, Easing::Linear),
+            Stop::new(ms(250), 1.0, Easing::OutQuart),
+            Stop::new(ms(500), 0.3, Easing::InOutSine),
+            Stop::new(ms(800), 0.3, Easing::Linear),
+        ])
+        .expect("the stops are in order from zero")
+        .times(0);
         Self {
             mark,
-            dots: [dot(0), dot(150), dot(300)],
+            dots: [0, 150, 300].map(|lag| dot.behind(ms(lag))),
         }
     }
 

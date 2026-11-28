@@ -1,0 +1,53 @@
+name: Book
+
+# The book in `book/` is the site at https://walteraandrade.github.io/ginga/.
+# A pull request builds it and checks its links; a push to main also publishes it.
+# Its examples run as tests in CI's `cargo test` (the `ginga-book` crate), not here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: book-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook@0.4.52
+      - run: mdbook build book
+      # llms.txt, llms-full.txt and a .md beside each page, for language models.
+      - run: python3 book/llms.py book/book
+      # mdBook does not fail on a broken link or anchor; this does.
+      - run: python3 book/check-links.py book/book
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: book/book
+
+  deploy:
+    # Only main is published, from a push or a manual run on main.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # One deploy at a time, the newest last.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

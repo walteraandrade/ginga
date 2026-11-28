@@ -1,0 +1,15 @@
+[book]
+title = "ginga"
+description = "ginga: an animation library for Rust UIs. Springs, tweens, keyframes and enter and exit transitions as pure functions of time, with a dependency-free engine and a GPUI adapter."
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/walteraandrade/ginga"
+edit-url-template = "https://github.com/walteraandrade/ginga/edit/main/book/{path}"
+site-url = "/ginga/"
+default-theme = "navy"
+preferred-dark-theme = "navy"
+
+[output.html.playground]
+runnable = false

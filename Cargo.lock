@@ -1923,6 +1923,13 @@ name = "ginga"
 version = "0.1.0"
 
 [[package]]
+name = "ginga-book"
+version = "0.1.0"
+dependencies = [
+ "ginga",
+]
+
+[[package]]
 name = "ginga-gpui"
 version = "0.1.0"
 dependencies = [

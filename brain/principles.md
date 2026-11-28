@@ -16,4 +16,4 @@ The ideas the rules in `AGENTS.md` come from. Each file says the rule, why it ho
 
 - [[principles/the-engine-knows-no-framework]]: the engine has no dependencies; the adapter adds only what needs GPUI.
 - [[principles/an-invalid-value-does-not-build]]: a bad value is an error at the constructor, with a message that says what to use.
-- [[principles/a-small-api]]: a new call has to show that the ones in the README cannot do the job.
+- [[principles/a-small-api]]: a new call has to show that the ones in the book cannot do the job.

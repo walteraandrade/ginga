@@ -5,12 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        ginga keeps its API small: a new call has to show that the ones in the README can't do the job. Please read the [principles](https://github.com/walteraandrade/ginga/blob/main/brain/principles.md) and the README's "What it does not do yet" first.
+        ginga keeps its API small: a new call has to show that the ones in [the book](https://walteraandrade.github.io/ginga/) can't do the job. Please read the [principles](https://github.com/walteraandrade/ginga/blob/main/brain/principles.md) and the book's [What it does not do yet](https://walteraandrade.github.io/ginga/not-yet.html) first.
   - type: textarea
     id: what-to-build
     attributes:
       label: What to build
-      description: The behavior, from the point of view of whoever uses the crates, as one thin slice that can be shown working on its own. Say what you tried with the calls in the README, and where they fall short.
+      description: The behavior, from the point of view of whoever uses the crates, as one thin slice that can be shown working on its own. Say what you tried with the calls in the book, and where they fall short.
     validations:
       required: true
   - type: textarea

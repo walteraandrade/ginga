@@ -38,6 +38,7 @@ ginga's memory, for agents and people: what earlier sessions decided and found, 
 - [[decisions/2026-11-27-a-frame-cap-is-per-set-of-keyframes]]: `at_most_every` caps one set of keyframes, not a view (#65).
 - [[decisions/2026-11-27-behind-is-a-lag-in-time]]: copies of one loop play a lag behind, partway through a round; a count of rounds waits (#64).
 - [[decisions/2026-11-27-files-for-contributors]]: CONTRIBUTING, code of conduct, security policy and issue forms, pointing at `AGENTS.md` and this folder (#48).
+- [[decisions/2026-11-28-a-book-for-the-docs]]: the docs are an mdBook on GitHub Pages, and the README is one screen that links to it.
 
 ## Codebase
 

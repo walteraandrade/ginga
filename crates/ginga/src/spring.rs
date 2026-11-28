@@ -128,7 +128,7 @@ impl Spring {
     ///
     /// let ms = Duration::from_millis;
     /// // Motion's default spring: a ratio of 0.5, so a bounce of 0.5.
-    /// let spring = Spring::from_stiffness(100.0, 10.0, 1.0)?;
+    /// let spring = Spring::physical(100.0, 10.0, 1.0)?;
     /// let mut x = Motion::at(0.0);
     /// x.set_target(100.0, spring, ms(0));
     /// assert!(x.sample(ms(300)).value > 100.0); // past its target, on the way back
@@ -139,7 +139,7 @@ impl Spring {
     ///
     /// [`SpringError::NotASpring`] when a value is not finite or not more
     /// than zero, or when together they make a spring too fast to compute.
-    pub fn from_stiffness(stiffness: f32, damping: f32, mass: f32) -> Result<Self, SpringError> {
+    pub fn physical(stiffness: f32, damping: f32, mass: f32) -> Result<Self, SpringError> {
         let positive = |value: f32| value.is_finite() && value > 0.0;
         let omega = (stiffness / mass).sqrt();
         let zeta = damping / (2.0 * (stiffness * mass).sqrt());
@@ -352,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn a_spring_from_stiffness_moves_as_the_same_response_and_bounce() {
+    fn a_spring_physical_moves_as_the_same_response_and_bounce() {
         // (stiffness, damping, mass) and the response in seconds and bounce they make.
         let cases = [
             ((100.0, 10.0, 1.0), (TAU / 10.0, 0.5)),  // a ratio of 0.5
@@ -361,7 +361,7 @@ mod tests {
             ((200.0, 20.0, 2.0), (TAU / 10.0, 0.5)),  // a heavier mass, the same spring
         ];
         for ((stiffness, damping, mass), (response, bounce)) in cases {
-            let given = Spring::from_stiffness(stiffness, damping, mass).unwrap();
+            let given = Spring::physical(stiffness, damping, mass).unwrap();
             let same = Spring::new(Duration::from_secs_f32(response))
                 .bounce(bounce)
                 .unwrap();
@@ -389,7 +389,7 @@ mod tests {
             (1e38, 10.0, 1e-38), // too fast to compute
         ];
         for (stiffness, damping, mass) in not {
-            let error = Spring::from_stiffness(stiffness, damping, mass).unwrap_err();
+            let error = Spring::physical(stiffness, damping, mass).unwrap_err();
             assert!(matches!(error, SpringError::NotASpring { .. }), "{error:?}");
             assert!(
                 error.to_string().contains("such as stiffness 100.0"),

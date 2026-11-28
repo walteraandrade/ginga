@@ -10,7 +10,7 @@ use gpui::{
 use crate::{
     Clock,
     look::{LookExt, WithLook},
-    unless_reduced,
+    reduced,
 };
 
 /// Draws `content` while it is there, and keeps drawing it on its way out.
@@ -125,21 +125,23 @@ impl<T: PartialEq + 'static> Present<T> {
         self
     }
 
-    /// The ways to use this frame: none for a look that is not given, and
-    /// none with motion when the desktop asks for reduced motion, each after
-    /// its delay.
-    fn ways(&self, cx: &App) -> InOut {
+    /// The ways to use this frame: none for a look that is not given. Under
+    /// reduced motion a way that fades keeps its transition, and its offset
+    /// is left out when it is drawn; a way that only moves has no motion,
+    /// after its delay.
+    fn ways(&self, reduced: bool) -> InOut {
+        let way = |look: Option<Look>, transition: Transition| {
+            if !moves(look) {
+                Transition::Instant
+            } else if reduced && !fades(look) {
+                transition.without_motion()
+            } else {
+                transition
+            }
+        };
         InOut {
-            enter: if moves(self.arrive_from) {
-                unless_reduced(self.ways.enter, cx)
-            } else {
-                Transition::Instant
-            },
-            exit: if moves(self.leave_to) {
-                unless_reduced(self.ways.exit, cx)
-            } else {
-                Transition::Instant
-            },
+            enter: way(self.arrive_from, self.ways.enter),
+            exit: way(self.leave_to, self.ways.exit),
         }
     }
 
@@ -154,19 +156,36 @@ impl<T: PartialEq + 'static> Present<T> {
         swapped_out: bool,
         came_back: Option<u64>,
         focus: Option<FocusHandle>,
+        reduced: bool,
     ) -> WithLook<gpui::Stateful<gpui::Div>> {
         let coming_back = came_back == Some(shown.content.number);
+        // Under reduced motion a way in or out that fades only fades: it is
+        // drawn where it is laid out. One that only moves keeps its offset
+        // and has no motion, so it waits there for its delay, as before.
+        let way = |look: Option<Look>| {
+            look.map(|look| {
+                if reduced && fades(Some(look)) {
+                    Look {
+                        offset: None,
+                        ..look
+                    }
+                } else {
+                    look
+                }
+            })
+        };
+        let (arrive_from, leave_to) = (way(self.arrive_from), way(self.leave_to));
         let look = match shown.phase {
             Phase::Present => Look::new(),
-            Phase::Entering if coming_back => self
-                .leave_to
-                .map_or(Look::new(), |to| to.mix(Look::new(), shown.progress)),
-            Phase::Entering => self
-                .arrive_from
-                .map_or(Look::new(), |from| from.mix(Look::new(), shown.progress)),
-            Phase::Exiting => self
-                .leave_to
-                .map_or(Look::new(), |to| to.mix(Look::new(), shown.progress)),
+            Phase::Entering if coming_back => {
+                leave_to.map_or(Look::new(), |to| to.mix(Look::new(), shown.progress))
+            }
+            Phase::Entering => {
+                arrive_from.map_or(Look::new(), |from| from.mix(Look::new(), shown.progress))
+            }
+            Phase::Exiting => {
+                leave_to.map_or(Look::new(), |to| to.mix(Look::new(), shown.progress))
+            }
         };
         let mut drawn = div()
             .id(ElementId::Integer(shown.content.number))
@@ -187,6 +206,11 @@ impl<T: PartialEq + 'static> Present<T> {
         }
         drawn.with_look(look)
     }
+}
+
+/// A way in or out with this look fades: it names an opacity.
+fn fades(look: Option<Look>) -> bool {
+    look.is_some_and(|look| look.opacity.is_some_and(f32::is_finite))
 }
 
 /// A way in or out with this look moves something: only an offset and an
@@ -278,7 +302,8 @@ impl<T: PartialEq + 'static> Element for Present<T> {
         cx: &mut App,
     ) -> (LayoutId, AnyElement) {
         let id = id.expect("an element with an id is laid out with one");
-        let ways = self.ways(cx);
+        let reduced = reduced(cx);
+        let ways = self.ways(reduced);
         let content = self.content.take();
         let (mut element, gone) = window.with_element_state(id, |kept: Option<Kept<T>>, window| {
             let mut kept = kept.unwrap_or_else(|| Kept {
@@ -336,7 +361,13 @@ impl<T: PartialEq + 'static> Element for Present<T> {
                     .map(|(_, focus)| focus.clone())
             };
             let drawn = |shown: &Shown<'_, Numbered<T>>, swapped_out: bool| {
-                self.drawn(shown, swapped_out, came_back, focus(shown.content.number))
+                self.drawn(
+                    shown,
+                    swapped_out,
+                    came_back,
+                    focus(shown.content.number),
+                    reduced,
+                )
             };
             let leaving = [first, second]
                 .into_iter()

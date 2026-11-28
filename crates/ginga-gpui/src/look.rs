@@ -163,9 +163,11 @@ enum Keep {
 /// around the element moves. A value the look does not name is left as the
 /// element's own style.
 ///
-/// It asks for frames only while the look moves, and takes each new look at
-/// once when the desktop asks for reduced motion, each value after its
-/// transition's delay. A variant's schedule is not kept then.
+/// It asks for frames only while the look moves. Under reduced motion it keeps
+/// its fades: the opacity and the colors keep their transitions, and every
+/// other value is taken at once after its transition's delay
+/// ([`Transitions::for_reduced_motion`](ginga::Transitions::for_reduced_motion)).
+/// A variant's schedule is not kept then.
 ///
 /// It can take another look for a moment: [`hover`](Self::hover) while the
 /// pointer is over it, [`pressed`](Self::pressed) while it is pressed, and
@@ -350,9 +352,9 @@ impl<E: Styled + IntoElement + 'static> Looked<E> {
         let mut transitions = if changed {
             let app = cx.try_global::<AppTransitions>().map(|app| app.0);
             let transitions = self.transitions.or(app.unwrap_or_default());
-            // Every value with no motion, each after its own delay.
+            // Fades kept; every other value with no motion, after its own delay.
             if reduced {
-                transitions.without_motion()
+                transitions.for_reduced_motion()
             } else {
                 transitions
             }

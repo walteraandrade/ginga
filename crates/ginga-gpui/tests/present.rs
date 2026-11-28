@@ -26,8 +26,8 @@ type Drawn = Rc<RefCell<Vec<(&'static str, Bounds<Pixels>)>>>;
 struct Stage {
     wanted: Rc<Cell<Option<&'static str>>>,
     swap: Swap,
-    /// Without the arriving and leaving looks, both ways are instant.
-    looks: bool,
+    /// What the arriving and leaving looks do.
+    ways: Ways,
     /// How long each way waits before it starts.
     delay: Duration,
     drawn: Drawn,
@@ -41,6 +41,17 @@ struct Stage {
     hidden: bool,
     /// Renders again when content is gone, as a view that changes then does.
     renders_on_gone: bool,
+}
+
+/// What a stage's ways in and out do.
+#[derive(Clone, Copy, PartialEq)]
+enum Ways {
+    /// No arriving or leaving look: both ways are instant.
+    Instant,
+    /// Arrive from 40 px down, leave to 40 px up.
+    Move,
+    /// Move, and fade from and to unseen too.
+    MoveAndFade,
 }
 
 /// The contents a stage found gone.
@@ -84,12 +95,17 @@ impl Render for Stage {
                 .ok();
             }
         });
-        let shown = if self.looks {
+        let unseen = if self.ways == Ways::MoveAndFade {
+            Look::new().opacity(0.)
+        } else {
+            Look::new()
+        };
+        let shown = if self.ways == Ways::Instant {
             shown
-                .arrive_from(Look::new().offset(0., 40.))
-                .leave_to(Look::new().offset(0., -40.))
         } else {
             shown
+                .arrive_from(Look::new().offset(0., 40.).or(unseen))
+                .leave_to(Look::new().offset(0., -40.).or(unseen))
         };
         div()
             .size_full()
@@ -110,14 +126,14 @@ struct Opened<'a> {
 }
 
 fn open<'a>(cx: &'a mut TestAppContext, first: Option<&'static str>, swap: Swap) -> Opened<'a> {
-    open_with(cx, first, swap, true, Duration::ZERO)
+    open_with(cx, first, swap, Ways::Move, Duration::ZERO)
 }
 
 fn open_with<'a>(
     cx: &'a mut TestAppContext,
     first: Option<&'static str>,
     swap: Swap,
-    looks: bool,
+    ways: Ways,
     delay: Duration,
 ) -> Opened<'a> {
     let wanted = Rc::new(Cell::new(first));
@@ -140,7 +156,7 @@ fn open_with<'a>(
         move |_, _| Stage {
             wanted,
             swap,
-            looks,
+            ways,
             delay,
             drawn,
             clicks,
@@ -281,7 +297,7 @@ fn content_that_has_the_focus_loses_it_when_its_way_out_starts(cx: &mut TestAppC
 
 #[gpui::test]
 fn without_looks_both_ways_are_instant(cx: &mut TestAppContext) {
-    let mut stage = open_with(cx, Some("toast"), Swap::Sync, false, Duration::ZERO);
+    let mut stage = open_with(cx, Some("toast"), Swap::Sync, Ways::Instant, Duration::ZERO);
     assert_eq!(stage.last(), [("toast", 0.)], "there at once");
     assert_eq!(stage.cx.update(Window::simulate_next_frame), 0);
     stage.want(None);
@@ -290,7 +306,7 @@ fn without_looks_both_ways_are_instant(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn without_looks_a_swap_that_waits_is_instant_too(cx: &mut TestAppContext) {
-    let mut stage = open_with(cx, Some("old"), Swap::Wait, false, Duration::ZERO);
+    let mut stage = open_with(cx, Some("old"), Swap::Wait, Ways::Instant, Duration::ZERO);
     stage.want(Some("new"));
     assert_eq!(stage.last(), [("new", 0.)], "the old one left at once");
 }
@@ -298,7 +314,7 @@ fn without_looks_a_swap_that_waits_is_instant_too(cx: &mut TestAppContext) {
 #[gpui::test]
 fn under_reduced_motion_each_way_keeps_its_delay(cx: &mut TestAppContext) {
     cx.update(|cx| cx.set_reduce_motion(true));
-    let mut stage = open_with(cx, Some("toast"), Swap::Sync, true, ms(60));
+    let mut stage = open_with(cx, Some("toast"), Swap::Sync, Ways::Move, ms(60));
     assert_eq!(
         stage.after(0),
         [("toast", 40.)],
@@ -355,7 +371,7 @@ fn wanted_again_on_its_way_out_it_is_not_gone(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn an_instant_way_out_is_over_on_the_frame_that_starts_it(cx: &mut TestAppContext) {
-    let mut stage = open_with(cx, Some("toast"), Swap::Sync, false, Duration::ZERO);
+    let mut stage = open_with(cx, Some("toast"), Swap::Sync, Ways::Instant, Duration::ZERO);
     stage.after(16);
     stage.want(None);
     assert_eq!(stage.last(), []);
@@ -470,4 +486,36 @@ fn what_it_changes_when_content_is_gone_draws_the_next_frame(cx: &mut TestAppCon
     // The frame that finds it gone, and the one the view's change asks for:
     // a change made while the frame is drawn would ask for none.
     assert_eq!(stage.renders.get(), renders + 2);
+}
+
+#[gpui::test]
+fn under_reduced_motion_a_way_that_fades_keeps_its_fade_where_it_is(cx: &mut TestAppContext) {
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let mut stage = open(cx, None, Swap::Sync);
+    let view = stage.view.clone();
+    stage
+        .cx
+        .update(|_, cx| view.update(cx, |stage, _| stage.ways = Ways::MoveAndFade));
+    stage.want(Some("toast"));
+    assert_eq!(
+        stage.after(0),
+        [("toast", 0.)],
+        "in its place, not 40 px down"
+    );
+    assert_eq!(stage.after(50), [("toast", 0.)]);
+    assert!(
+        stage.cx.update(Window::simulate_next_frame) > 0,
+        "the fade in asks for frames"
+    );
+    stage.after(50);
+    assert_eq!(
+        stage.cx.update(Window::simulate_next_frame),
+        0,
+        "settled at 100 ms"
+    );
+    stage.want(None);
+    assert_eq!(stage.after(50), [("toast", 0.)], "fading out where it is");
+    assert_eq!(stage.gone().len(), 0);
+    assert_eq!(stage.after(50), [], "gone when the fade is over");
+    assert_eq!(stage.gone(), ["toast"]);
 }

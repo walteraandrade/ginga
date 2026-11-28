@@ -19,8 +19,10 @@
 //! ```
 //!
 //! `toward` reads the frame's clock, asks GPUI for another frame while the
-//! value is moving, and moves at once when the desktop asks for reduced motion,
-//! once the transition's delay, if it has one, is over.
+//! value is moving, and moves at once under reduced motion (which the app turns
+//! on with `cx.set_reduce_motion`; GPUI does not read it from the desktop),
+//! once the transition's delay, if it has one, is over. Looks and `present`
+//! keep their fades then; a bare motion does not know it is a fade.
 
 #![forbid(unsafe_code)]
 
@@ -235,8 +237,8 @@ impl Clock {
     }
 }
 
-/// The transition to use this frame: `transition`, or, when the desktop asks
-/// for reduced motion, the same with no motion. A delay is timing, not
+/// The transition to use this frame: `transition`, or, under reduced motion,
+/// the same with no motion. A delay is timing, not
 /// motion, so it is kept: the value holds still until it is over, then is at
 /// its target at once ([`Transition::without_motion`]).
 pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition {
@@ -248,8 +250,8 @@ pub fn unless_reduced(transition: impl Into<Transition>, cx: &App) -> Transition
     }
 }
 
-/// A [`Sequence`] that starts at `now`, a time on the view's [`Clock`]. When
-/// the desktop asks for reduced motion it has no motion and no schedule
+/// A [`Sequence`] that starts at `now`, a time on the view's [`Clock`]. Under
+/// reduced motion it has no motion and no schedule
 /// ([`Sequence::without_motion`]): each step is at its target once its own
 /// delay is over, as a variant's elements are.
 ///
@@ -270,8 +272,9 @@ pub fn sequence(now: Duration, cx: &App) -> Sequence {
     }
 }
 
-/// The desktop asks for reduced motion: then every motion in the adapter
-/// drops its motion, and is at its target at once after its delay. The one place that asks.
+/// The app asked for reduced motion (`cx.set_reduce_motion`): then a bare
+/// motion is at its target at once after its delay, and a look or a way in
+/// keeps only its fades. The one place that asks.
 fn reduced(cx: &App) -> bool {
     cx.reduce_motion()
 }
@@ -297,8 +300,7 @@ impl<T: Animate> Motion<T> {
     ///
     /// Call it while rendering the view that owns the motion. While the value
     /// is moving it asks GPUI to render that view again on the next frame.
-    /// When the desktop asks for reduced motion the value is at `target` at
-    /// once, after the transition's delay (see [`unless_reduced`]).
+    /// Under reduced motion the value is at `target` at once, after the transition's delay (see [`unless_reduced`]).
     pub fn toward(
         &mut self,
         target: T,
@@ -349,7 +351,7 @@ impl<T: Animate> Motion<T> {
 /// }
 /// ```
 ///
-/// `show` and `hide` move at once when the desktop asks for reduced motion,
+/// `show` and `hide` move at once under reduced motion,
 /// after the transition's delay (see [`unless_reduced`]).
 #[derive(Debug, Clone)]
 pub struct Presence<T> {

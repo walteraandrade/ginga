@@ -425,7 +425,7 @@ let half = fill.sample(ms(50)).value.background.unwrap();
 assert!((half.red - red.red).abs() < 1e-4 && (half.alpha - 0.5).abs() < 1e-6);
 ```
 
-When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves and, under reduced motion, takes each value at once after that value's delay. To write a declared look down, keep it in a `LookState`: `self.card.inspect(cx)` hands back its engine motion and this frame's time for `Trace::of`, as `motion.inspect(cx)` does for a `ginga_gpui::Motion`, and is `None` until an element has drawn with it. A look the view already has, such as one mixed by a presence's progress (`from.mix(Look::new(), shown.progress)`), is applied as it is with `.with_look(look)`: the same mapping, with no motion and no element state.
+When the look changes, the element moves from where it is, and a spring keeps its speed. The motion is kept with the element's id, so the view needs no field for it. On its first frame the element takes its look at once; `.from(look)` makes it arrive from another one. An element that must keep its motion while it is not drawn takes a `LookState` the view owns: `.look_with(&self.card, look, transitions)`. Like `toward`, it asks for frames only while it moves. Under reduced motion it keeps its fades: the opacity and the colors keep their transitions, and the offset, the size and the radius are taken at once after their delay (`Transitions::for_reduced_motion`). To write a declared look down, keep it in a `LookState`: `self.card.inspect(cx)` hands back its engine motion and this frame's time for `Trace::of`, as `motion.inspect(cx)` does for a `ginga_gpui::Motion`, and is `None` until an element has drawn with it. A look the view already has, such as one mixed by a presence's progress (`from.mix(Look::new(), shown.progress)`), is applied as it is with `.with_look(look)`: the same mapping, with no motion and no element state.
 
 In the engine the same thing is a `LookMotion`, which takes the time as an argument like a `Motion`.
 
@@ -494,7 +494,7 @@ present("toast", self.saved.then_some("Saved"), ways, |text| {
 .leave_to(Look::new().opacity(0.))
 ```
 
-Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once. `.on_gone(|content, window, cx| ..)` is called with each content once it is gone, after the frame that finds it gone: to drop what the view kept for it, or to move the focus. An instant way out, or one that reduced motion makes instant, is over on the frame that starts it; content wanted again on its way out is not gone.
+Content that is there in the first frame arrives too. Without `arrive_from` it appears at once, and without `leave_to` it is gone at once. Under reduced motion a way whose look names an opacity keeps its transition and fades where the content is laid out, its offset left out; a way that only moves is taken at once after its delay. `.on_gone(|content, window, cx| ..)` is called with each content once it is gone, after the frame that finds it gone: to drop what the view kept for it, or to move the focus. An instant way out, or one that reduced motion makes instant, is over on the frame that starts it; content wanted again on its way out is not gone.
 
 ### Gliding to a new place
 
@@ -832,7 +832,7 @@ assert_eq!(lines, ["one Present", "two Exiting"]);
 
 ### Reduced motion on purpose
 
-The adapter reads GPUI's own flag, `cx.reduce_motion()`. GPUI 0.3.12 starts it off and does not read the desktop's preference, so an app sets it, from its own setting or from the desktop's, and a test sets it the same way: `cx.set_reduce_motion(true)`. Every motion, look and presence in the adapter then keeps its delay and drops its motion; a variant's or a sequence's schedule and a shared element's trip are dropped whole.
+The adapter reads GPUI's own flag, `cx.reduce_motion()`. GPUI 0.3.12 starts it off and does not read the desktop's preference, so an app sets it, from its own setting or from the desktop's, and a test sets it the same way: `cx.set_reduce_motion(true)`. A look and a `present` way that fades then keep their fades: the opacity and the colors keep their transitions, and the offset, the size and the radius go at once after their delay, so a toast fades in where it is instead of sliding. Every other motion and presence keeps its delay and drops its motion; a variant's or a sequence's schedule and a shared element's trip are dropped whole.
 
 ### Pause, seek, speed, reverse
 

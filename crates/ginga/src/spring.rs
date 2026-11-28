@@ -33,8 +33,10 @@ pub struct Spring {
 pub enum SpringError {
     /// The bounce is not a number strictly between `-1.0` and `1.0`.
     BounceOutOfRange(f32),
-    /// A stiffness, damping and mass that make no spring: stiffness and mass
-    /// must be finite and more than zero, damping finite and more than zero.
+    /// A stiffness, damping and mass that make no spring: each must be
+    /// finite and more than zero, and together they must make a spring the
+    /// closed form can compute, not one that rings or dies out too fast or
+    /// too slowly for an `f32`.
     NotASpring {
         /// The stiffness given.
         stiffness: f32,
@@ -57,6 +59,17 @@ impl fmt::Display for SpringError {
                 stiffness,
                 damping,
                 mass,
+            } if each_given(*stiffness, *damping, *mass) => write!(
+                f,
+                "stiffness {stiffness}, damping {damping} and mass {mass} make a spring too fast, \
+                 too slow or too damped to compute; scale them toward stiffness 100.0, \
+                 damping 10.0 and mass 1.0 (stiffness / mass sets the pace, and \
+                 damping / (2 * sqrt(stiffness * mass)) the damping ratio)"
+            ),
+            Self::NotASpring {
+                stiffness,
+                damping,
+                mass,
             } => write!(
                 f,
                 "no spring has stiffness {stiffness}, damping {damping} and mass {mass}; \
@@ -68,6 +81,13 @@ impl fmt::Display for SpringError {
 }
 
 impl core::error::Error for SpringError {}
+
+/// Each of a stiffness, a damping and a mass is finite and more than zero.
+fn each_given(stiffness: f32, damping: f32, mass: f32) -> bool {
+    [stiffness, damping, mass]
+        .iter()
+        .all(|value| value.is_finite() && *value > 0.0)
+}
 
 impl Spring {
     /// Arrives in about 0.4 s without overshoot. For panels and surfaces.
@@ -138,17 +158,20 @@ impl Spring {
     /// # Errors
     ///
     /// [`SpringError::NotASpring`] when a value is not finite or not more
-    /// than zero, or when together they make a spring too fast to compute.
+    /// than zero, or when together they make a spring too fast, too slow or
+    /// too damped to compute.
     pub fn physical(stiffness: f32, damping: f32, mass: f32) -> Result<Self, SpringError> {
         let positive = |value: f32| value.is_finite() && value > 0.0;
         let omega = (stiffness / mass).sqrt();
-        let zeta = damping / (2.0 * (stiffness * mass).sqrt());
-        if positive(stiffness)
-            && positive(damping)
-            && positive(mass)
-            && positive(omega)
+        // The roots apart, so their product does not overflow first.
+        let zeta = 0.5 * damping / (stiffness.sqrt() * mass.sqrt());
+        // How fast it rings and how fast it dies out must both be numbers
+        // the closed form can compute with: neither zero nor infinite.
+        let computable = positive(omega)
             && positive(zeta)
-        {
+            && positive(omega * zeta)
+            && (zeta * zeta).is_finite();
+        if each_given(stiffness, damping, mass) && computable {
             Ok(Self {
                 omega,
                 zeta,
@@ -386,15 +409,57 @@ mod tests {
             (100.0, 10.0, 0.0),
             (f32::NAN, 10.0, 1.0),
             (100.0, f32::INFINITY, 1.0),
-            (1e38, 10.0, 1e-38), // too fast to compute
+            (-100.0, 10.0, -1.0), // the ratio of two negatives is a number
         ];
         for (stiffness, damping, mass) in not {
             let error = Spring::physical(stiffness, damping, mass).unwrap_err();
             assert!(matches!(error, SpringError::NotASpring { .. }), "{error:?}");
+            let message = error.to_string();
             assert!(
-                error.to_string().contains("such as stiffness 100.0"),
-                "{error}"
+                message.contains("each must be finite and more than zero"),
+                "{message}"
             );
+        }
+    }
+
+    #[test]
+    fn values_that_together_cannot_be_computed_do_not_build() {
+        let not = [
+            (1e38, 10.0, 1e-38),  // rings too fast
+            (1e20, 1e38, 1e-18),  // dies out too fast
+            (1.0, 1e20, 1.0),     // damped past what an f32 squares
+            (1e-25, 1e-38, 1e10), // never dies out in an f32
+        ];
+        for (stiffness, damping, mass) in not {
+            let message = Spring::physical(stiffness, damping, mass)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                message.contains("too fast, too slow or too damped"),
+                "{message}"
+            );
+            assert!(
+                message.contains("scale them toward stiffness 100.0"),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn large_values_that_make_an_ordinary_spring_build() {
+        let plain = Spring::physical(1.0, 2.0, 1.0).unwrap();
+        for spring in [
+            Spring::physical(1e20, 2e20, 1e20),
+            Spring::physical(1e-25, 2e-25, 1e-25),
+        ] {
+            let spring = spring.unwrap();
+            for seconds in [0.1, 0.5, 2.0] {
+                let (got, want) = (at(spring, seconds), at(plain, seconds));
+                assert!(
+                    (got.0 - want.0).abs() < 1e-3,
+                    "{spring:?} at {seconds}: {got:?}"
+                );
+            }
         }
     }
 
